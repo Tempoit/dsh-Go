@@ -113,6 +113,7 @@ abstract final class DiagnosticsBundle {
     'autoStartLocalExplicit': s.autoStartLocalExplicit,
     'autoApproveCommands': s.autoApproveCommands,
     'phoneStorage': s.phoneStorage,
+    'rootAccess': s.rootAccess,
     'webPhoneLayout': s.webPhoneLayout,
     'foldCompletedTurns': s.foldCompletedTurns,
     'visualReplies': s.visualReplies,

@@ -19,6 +19,7 @@ object LaunchStart {
     /** Flutter's shared_preferences store and its keys (app/lib/state/settings_state.dart). */
     private const val FLUTTER_PREFS = "FlutterSharedPreferences"
     private const val K_PHONE_STORAGE = "flutter.phone_storage"
+    private const val K_ROOT_ACCESS = "flutter.root_access"
     private const val K_VISUAL_REPLIES = "flutter.visual_replies"
 
     @Volatile private var tried = false
@@ -72,6 +73,7 @@ object LaunchStart {
             controller.start(
                 emptyMap(),
                 phoneStorage = prefs.getBoolean(K_PHONE_STORAGE, false),
+                rootAccess = prefs.getBoolean(K_ROOT_ACCESS, false),
                 mode = null,
                 visualReplies = prefs.getBoolean(K_VISUAL_REPLIES, true),
             )

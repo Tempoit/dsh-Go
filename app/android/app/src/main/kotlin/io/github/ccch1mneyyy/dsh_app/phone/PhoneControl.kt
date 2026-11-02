@@ -1,5 +1,7 @@
 package io.github.ccch1mneyyy.dsh_app.phone
 
+import io.github.ccch1mneyyy.dsh_app.runtime.DshProcess
+
 import io.github.ccch1mneyyy.dsh_app.i18n.AppStrings
 import android.app.Application
 import android.app.KeyguardManager
@@ -602,6 +604,17 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     override fun system(): SystemApi = system
 
     override fun zone(): ZoneId = ZoneId.systemDefault()
+
+    /**
+     * 真 root 只能在这里跑：proot 里的 su 客户端连 magiskd 时要用 SCM_RIGHTS 收 fd，
+     * 那套机制在 proot 的 ptrace 层过不去（客户端直接 SIGPIPE）。
+     */
+    override fun rootExec(command: String): RootExec? {
+        val flutter = app.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        if (!flutter.getBoolean("flutter.root_access", false)) return null
+        val (ok, output) = DshProcess.runCaptured(listOf("/system/bin/su", "-c", command), 60_000)
+        return RootExec(ok, output)
+    }
 
     override fun notifyFix(kind: String) {
         if (!tasks.firstNotice(kind)) return

@@ -7,6 +7,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
 import io.flutter.embedding.engine.plugins.FlutterPlugin
@@ -16,6 +18,7 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry
+import java.util.concurrent.Executors
 
 /** Flutter bridge for the local runtime: MethodChannel `dsh/runtime`, EventChannel `dsh/runtime/events`. */
 class RuntimePlugin :
@@ -109,6 +112,7 @@ class RuntimePlugin :
                 controller.start(
                     env,
                     phoneStorage = call.argument<Boolean>("phoneStorage") == true,
+                    rootAccess = call.argument<Boolean>("rootAccess") == true,
                     mode = call.argument<String>("mode"),
                     visualReplies = call.argument<Boolean>("visualReplies") != false,
                 )
@@ -169,6 +173,14 @@ class RuntimePlugin :
                 result.success(null)
             }
             "storageStatus" -> result.success(PhoneStorage.status(appContext))
+            "rootStatus" -> {
+                // 首次探测会等 Magisk 授权（可能 40 秒），不能占住平台主线程。
+                rootProbeExecutor.execute {
+                    // 用户主动点开关：永远重新探测，不吃缓存（失败后否则永远翻不了身）
+                    val status = RootAccess.probe(force = true)
+                    mainHandler.post { result.success(status) }
+                }
+            }
             "requestStorage" -> requestStorage(result)
             "openAllFilesAccess" -> {
                 val intent = PhoneStorage.allFilesAccessIntent(appContext)
@@ -265,6 +277,9 @@ class RuntimePlugin :
         sink?.let { controller.removeSink(it) }
         sink = null
     }
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val rootProbeExecutor = Executors.newSingleThreadExecutor()
 
     companion object {
         private const val STORAGE_REQUEST = 0x5d5

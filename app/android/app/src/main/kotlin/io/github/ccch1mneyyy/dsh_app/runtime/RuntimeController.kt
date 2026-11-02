@@ -62,6 +62,8 @@ class RuntimeController private constructor(private val app: Context) : DshProce
     @Volatile private var error: String? = null
     @Volatile private var pendingEnv: Map<String, String> = emptyMap()
     @Volatile private var pendingPhoneStorage = false
+    /** Whether this launch binds the root manager's daemon tmpfs in (settings 「Root 权限」). */
+    @Volatile private var pendingRootAccess = false
     /** Whether the managed AGENTS.md tells the model about ```dsh-ui views (settings, on by default). */
     @Volatile private var pendingVisualReplies = true
 
@@ -212,14 +214,17 @@ class RuntimeController private constructor(private val app: Context) : DshProce
     /**
      * Starts the foreground service, which calls [startProcess]. [mode] is "safe", "normal"
      * (leaving safe mode starts a two-minute trial) or null to keep the current mode.
+     * [rootAccess] binds the root manager's daemon socket in (see [RootAccess]).
      */
     fun start(
         env: Map<String, String>,
         phoneStorage: Boolean = false,
+        rootAccess: Boolean = false,
         mode: String? = null,
         visualReplies: Boolean = pendingVisualReplies,
     ) {
         pendingPhoneStorage = phoneStorage
+        pendingRootAccess = rootAccess
         pendingVisualReplies = visualReplies
         if (phase == Phase.RUNNING || phase == Phase.STARTING) return
         pendingEnv = env
@@ -310,6 +315,9 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                 noteDns(GuestSetup.writeResolvConf(app, installer.rootfs), DnsConfigSource.START)
                 val storage = pendingPhoneStorage && PhoneStorage.isGranted(app) && PhoneStorage.binds().isNotEmpty()
                 PhoneStorage.syncShortcut(installer.rootfs, storage)
+                // Root access: only meaningful when the root manager's daemon socket is visible.
+                // root 走手机桥的 mcp__phone__root（App 进程执行）；proot 里的 su 连不上 magiskd。
+                val root = pendingRootAccess && RootAccess.available()
                 // Phone control: bridge up and guest files written before DSH starts; off in safe mode.
                 val phone = PhoneControl.get(app).prepareLaunch(installer.rootfs, safe) { log(it, "system") }
                 if (!safe && !SessionSearchGuest.writeFiles(installer.rootfs)) {
@@ -322,6 +330,10 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                     log("[dsh-app] voice input overlay not written; the voice model keeps DSH's defaults", "system")
                 }
                 if (pendingPhoneStorage && !storage) log("[dsh-app] phone storage requested but permission not granted", "system")
+                if (pendingRootAccess && !root) {
+                    val why = RootAccess.lastDetail() ?: "no su output"
+                    log("[dsh-app] root access requested but the su probe failed ($why); root stays off", "system")
+                }
                 val env = LinkedHashMap<String, String>()
                 env["TZ"] = java.util.TimeZone.getDefault().id
                 env.putAll(pendingEnv)
@@ -349,8 +361,9 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                 process = p
                 timeline.spawned()
                 val direct = directEngine()
-                p.start(env, if (storage) PhoneStorage.binds() else emptyList(), safe, phone, direct.requested, direct.failed) { actualDirect ->
-                    GuestSetup.writeAgentsMd(installer.rootfs, storage, phone, pendingVisualReplies, actualDirect)
+                val binds = if (storage) PhoneStorage.binds() else emptyList<String>()
+                p.start(env, binds, safe, phone, direct.requested, direct.failed) { actualDirect ->
+                    GuestSetup.writeAgentsMd(installer.rootfs, storage, phone, pendingVisualReplies, actualDirect, root)
                 }
                 if (phone) PhoneControl.get(app).launched(p.phoneMounted)
             } catch (e: Throwable) {
@@ -827,7 +840,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
             } else {
                 phase = Phase.INSTALLED
                 try {
-                    start(pendingEnv, pendingPhoneStorage)
+                    start(pendingEnv, pendingPhoneStorage, pendingRootAccess)
                 } catch (e: Exception) {
                     log("[dsh-app] could not restart $how: ${e.message}", "system")
                     setPhase(Phase.ERROR)

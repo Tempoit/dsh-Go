@@ -37,6 +37,7 @@
   "searchKwLanguage": "中文,英文,简体,English",
   "searchKwAutoCommands": "别问我,不要确认,自动允许,完全权限,免确认",
   "searchKwPhoneFiles": "存储,文件,相册,下载,手机存储",
+  "searchKwRoot": "root,超级用户,提权,magisk,权限",
   "searchKwVisualReplies": "图表,卡片,可视化,选项",
   "searchKwTextSize": "字号,字体,文字大小,大字,字体大小",
   "searchKwTableTint": "表格,底色,表头,斑马纹,条纹,背景",

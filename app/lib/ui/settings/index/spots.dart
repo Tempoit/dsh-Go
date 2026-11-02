@@ -623,6 +623,14 @@ abstract final class Spots {
     link: 'phone-files',
     condition: SpotCondition.localHost,
   );
+  static final rootAccess = SettingSpot(
+    'root-access',
+    page: SettingsPageId.permission,
+    title: (l) => l.hubSettingsRoot,
+    keywords: (l) => l.searchKwRoot,
+    link: 'root-access',
+    condition: SpotCondition.localHost,
+  );
   static final permissionPhoneConfirm = SettingSpot(
     'permission-phone-confirm',
     page: SettingsPageId.permission,
@@ -1040,6 +1048,7 @@ final _rows = <SettingSpot>[
   Spots.permissionCurrent,
   Spots.permissionDefault,
   Spots.phoneFiles,
+  Spots.rootAccess,
   Spots.permissionPhoneConfirm,
   Spots.visualReplies,
   Spots.phoneA11yRestore,

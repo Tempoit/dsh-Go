@@ -26,7 +26,15 @@ interface PhoneEnv {
      */
     fun beforeHandoff(screen: PhoneScreen): String? = null
     fun sleep(ms: Long) = Thread.sleep(ms)
+    /**
+     * 以 root 跑一条命令（App 进程，不经 proot）。null 表示开关没开或这台设备没有 root。
+     * 真机上 proot 里的 `su` 连不上 magiskd（fd 传递过不去），所以 root 只能走这里。
+     */
+    fun rootExec(command: String): RootExec? = null
 }
+
+/** 一次 root 执行的结果：命令本身是否成功，加上合并后的输出。 */
+data class RootExec(val ok: Boolean, val output: String)
 
 /**
  * Runs the fixed tool set: argument checks, screen-id routing (`s` main / `b` background,
@@ -56,6 +64,23 @@ class PhoneCore(
      * task, or the handoff it named.
      */
     @Volatile private var refusal: Pair<PhoneTasks.Owner, HandoffCause>? = null
+
+    /** 以 root 执行一条命令；开关关着时给出可执行的说明，而不是静默失败。 */
+    private fun root(a: Args): Out {
+        val command = a.str("command").orEmpty()
+        // l10n:keep agent tool result
+        if (command.isEmpty()) return Out("root 需要 command（要执行的 shell 命令）。", error = true)
+        val result = env.rootExec(command)
+            // l10n:keep agent tool result
+            ?: return Out(
+                "「Root 权限」没有打开，或者这台设备没有 root。请在 App 的 设置 › 权限 › 手机 里打开它；" +
+                    "容器里的 su 是 proot 的假 root，不能替代。",
+                error = true,
+            )
+        // l10n:keep agent tool result
+        val body = result.output.trimEnd().ifBlank { "（命令没有输出）" }
+        return Out(body, error = !result.ok, summary = command.take(60))
+    }
 
     private class Out(
         val text: String,
@@ -159,6 +184,7 @@ class PhoneCore(
             PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.SCROLL, PhoneToolCatalog.TAP_XY -> act(name, a, scope)
             PhoneToolCatalog.KEY -> key(a)
             PhoneToolCatalog.HANDOFF -> handoff(a, scope)
+            PhoneToolCatalog.ROOT -> root(a)
             // l10n:keep agent tool result
             else -> Out("没有这个手机工具：$name", error = true)
         }

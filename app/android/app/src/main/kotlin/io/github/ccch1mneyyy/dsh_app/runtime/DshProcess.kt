@@ -412,6 +412,37 @@ class DshProcess(
 
     companion object {
         const val DEFAULT_PORT = 3080
+
+        /**
+         * One-shot command with a timeout, output captured. Probes such as
+         * `su -c id` need the same launch discipline as the runtime itself, so
+         * this is the reviewed entry point for them (see ProcessLaunchGuardTest).
+         */
+        fun runCaptured(argv: List<String>, timeoutMs: Long): Pair<Boolean, String> {
+            val out = StringBuilder()
+            var process: Process? = null
+            var exited = false
+            try {
+                process = ProcessBuilder(argv).redirectErrorStream(true).start()
+                val running = process
+                val reader = thread {
+                    try {
+                        running.inputStream.bufferedReader().forEachLine { line ->
+                            synchronized(out) { out.append(line).append('\n') }
+                        }
+                    } catch (_: Exception) {
+                    }
+                }
+                exited = running.waitFor(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+                reader.join(2_000)
+                if (!exited) running.destroy()
+            } catch (_: Exception) {
+                return false to out.toString()
+            }
+            val ok = exited && try { process?.exitValue() == 0 } catch (_: Exception) { false }
+            return ok to out.toString()
+        }
+
         const val GUEST_ENV = "{GUEST_ENV}"
         private val TOKEN_URL = Regex("""https?://[^\s'"]*[?&#]token=[A-Za-z0-9._~%-]+""")
         private val TOKEN_PARAM = Regex("""[?&#]token=([A-Za-z0-9._~%-]+)""")

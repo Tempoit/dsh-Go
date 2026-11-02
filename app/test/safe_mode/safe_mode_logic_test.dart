@@ -251,6 +251,7 @@ void main() {
       expect(calls[0].arguments, {
         'env': <String, String>{},
         'phoneStorage': true,
+        'rootAccess': false,
         'visualReplies': true,
         'mode': 'safe',
       });

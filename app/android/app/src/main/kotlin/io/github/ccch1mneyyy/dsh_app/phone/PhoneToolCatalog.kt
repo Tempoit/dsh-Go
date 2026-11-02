@@ -22,6 +22,7 @@ object PhoneToolCatalog {
     const val KEY = "key"
     const val TAP_XY = "tap_xy"
     const val HANDOFF = "handoff"
+    const val ROOT = "root"
 
     class Tool(val name: String, val description: String, val properties: Map<String, Any?>, val required: List<String>) {
         fun toJson(): Map<String, Any?> = linkedMapOf(
@@ -244,6 +245,20 @@ object PhoneToolCatalog {
             // l10n:keep agent tool catalog
             linkedMapOf("reason" to str("要用户做什么，一句话")),
             listOf("reason"),
+        ),
+        Tool(
+            ROOT,
+            // l10n:keep agent tool catalog
+            "以 root 执行一条 shell 命令（需要 App 设置里打开「Root 权限」）。" +
+                // l10n:keep agent tool catalog
+                "命令跑在真实 Android 文件系统下：/data、/system 直接可见，容器里的 /root/workspace 在那里不可见。" +
+                // l10n:keep agent tool catalog
+                "能用普通命令就别用 root；删除、改系统设置、装模块、碰银行或支付类应用前先问用户。",
+            linkedMapOf(
+                // l10n:keep agent tool catalog
+                "command" to str("要执行的 shell 命令"),
+            ),
+            listOf("command"),
         ),
     )
 

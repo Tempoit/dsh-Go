@@ -32,6 +32,7 @@ class _Bridge extends RuntimeBridge {
   Future<void> start({
     Map<String, String> env = const {},
     bool phoneStorage = false,
+    bool rootAccess = false,
     EngineMode? mode,
     bool visualReplies = true,
   }) async => calls.add('start');

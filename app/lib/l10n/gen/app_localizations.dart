@@ -12871,6 +12871,48 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'AI 可读写手机存储'**
   String get hubSettingsPhoneFilesHint;
+  /// No description provided for @hubSettingsRoot.
+  ///
+  /// In zh, this message translates to:
+  /// **'Root 权限'**
+  String get hubSettingsRoot;
+
+  /// No description provided for @hubSettingsRootHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'AI 可用 su 执行系统命令'**
+  String get hubSettingsRootHint;
+  /// No description provided for @hubSettingsRootProbing.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在探测 root（最多 40 秒）… Magisk 可能会弹授权请求'**
+  String get hubSettingsRootProbing;
+
+
+  /// No description provided for @hubSettingsRootUnavailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'没找到 root 守护进程。先确认手机已 root，并在 root 管理器里给 DSH Go 授权'**
+  String get hubSettingsRootUnavailable;
+
+  /// No description provided for @hubSettingsRootTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'让 AI 用 root 权限？'**
+  String get hubSettingsRootTitle;
+
+  /// No description provided for @hubSettingsRootBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'容器会挂载 Magisk 的 /.magisk，AI 就能以 root 读写整个系统，包括其他应用的数据。引擎会重启一次。'**
+  String get hubSettingsRootBody;
+
+  /// No description provided for @hubSettingsRootAllow.
+  ///
+  /// In zh, this message translates to:
+  /// **'允许 root'**
+  String get hubSettingsRootAllow;
+
 
   /// No description provided for @hubSettingsVisualReplies.
   ///
@@ -25015,6 +25057,12 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'存储,文件,相册,下载,手机存储'**
   String get searchKwPhoneFiles;
+  /// No description provided for @searchKwRoot.
+  ///
+  /// In zh, this message translates to:
+  /// **'root,超级用户,提权,magisk,权限'**
+  String get searchKwRoot;
+
 
   /// No description provided for @searchKwVisualReplies.
   ///

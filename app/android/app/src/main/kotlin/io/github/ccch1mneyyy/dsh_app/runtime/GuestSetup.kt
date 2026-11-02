@@ -93,6 +93,18 @@ object GuestSetup {
         return file
     }
 
+    /** Appended while 「Root 权限」 is on: how to use `su` and where it must stop. */
+    // l10n:keep agent prompt
+    private val ROOT_SECTION = ("""
+        |
+        |## 本机 root
+        |
+        |- 真 root 只能通过手机工具 `mcp__phone__root`（参数 `command`）执行：App 在系统里以 root 跑，输出原样返回。容器里的 `su` 是 proot 的假 root，**用不了**，别拿 `id` 或 SELinux 域去判断有没有 root。
+        |- 那条命令跑在真实 Android 文件系统下：`/data`、`/system` 直接可见，容器里的 `/root/workspace` 在那里看不到。读电池、温度、其他应用数据、`/data/adb` 都用它。
+        |- 先试普通命令，确实拿不到再用 root；能用只读命令就别写系统。
+        |- root 能改整个系统：删除文件、改系统设置、装模块、碰银行和支付类应用之前，先说明要做什么并等用户确认。
+        |""").trimMargin()
+
     /** Global DSH instructions ($DSH_HOME/AGENTS.md); left alone once the user removes the marker. */
     fun writeAgentsMd(
         rootfs: File,
@@ -100,6 +112,7 @@ object GuestSetup {
         phoneControl: Boolean = false,
         visualReplies: Boolean = true,
         directEngine: Boolean = false,
+        rootAccess: Boolean = false,
     ) {
         try {
             val file = File(rootfs, "root/.dsh/AGENTS.md")
@@ -125,7 +138,8 @@ object GuestSetup {
                     "{PATH}",
                     if (directEngine) "${rootfs.canonicalPath}/root/.dsh/dsh-app/diagnostics.md"
                     else "\$DSH_HOME/dsh-app/diagnostics.md",
-                )
+                ) +
+                (if (rootAccess) ROOT_SECTION else "")
             file.parentFile?.mkdirs()
             if (!file.exists() || file.readText() != text) file.writeText(text)
         } catch (_: Exception) {

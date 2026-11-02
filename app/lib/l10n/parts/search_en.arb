@@ -37,6 +37,7 @@
   "searchKwLanguage": "chinese,english,locale",
   "searchKwAutoCommands": "don't ask,auto approve,full access,no confirmation",
   "searchKwPhoneFiles": "storage,files,downloads,photos",
+  "searchKwRoot": "root,superuser,magisk,privileges",
   "searchKwVisualReplies": "charts,cards,visual,options",
   "searchKwTextSize": "font,font size,text size,larger text",
   "searchKwTableTint": "table,tint,header,stripe,row,background",

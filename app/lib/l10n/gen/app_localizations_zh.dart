@@ -7014,6 +7014,27 @@ class L10nZh extends L10n {
 
   @override
   String get hubSettingsPhoneFilesHint => 'AI 可读写手机存储';
+  @override
+  String get hubSettingsRoot => 'Root 权限';
+
+  @override
+  String get hubSettingsRootHint => 'AI 可用 su 执行系统命令';
+  @override
+  String get hubSettingsRootProbing => '正在探测 root（最多 40 秒）… Magisk 可能会弹授权请求';
+
+
+  @override
+  String get hubSettingsRootUnavailable => '没找到 root 守护进程。先确认手机已 root，并在 root 管理器里给 DSH Go 授权';
+
+  @override
+  String get hubSettingsRootTitle => '让 AI 用 root 权限？';
+
+  @override
+  String get hubSettingsRootBody => '容器会挂载 Magisk 的 /.magisk，AI 就能以 root 读写整个系统，包括其他应用的数据。引擎会重启一次。';
+
+  @override
+  String get hubSettingsRootAllow => '允许 root';
+
 
   @override
   String get hubSettingsVisualReplies => '可视化回复';
@@ -13677,6 +13698,9 @@ class L10nZh extends L10n {
 
   @override
   String get searchKwPhoneFiles => '存储,文件,相册,下载,手机存储';
+  @override
+  String get searchKwRoot => 'root,超级用户,提权,magisk,权限';
+
 
   @override
   String get searchKwVisualReplies => '图表,卡片,可视化,选项';

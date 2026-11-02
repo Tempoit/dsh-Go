@@ -129,6 +129,15 @@ abstract final class RiskNotices {
     ask: AskAiTopic.phoneFiles,
   );
 
+  /// 设置 › 权限 › 手机 › Root 权限.
+  static RiskNotice get rootAccess => RiskNotice(
+    id: 'settings.root-access',
+    level: RiskLevel.high,
+    title: appL10n.hubSettingsRootTitle,
+    body: appL10n.hubSettingsRootBody,
+    action: appL10n.hubSettingsRootAllow,
+  );
+
   /// The same, picked on first run: no engine runs yet, nothing restarts.
   static RiskNotice get phoneFilesFirstRun => RiskNotice(
     id: 'settings.phone-files',

@@ -19,6 +19,7 @@ class AppSettings {
     this.autoStartLocalExplicit = true,
     this.autoApproveCommands = false,
     this.phoneStorage = false,
+    this.rootAccess = false,
     this.webPhoneLayout = true,
     this.hardwareEnterSends = false,
     this.chatTextScale = 1.0,
@@ -43,6 +44,10 @@ class AppSettings {
 
   /// Mount the phone's shared storage at /sdcard in the Linux environment.
   final bool phoneStorage;
+
+  /// Bind the root manager's daemon socket into the Linux environment, so
+  /// `su` works there. Needs this app allowed in the root manager.
+  final bool rootAccess;
 
   /// Fit the embedded DSH Web to a phone (`assets/web/`). Off shows the
   /// official layout untouched, e.g. to check a plugin that restyles it.
@@ -82,6 +87,7 @@ class AppSettings {
     bool? autoStartLocalExplicit,
     bool? autoApproveCommands,
     bool? phoneStorage,
+    bool? rootAccess,
     bool? webPhoneLayout,
     bool? hardwareEnterSends,
     double? chatTextScale,
@@ -96,6 +102,7 @@ class AppSettings {
     autoStartLocalExplicit: autoStartLocalExplicit ?? this.autoStartLocalExplicit,
     autoApproveCommands: autoApproveCommands ?? this.autoApproveCommands,
     phoneStorage: phoneStorage ?? this.phoneStorage,
+    rootAccess: rootAccess ?? this.rootAccess,
     webPhoneLayout: webPhoneLayout ?? this.webPhoneLayout,
     hardwareEnterSends: hardwareEnterSends ?? this.hardwareEnterSends,
     chatTextScale: chatTextScale ?? this.chatTextScale,
@@ -120,6 +127,7 @@ class SettingsController extends Notifier<AppSettings> {
   static const _autoStartKey = 'auto_start_local';
   static const _autoApproveKey = 'auto_approve_commands';
   static const _phoneStorageKey = 'phone_storage';
+  static const _rootAccessKey = 'root_access';
   static const _webPhoneLayoutKey = 'web_phone_layout';
   static const _hardwareEnterKey = 'hardware_enter_sends';
   static const _chatTextScaleKey = 'chat_text_scale';
@@ -166,6 +174,7 @@ class SettingsController extends Notifier<AppSettings> {
       autoStartLocalExplicit: prefs.containsKey(_autoStartKey),
       autoApproveCommands: prefs.getBool(_autoApproveKey) ?? false,
       phoneStorage: prefs.getBool(_phoneStorageKey) ?? false,
+      rootAccess: prefs.getBool(_rootAccessKey) ?? false,
       webPhoneLayout: prefs.getBool(_webPhoneLayoutKey) ?? true,
       hardwareEnterSends: prefs.getBool(_hardwareEnterKey) ?? false,
       chatTextScale: _knownScale(prefs.getDouble(_chatTextScaleKey)),
@@ -217,6 +226,12 @@ class SettingsController extends Notifier<AppSettings> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_phoneStorageKey, value);
     state = state.copyWith(phoneStorage: value);
+  }
+
+  Future<void> setRootAccess(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_rootAccessKey, value);
+    state = state.copyWith(rootAccess: value);
   }
 
   static double _knownScale(double? v) => chatTextScales.any((s) => s.$1 == v) ? v! : 1.0;

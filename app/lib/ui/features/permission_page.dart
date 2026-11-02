@@ -142,6 +142,29 @@ class _PermissionPageState extends ConsumerState<PermissionPage> {
     }
   }
 
+  /// 「Root 权限」: bind the root manager's daemon socket in, so `su` works in the guest.
+  Future<void> _onRootAccess(bool next) async {
+    final l10n = context.l10n;
+    if (next) {
+      _toast(l10n.hubSettingsRootProbing);
+      final status = await ref.read(runtimeBridgeProvider).rootStatus();
+      if (!mounted) return;
+      if (!status.available) {
+        // 探测细节（超时/拒绝/没有 daemon）直接给出来，省一轮排查。
+        final detail = status.debug == null ? '' : '\n${status.debug}';
+        _toast('${l10n.hubSettingsRootUnavailable}$detail');
+        return;
+      }
+      final ok = await confirmRisk(context, RiskNotices.rootAccess);
+      if (!ok || !mounted) return;
+    }
+    await ref.read(settingsProvider.notifier).setRootAccess(next);
+    // Binds are fixed at launch: restart a running engine so the change applies.
+    if (ref.read(localRuntimeProvider).status.phase == RuntimePhase.running && mounted) {
+      unawaited(EngineControl.restart(ProviderScope.containerOf(context, listen: false)));
+    }
+  }
+
   Future<void> _resetDefault(int revision) async {
     final client = ref.read(activeConnectionProvider).value?.client;
     if (client == null || _busy) return;
@@ -182,6 +205,7 @@ class _PermissionPageState extends ConsumerState<PermissionPage> {
     ];
 
     final phoneFiles = ref.watch(settingsProvider.select((s) => s.phoneStorage));
+    final rootAccess = ref.watch(settingsProvider.select((s) => s.rootAccess));
     final confirm = ref.watch(phoneProvider.select((s) => s.policies?.confirmMode));
     final phone = ListPageCard(
       title: l10n.hubPermissionPhone,
@@ -194,6 +218,16 @@ class _PermissionPageState extends ConsumerState<PermissionPage> {
               subtitle: l10n.hubSettingsPhoneFilesHint,
               onTap: () => unawaited(_onPhoneFiles(!phoneFiles)),
               trailing: Switch(value: phoneFiles, onChanged: (v) => unawaited(_onPhoneFiles(v))),
+            ),
+          ),
+        // Root is the same engine's: bind the root manager's socket into the guest.
+        if (ref.watch(activeHostProvider).isLocal)
+          MergeSemantics(
+            child: ListPageRow(
+              spot: Spots.rootAccess,
+              subtitle: l10n.hubSettingsRootHint,
+              onTap: () => unawaited(_onRootAccess(!rootAccess)),
+              trailing: Switch(value: rootAccess, onChanged: (v) => unawaited(_onRootAccess(v))),
             ),
           ),
         // The control itself stays on 手机操控: this opens it at that row.

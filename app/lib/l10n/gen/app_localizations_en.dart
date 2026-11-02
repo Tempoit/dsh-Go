@@ -7407,6 +7407,27 @@ class L10nEn extends L10n {
 
   @override
   String get hubSettingsPhoneFilesHint => 'AI can read and write phone storage';
+  @override
+  String get hubSettingsRoot => 'Root access';
+
+  @override
+  String get hubSettingsRootHint => 'AI can run system commands with su';
+  @override
+  String get hubSettingsRootProbing => 'Probing root (up to 40s)… Magisk may ask to allow it';
+
+
+  @override
+  String get hubSettingsRootUnavailable => 'No root daemon found. Check that the phone is rooted and DSH Go is allowed in the root manager';
+
+  @override
+  String get hubSettingsRootTitle => 'Let AI use root?';
+
+  @override
+  String get hubSettingsRootBody => 'The container mounts Magisk’s /.magisk, so AI can read and write the whole system as root, including other apps’ data. The engine restarts once.';
+
+  @override
+  String get hubSettingsRootAllow => 'Allow root';
+
 
   @override
   String get hubSettingsVisualReplies => 'Visual replies';
@@ -14385,6 +14406,9 @@ class L10nEn extends L10n {
 
   @override
   String get searchKwPhoneFiles => 'storage,files,downloads,photos';
+  @override
+  String get searchKwRoot => 'root,superuser,magisk,privileges';
+
 
   @override
   String get searchKwVisualReplies => 'charts,cards,visual,options';

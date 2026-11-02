@@ -73,6 +73,21 @@ class GuestAgentsModeTest {
         } finally { root.deleteRecursively() }
     }
 
+    @Test fun rootAccessAddsTheRootToolSectionOnlyWhileOn() {
+        val root = kotlin.io.path.createTempDirectory("agents-root").toFile()
+        try {
+            GuestSetup.writeAgentsMd(root, phoneStorage = false, rootAccess = true)
+            val text = File(root, "root/.dsh/AGENTS.md").readText()
+            assertTrue(text.contains("## 本机 root"))
+            // root 走手机桥工具，容器里的 su 是 proot 的假 root，说明里必须点明这一点。
+            assertTrue(text.contains("mcp__phone__root"))
+            assertTrue(text.contains("假 root"))
+            GuestSetup.writeAgentsMd(root, phoneStorage = false, rootAccess = false)
+            val off = File(root, "root/.dsh/AGENTS.md").readText()
+            assertFalse(off.contains("## 本机 root"))
+        } finally { root.deleteRecursively() }
+    }
+
     @Test fun unchangedDefaultStartupDoesNotRewriteAnExistingManagedFile() {
         val root = kotlin.io.path.createTempDirectory("agents-unchanged").toFile()
         try {

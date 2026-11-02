@@ -403,6 +403,26 @@ class StorageAccess {
   final String guestPath;
 }
 
+/// Whether the Linux environment can reach the root manager's daemon socket.
+class RootStatus {
+  const RootStatus({required this.available, this.manager, this.debug});
+
+  factory RootStatus.fromMap(Map<Object?, Object?> map) => RootStatus(
+    available: map['available'] == true,
+    manager: map['manager'] as String?,
+    debug: map['suDetail'] as String?,
+  );
+
+  /// `su -c id` ran as uid 0: the manager allowed this app and the daemon answers.
+  final bool available;
+
+  /// Which root manager the device runs (`magisk`, `kernelsu`); null when none shows.
+  final String? manager;
+
+  /// What the probe saw: the uid line, or why it failed (timeout, denial, no daemon).
+  final String? debug;
+}
+
 sealed class RuntimeEvent {
   const RuntimeEvent();
 }
@@ -558,17 +578,20 @@ class RuntimeBridge {
       _methods.invokeMethod<void>('install', dropKept ? const {'dropKept': true} : null);
 
   /// [phoneStorage] mounts the phone's shared storage at /sdcard (needs [requestStorage] first).
+  /// [rootAccess] binds the root manager's daemon socket in, so `su` works in the guest.
   /// [mode] null keeps the current mode; [EngineMode.normal] while in safe mode starts the
   /// two-minute trial back in normal mode. [visualReplies] writes the dsh-ui section
   /// into the managed AGENTS.md.
   Future<void> start({
     Map<String, String> env = const {},
     bool phoneStorage = false,
+    bool rootAccess = false,
     EngineMode? mode,
     bool visualReplies = true,
   }) => _methods.invokeMethod<void>('start', {
     'env': env,
     'phoneStorage': phoneStorage,
+    'rootAccess': rootAccess,
     'mode': mode?.name,
     'visualReplies': visualReplies,
   });
@@ -614,6 +637,10 @@ class RuntimeBridge {
 
   Future<StorageAccess> storageStatus() async =>
       StorageAccess.fromMap(await _methods.invokeMapMethod<Object?, Object?>('storageStatus') ?? const {});
+
+  /// Whether `su` can reach the root manager (no prompt: the socket is or isn't there).
+  Future<RootStatus> rootStatus() async =>
+      RootStatus.fromMap(await _methods.invokeMapMethod<Object?, Object?>('rootStatus') ?? const {});
 
   /// Shows the system storage permission prompt; resolves with the resulting access.
   Future<StorageAccess> requestStorage() async =>
