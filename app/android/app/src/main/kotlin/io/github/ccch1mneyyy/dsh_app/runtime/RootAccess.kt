@@ -59,14 +59,21 @@ object RootAccess {
         return (mounts.map { "$it/su" } + FIXED_SU_PATHS).distinct()
     }
 
-    /** 实际用哪个 `su`；null 表示这台设备上没找到（未 root，或路径又变了）。 */
-    fun suPath(): String? = suCandidates().firstOrNull { path ->
+    /** 存在的候选（顺序同 [suCandidates]）；不判断可执行性——那要用一次真实执行来验。 */
+    fun existingSuCandidates(): List<String> = suCandidates().filter { path ->
         try {
             File(path).exists()
         } catch (_: Exception) {
             false
         }
     }
+
+    /**
+     * 实际能用的 `su`：上一次探测成功的那个。null 表示还没探测过或全部失败。
+     * 路径存在不等于能执行——Magisk 31 把 `/product/bin/su` 放在这里，
+     * 普通 App 执行会 Permission denied，得换 `/debug_ramdisk/su`。
+     */
+    fun suPath(): String? = cached?.get("suPath") as? String
 
     fun manager(): String? = when {
         magiskMounts().isNotEmpty() -> "magisk"
@@ -111,38 +118,46 @@ object RootAccess {
     fun probe(timeoutMs: Long = 40_000L, force: Boolean = false): Map<String, Any?> {
         cached?.let { if (!force) return it }
         val mounts = magiskMounts()
-        val su = suPath()
 
+        val candidates = existingSuCandidates()
         val facts = LinkedHashMap<String, Any?>()
         facts["manager"] = manager()
-        facts["suPath"] = su
         facts["magiskMounts"] = mounts
+        facts["suCandidates"] = suCandidates()
 
-        var suOk = false
+        var working: String? = null
         var suDetail: String? = null
-        if (su == null) {
-            // 路径全都对不上：说明这一版 Magisk 又把 su 挪走了，报出来。
+        val attempts = LinkedHashMap<String, String>()
+        if (candidates.isEmpty()) {
             // l10n:keep agent tool result
-            suDetail = "没找到 su 可执行文件。试过：${suCandidates().joinToString()}，" +
-                "以及挂载表里的 magisk 挂载点：${if (mounts.isEmpty()) "（一条也没有）" else mounts.joinToString()}"
+            suDetail = "没找到 su 可执行文件。试过：${suCandidates().joinToString()}；" +
+                "magisk 挂载点：${if (mounts.isEmpty()) "（App 进程看不到）" else mounts.joinToString()}"
         } else {
-            val (exitOk, captured) = DshProcess.runCaptured(
-                listOf(su, "-c", "id"),
-                timeoutMs,
-            )
-            val out = StringBuilder(captured)
-            suOk = exitOk && out.contains("uid=0")
-            suDetail = if (suOk) {
-                "${out.lines().firstOrNull { it.startsWith("uid=") } ?: "uid=0"}（$su）"
+            // 路径存在不等于能执行（Magisk 31 的 /product/bin/su 对普通 App 是 Permission denied），
+            // 所以逐个真跑一次，第一个拿到 uid=0 的才算数。
+            val perCandidate = timeoutMs.coerceAtMost(15_000L)
+            for (candidate in candidates) {
+                val (exitOk, captured) = DshProcess.runCaptured(listOf(candidate, "-c", "id"), perCandidate)
+                val out = captured.trim()
+                if (exitOk && out.contains("uid=0")) {
+                    working = candidate
+                    attempts[candidate] = "ok"
+                    break
+                }
+                attempts[candidate] = out.take(160).ifBlank { "没有输出（超时或被拒）" }
+            }
+            suDetail = if (working != null) {
+                "uid=0（$working）"
             } else {
-                val why = out.take(300).toString().ifBlank { "没有输出：可能是超时、被拒绝，或还没在 root 管理器里允许 DSH Go" }
-                "$su：$why"
+                attempts.entries.joinToString("\n") { (path, why) -> "$path：$why" }
             }
         }
 
-        facts["suOk"] = suOk
+        facts["suPath"] = working
+        facts["suAttempts"] = attempts
+        facts["suOk"] = working != null
         facts["suDetail"] = suDetail?.take(600)
-        facts["available"] = suOk
+        facts["available"] = working != null
         val result = facts.toMap()
         cached = result
         return result
