@@ -58,7 +58,7 @@ class PhoneToolSchemaTest {
         val json = Json.write(PhoneToolCatalog.listJson())
         assertFalse(json.contains("\"minimum\""))
         assertFalse(json.contains("\"maximum\""))
-        assertEquals(13, PhoneToolCatalog.tools.size)
+        assertEquals(14, PhoneToolCatalog.tools.size) // root 工具让固定的工具集从 13 变成 14
         val tap = PhoneToolCatalog.tools.single { it.name == PhoneToolCatalog.TAP_XY }
         assertEquals(listOf("observation", "x", "y"), tap.required)
         assertEquals(setOf("observation", "x", "y"), tap.properties.keys)
