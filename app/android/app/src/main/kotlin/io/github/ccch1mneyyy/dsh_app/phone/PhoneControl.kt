@@ -1,6 +1,7 @@
 package io.github.ccch1mneyyy.dsh_app.phone
 
 import io.github.ccch1mneyyy.dsh_app.runtime.DshProcess
+import io.github.ccch1mneyyy.dsh_app.runtime.RootAccess
 
 import io.github.ccch1mneyyy.dsh_app.i18n.AppStrings
 import android.app.Application
@@ -612,7 +613,10 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     override fun rootExec(command: String): RootExec? {
         val flutter = app.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
         if (!flutter.getBoolean("flutter.root_access", false)) return null
-        val (ok, output) = DshProcess.runCaptured(listOf("/system/bin/su", "-c", command), 60_000)
+        // su 的位置随 root 方案和版本变（Magisk 31 在 /product/bin），按探测结果取。
+        val su = RootAccess.suPath()
+            ?: return RootExec(false, "这台设备上没有找到 su 可执行文件；手机可能已失去 root，或 root 管理器换了位置。")
+        val (ok, output) = DshProcess.runCaptured(listOf(su, "-c", command), 60_000)
         return RootExec(ok, output)
     }
 

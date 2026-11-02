@@ -6,35 +6,82 @@ import android.system.OsConstants
 import java.io.File
 
 /**
- * Optional root access for the Linux environment.
+ * Optional root access, exercised from this app's own process (see
+ * `mcp__phone__root`): PRoot cannot carry Magisk's fd passing, so the guest's
+ * `su` never works and root has to run out here.
  *
- * Magisk keeps the daemon socket in a tmpfs whose mount point differs per device
- * and Android version (`/debug_ramdisk` on this one, `/.magisk` elsewhere), so the
- * path is read from this process's own mount table: the entry whose fstype is
- * `magisk`. That mount point is what PRoot has to bind in — the guest's `su`
- * connects to `<mount point>/.magisk/device/socket`.
+ * Neither the `su` path nor the daemon mount point is fixed: Magisk 31 moved the
+ * binary to `/product/bin/su` (older releases use `/system/bin`, `/debug_ramdisk`),
+ * and it mounts its tmpfs wherever it likes. Both are discovered instead —
+ * mounts from this process's own mount table (fstype `magisk`), `su` by probing
+ * the candidates that table suggests plus the known historical locations.
  *
- * Availability is decided by actually running `/system/bin/su -c id`; the first
- * probe can take a while because Magisk shows its grant prompt. Run it off the
- * main thread (see RuntimePlugin).
+ * The first probe can take a while: Magisk shows its grant prompt and waits.
+ * Run it off the main thread (see RuntimePlugin).
  */
 object RootAccess {
-    /** 日志措辞用；真实路径以 [magiskMounts] 为准。 */
-    const val MAGISK_SOCKET = "/debug_ramdisk/.magisk/device/socket"
+    /** 挂载表为空时的兜底候选（按 Magisk 版本从新到旧）。 */
+    private val FALLBACK_MOUNTS = listOf("/product/bin", "/debug_ramdisk", "/system/bin", "/.magisk", "/sbin")
 
-    /** 挂载表读不出来时的兜底候选（按 Magisk 历史版本顺序）。 */
-    private val TMPFS_CANDIDATES = listOf("/debug_ramdisk", "/.magisk", "/sbin")
+    /** `su` 的历史位置；挂载表推导出来的候选排在前面。 */
+    private val FIXED_SU_PATHS = listOf(
+        "/product/bin/su",
+        "/system/bin/su",
+        "/system/xbin/su",
+        "/debug_ramdisk/su",
+        "/sbin/su",
+        "/data/adb/magisk/su",
+        "/data/adb/ksu/bin/su",
+        "/data/adb/ap/bin/su",
+    )
 
     @Volatile private var cached: Map<String, Any?>? = null
 
     private fun errnoName(e: ErrnoException): String =
         OsConstants.errnoName(e.errno) ?: "errno ${e.errno}"
 
-    /** stat() 结果 per candidate socket；SELinux 拦截时给出 errno。 */
+    /**
+     * 本进程挂载表里 fstype 为 `magisk` 的挂载点：Magisk 的 tmpfs 就在那里，
+     * daemon socket 与（新版）`su` 都在其下。
+     */
+    private fun magiskMounts(): List<String> = try {
+        File("/proc/self/mounts").readLines().mapNotNull { line ->
+            val parts = line.split(" ")
+            if (parts.getOrNull(2) == "magisk") parts.getOrNull(1)?.replace("\\040", " ") else null
+        }.distinct()
+    } catch (_: Exception) {
+        emptyList()
+    }
+
+    /** 候选 `su` 路径：挂载点下的 `su` 优先，再退固定列表。 */
+    fun suCandidates(): List<String> {
+        val mounts = magiskMounts().ifEmpty { FALLBACK_MOUNTS }
+        return (mounts.map { "$it/su" } + FIXED_SU_PATHS).distinct()
+    }
+
+    /** 实际用哪个 `su`；null 表示这台设备上没找到（未 root，或路径又变了）。 */
+    fun suPath(): String? = suCandidates().firstOrNull { path ->
+        try {
+            File(path).exists()
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun manager(): String? = when {
+        magiskMounts().isNotEmpty() -> "magisk"
+        File("/data/adb/ksu").exists() || File("/system/bin/ksud").exists() -> "kernelsu"
+        File("/data/adb/ap").exists() -> "apatch"
+        // 挂载表读不出来（受限 / 旧内核）时，能跑 su 就当 Magisk 系。
+        suPath() != null -> "magisk"
+        else -> null
+    }
+
+    /** stat() 结果 per 候选 socket；SELinux 拦截时给出 errno。 */
     private fun socketFacts(): Map<String, String> {
         val facts = mutableMapOf<String, String>()
-        for (dir in TMPFS_CANDIDATES) {
-            val path = "$dir/device/socket"
+        for (dir in (magiskMounts().ifEmpty { FALLBACK_MOUNTS })) {
+            val path = "$dir/.magisk/device/socket"
             facts[path] = try {
                 Os.stat(path); "ok"
             } catch (e: ErrnoException) {
@@ -46,69 +93,52 @@ object RootAccess {
         return facts
     }
 
-    /**
-     * 本进程挂载表里 fstype 为 `magisk` 的挂载点：Magisk 的 tmpfs 就在那里。
-     * App 进程（proot 之外）能读到自己的 /proc/self/mounts，不需要 su。
-     */
-    private fun magiskMounts(): List<String> = try {
-        File("/proc/self/mounts").readLines().mapNotNull { line ->
-            val parts = line.split(" ")
-            if (parts.getOrNull(2) == "magisk") parts.getOrNull(1)?.replace("\\040", " ") else null
-        }.distinct()
-    } catch (_: Exception) {
-        emptyList()
-    }
-
-    fun manager(): String? = when {
-        File("/system/bin/magisk").exists() -> "magisk"
-        File("/system/bin/ksud").exists() -> "kernelsu"
-        else -> null
-    }
-
     /** 只读快照，不跑 su：诊断速览用。 */
     fun status(): Map<String, Any?> = mapOf(
         "manager" to manager(),
-        "socketFacts" to socketFacts(),
+        "suPath" to suPath(),
+        "suCandidates" to suCandidates(),
         "magiskMounts" to magiskMounts(),
+        "socketFacts" to socketFacts(),
         "cached" to cached,
     )
 
     /**
-     * 跑一次 `su -c 'id; …'`：拿到 uid=0 才算可用，并从真机挂载表里找出 Magisk
-     * tmpfs 的挂载点。首次会弹 Magisk 授权并等待用户，[timeoutMs] 内没批就按失败算。
-     * 结果缓存；[force] 时重新探测。
+     * 跑一次 `su -c id`：拿到 uid=0 才算可用。首次会弹 Magisk 授权并等待用户，
+     * [timeoutMs] 内没批就按失败算。结果缓存；[force] 时重新探测。
      */
     @Synchronized
     fun probe(timeoutMs: Long = 40_000L, force: Boolean = false): Map<String, Any?> {
         cached?.let { if (!force) return it }
         val mounts = magiskMounts()
-        // 挂载点里带 .magisk 的那个才是 daemon socket 所在；取不到就按候选兜底。
-        val bindPath = mounts.firstOrNull { File(it, ".magisk").exists() }
-            ?: mounts.firstOrNull()
-            ?: TMPFS_CANDIDATES.firstOrNull { File(it).exists() }
+        val su = suPath()
 
         val facts = LinkedHashMap<String, Any?>()
         facts["manager"] = manager()
+        facts["suPath"] = su
         facts["magiskMounts"] = mounts
-        facts["bindPath"] = bindPath
-        facts["socketFacts"] = socketFacts()
 
-        val (exitOk, captured) = DshProcess.runCaptured(
-            listOf(
-                "/system/bin/su", "-c",
-                "id; echo ---; grep -E 'magisk|tmpfs' /proc/mounts",
-            ),
-            timeoutMs,
-        )
-        val out = StringBuilder(captured)
+        var suOk = false
         var suDetail: String? = null
-        var suOk = exitOk && out.contains("uid=0")
-        if (!suOk) {
-            val why = out.take(300).toString().ifBlank { "su 没有返回输出（超时、拒绝或未授权）" }
-            // 挂载点一起带上：为空说明 App 进程根本看不到 Magisk tmpfs，bind 无从谈起。
-            suDetail = "$why\nmagisk 挂载点: ${if (mounts.isEmpty()) "（App 进程看不到）" else mounts.joinToString()}"
+        if (su == null) {
+            // 路径全都对不上：说明这一版 Magisk 又把 su 挪走了，报出来。
+            // l10n:keep agent tool result
+            suDetail = "没找到 su 可执行文件。试过：${suCandidates().joinToString()}，" +
+                "以及挂载表里的 magisk 挂载点：${if (mounts.isEmpty()) "（一条也没有）" else mounts.joinToString()}"
+        } else {
+            val (exitOk, captured) = DshProcess.runCaptured(
+                listOf(su, "-c", "id"),
+                timeoutMs,
+            )
+            val out = StringBuilder(captured)
+            suOk = exitOk && out.contains("uid=0")
+            suDetail = if (suOk) {
+                "${out.lines().firstOrNull { it.startsWith("uid=") } ?: "uid=0"}（$su）"
+            } else {
+                val why = out.take(300).toString().ifBlank { "没有输出：可能是超时、被拒绝，或还没在 root 管理器里允许 DSH Go" }
+                "$su：$why"
+            }
         }
-        if (suOk) suDetail = out.lines().firstOrNull { it.startsWith("uid=") }
 
         facts["suOk"] = suOk
         facts["suDetail"] = suDetail?.take(600)
