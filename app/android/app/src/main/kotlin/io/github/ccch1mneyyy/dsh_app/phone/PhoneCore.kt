@@ -682,6 +682,8 @@ class PhoneCore(
             PhoneToolCatalog.SCREEN -> 12_000L
             PhoneToolCatalog.COLLECT -> 120_000L
             PhoneToolCatalog.HANDOFF -> 30_000L
+            // root 跑的是任意系统命令，给到 su 的超时之上（见 PhoneControl.rootExec）。
+            PhoneToolCatalog.ROOT -> 70_000L
             else -> 30_000L
         }
     }
