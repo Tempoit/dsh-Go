@@ -87,6 +87,11 @@ class DshProcess(
         check(!java.nio.file.Files.exists(pidFile.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)) { "cannot remove stale runtime pid file" }
         port = pickPort()
         val tmp = File(context.cacheDir, "proot-tmp").apply { mkdirs() }
+        if (cleanup.canPruneTemp) {
+            val reclaimed = ProotTempFiles.prune(tmp) { pid -> processReader.uid(pid) == null }
+            if (reclaimed.removed > 0) listener.onLog("[dsh-app] reclaimed ${reclaimed.removed} stale proot temporary directories", "system")
+            if (reclaimed.incomplete) listener.onLog("[dsh-app] proot temporary cleanup incomplete; retained entries for a later start", "system")
+        }
         val vars = mapOf(
             "{NATIVE_LIB_DIR}" to context.applicationInfo.nativeLibraryDir,
             "{ROOTFS}" to rootfs.canonicalPath,
@@ -368,7 +373,7 @@ class DshProcess(
     /** Reap a captured process tree before releasing #17 ownership to another launch. */
     @Synchronized fun killStrays(): Boolean = reapStrays().complete
 
-    private data class CleanupResult(val complete: Boolean, val ownedRemaining: Boolean)
+    private data class CleanupResult(val complete: Boolean, val ownedRemaining: Boolean, val canPruneTemp: Boolean = false)
 
     /** Unknown ambient processes are not proof of ownership. The default-mode
      * startup policy may continue after reaping every captured identity, while
@@ -389,7 +394,12 @@ class DshProcess(
             val owned = RuntimeProcessOwnership.owned(snapshot.records, roots, myPid, cleanupKnown)
             owned.forEach { cleanupKnown[it.pid] = it.started }
             val ownedRemaining = owned.isNotEmpty() || cleanupKnown.isNotEmpty()
-            if (!ownedRemaining && snapshot.observed) return CleanupResult(true, false)
+            if (!ownedRemaining && snapshot.observed) {
+                // This cache is shared across rootfs instances. Another engine may still use its glue.
+                val temp = File(context.cacheDir, "proot-tmp").absolutePath
+                val idle = snapshot.records.none { it.proot || it.marker != null || RuntimeProcessOwnership.within(it.cwd, temp) }
+                return CleanupResult(true, false, canPruneTemp = idle)
+            }
             owned.filter { it.proot }.forEach { signalOwned(it, if (first) OsConstants.SIGQUIT else OsConstants.SIGKILL) }
             owned.filterNot { it.proot }.forEach { signalOwned(it, OsConstants.SIGKILL) }
             first = false
