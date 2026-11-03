@@ -149,18 +149,36 @@ object RootAccess {
             suDetail = if (working != null) {
                 "uid=0（$working）"
             } else {
-                attempts.entries.joinToString("\n") { (path, why) -> "$path：$why" }
+                val lines = attempts.entries.joinToString("\n") { (path, why) -> "$path：$why" }
+                val denied = attempts.values.any { it.contains("denied", ignoreCase = true) }
+                if (denied) "$lines\n${grantHint()}" else lines
             }
         }
 
         facts["suPath"] = working
         facts["suAttempts"] = attempts
         facts["suOk"] = working != null
-        facts["suDetail"] = suDetail?.take(600)
+        facts["suDetail"] = suDetail?.take(1200)
         facts["available"] = working != null
         val result = facts.toMap()
         cached = result
         return result
+    }
+
+    /**
+     * 真机结论（Magisk 31.1）：`policies` 表里没有这个 uid 的记录时，它不弹授权框、
+     * 直接 `Permission denied`。给一条能直接粘到 root 终端补救的命令，省掉一轮猜。
+     */
+    // l10n:keep agent tool result
+    private fun grantHint(): String {
+        val uid = try {
+            android.os.Process.myUid()
+        } catch (_: Throwable) {
+            -1
+        }
+        return "Magisk 31 查不到 uid=$uid 的授权记录时不弹窗、直接拒绝。在能拿到 root 的终端执行：" +
+            "magisk --sqlite \"INSERT OR REPLACE INTO policies (uid,policy,until,logging,notification) " +
+            "VALUES ($uid,2,0,1,1)\"，然后重新打开本开关。"
     }
 
     /** 最近一次探测的说明（uid 行或失败原因），给引擎日志用。 */
