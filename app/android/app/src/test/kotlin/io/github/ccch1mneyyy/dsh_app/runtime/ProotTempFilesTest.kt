@@ -4,6 +4,7 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
+import java.nio.file.Paths
 import java.nio.file.attribute.BasicFileAttributes
 import org.junit.Assert.*
 import org.junit.Rule
@@ -14,7 +15,7 @@ class ProotTempFilesTest {
     @get:Rule val fixture = TemporaryFolder()
 
     private fun directory(path: Path): Path = Files.createDirectories(path)
-    private fun file(path: Path): Path = Files.writeString(path, "keep")
+    private fun file(path: Path): Path = Files.write(path, "keep".toByteArray())
     private fun exists(path: Path) = Files.exists(path, NOFOLLOW_LINKS)
     private fun store(): Path = directory(fixture.root.toPath().resolve("cache/proot-tmp"))
 
@@ -50,12 +51,12 @@ class ProotTempFilesTest {
 
     @Test fun usesRealProcAbsenceRatherThanAnUnreadableStatFile() {
         val root = store()
-        val livePid = ProcessHandle.current().pid().toInt()
+        val livePid = java.lang.management.ManagementFactory.getRuntimeMXBean().name.substringBefore('@').toInt()
         val live = directory(root.resolve("proot-$livePid-abcdef"))
         val dead = directory(root.resolve("proot-2147483647-abcdef"))
         val result = ProotTempFiles.prune(root.toFile()) { pid ->
             try {
-                Files.readAttributes(Path.of("/proc/$pid"), BasicFileAttributes::class.java, NOFOLLOW_LINKS)
+                Files.readAttributes(Paths.get("/proc/$pid"), BasicFileAttributes::class.java, NOFOLLOW_LINKS)
                 false
             } catch (_: java.nio.file.NoSuchFileException) { true }
         }
@@ -75,7 +76,7 @@ class ProotTempFilesTest {
         Files.createSymbolicLink(stale.resolve("dangling"), outside.resolve("missing"))
         assertEquals(ProotTempFiles.Result(1, false), ProotTempFiles.prune(root.toFile()) { true })
         assertTrue(exists(linked))
-        assertEquals("keep", Files.readString(sentinel))
+        assertEquals("keep", String(Files.readAllBytes(sentinel)))
         assertFalse(exists(stale))
     }
 
@@ -87,7 +88,7 @@ class ProotTempFilesTest {
         assertEquals(0, ProotTempFiles.prune(storeLink.toFile()) { true }.removed)
         val parentLink = Files.createSymbolicLink(fixture.root.toPath().resolve("cache-link"), outside.parent.parent)
         assertEquals(0, ProotTempFiles.prune(parentLink.resolve("proot-tmp").toFile()) { true }.removed)
-        assertEquals("keep", Files.readString(sentinel))
+        assertEquals("keep", String(Files.readAllBytes(sentinel)))
     }
 
     @Test fun aCandidateReplacedByASymlinkDuringThePidCheckCannotEscape() {
@@ -102,7 +103,7 @@ class ProotTempFilesTest {
         }
         assertEquals(0, result.removed)
         assertTrue(Files.isSymbolicLink(stale))
-        assertEquals("keep", Files.readString(sentinel))
+        assertEquals("keep", String(Files.readAllBytes(sentinel)))
     }
 
     @Test fun replacingTheStorePathDoesNotRedirectAnAlreadyOpenedDirectory() {
@@ -118,7 +119,7 @@ class ProotTempFilesTest {
         }
         assertEquals(ProotTempFiles.Result(1, false), result)
         assertFalse(exists(moved.resolve("proot-42-abcdef")))
-        assertEquals("keep", Files.readString(sentinel))
+        assertEquals("keep", String(Files.readAllBytes(sentinel)))
     }
 
     @Test fun aDisappearingCandidateAndMissingStoreAreHarmless() {
