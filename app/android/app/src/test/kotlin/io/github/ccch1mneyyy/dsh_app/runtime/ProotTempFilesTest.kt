@@ -51,7 +51,9 @@ class ProotTempFilesTest {
 
     @Test fun usesRealProcAbsenceRatherThanAnUnreadableStatFile() {
         val root = store()
-        val livePid = java.lang.management.ManagementFactory.getRuntimeMXBean().name.substringBefore('@').toInt()
+        // 单测按 android.jar 编译，没有 java.lang.management/ProcessHandle；
+        // /proc/self 是指向本进程 pid 的链接，readlink 就能拿到，且一定存在。
+        val livePid = Files.readSymbolicLink(Paths.get("/proc/self")).fileName.toString().toInt()
         val live = directory(root.resolve("proot-$livePid-abcdef"))
         val dead = directory(root.resolve("proot-2147483647-abcdef"))
         val result = ProotTempFiles.prune(root.toFile()) { pid ->
