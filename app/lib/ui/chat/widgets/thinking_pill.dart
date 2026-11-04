@@ -46,7 +46,13 @@ import 'stream_row.dart';
 const _brandBlue = Color(0xFF4D6BFE);
 
 class ThinkingPill extends StatefulWidget {
-  const ThinkingPill({super.key, required this.reasoning, this.active = false, this.streaming = false});
+  const ThinkingPill({
+    super.key,
+    required this.reasoning,
+    this.active = false,
+    this.streaming = false,
+    this.growIn = false,
+  });
 
   final String reasoning;
 
@@ -55,6 +61,10 @@ class ThinkingPill extends StatefulWidget {
 
   /// 这条回复还在流式输出:一轮(streaming 结束)时把展开的全文收回去。
   final bool streaming;
+
+  /// 接在等待的三个点后面出现:三行实时窗口从 0 长出来,而不是一帧多出来 ——
+  /// 这一行的高度三个点已经占好了,窗口没法提前占。
+  final bool growIn;
 
   @override
   State<ThinkingPill> createState() => _ThinkingPillState();
@@ -78,6 +88,18 @@ class _ThinkingPillState extends State<ThinkingPill> {
 
   /// 译文与"看译文还是原文":收起再展开也还在。
   final _translation = _TranslationHolder();
+
+  /// 第一帧窗口先关着,下一帧打开,[ExpandReveal] 才有得展开。
+  late bool _windowHeld = widget.growIn;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!_windowHeld) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _windowHeld = false);
+    });
+  }
 
   @override
   void didUpdateWidget(ThinkingPill oldWidget) {
@@ -115,13 +137,16 @@ class _ThinkingPillState extends State<ThinkingPill> {
               shape: Squircle.border(StreamRow.lead * 0.32),
             ),
             child: Center(
-              child: ThinkGlyph(size: 15, color: brand, spinning: active),
+              // 自己一层:转动只重绘这个图形,不重绘整行。
+              child: RepaintBoundary(
+                child: ThinkGlyph(size: 15, color: brand, spinning: active),
+              ),
             ),
           ),
         ),
         const SizedBox(width: StreamRow.gap),
         // 标签直接换字,不做淡入淡出:两个词叠在同一个位置上闪一下更难看。
-        Text(active ? l10n.chatThinkingActive : l10n.chatThinking, style: StreamRow.label(context)),
+        ThinkingLabel(active ? l10n.chatThinkingActive : l10n.chatThinking, active: active),
         if (preview.isNotEmpty) ...[
           const StreamDot(),
           Expanded(
@@ -183,8 +208,117 @@ class _ThinkingPillState extends State<ThinkingPill> {
           child: StreamRowFrame(onTap: () => setState(() => _expanded = !_expanded), child: header),
         ),
         // 一个槽:思考中是实时窗口,点开换成全文,一轮结束收起。
-        ExpandReveal(open: open, child: _body ?? const SizedBox.shrink()),
+        ExpandReveal(open: open && !_windowHeld, child: _body ?? const SizedBox.shrink()),
       ],
+    );
+  }
+}
+
+/// 思考行的标签。思考中一道亮度慢慢扫过文字:只在标签的灰和正文的深之间走,
+/// 不换颜色、不位移。
+///
+/// 节奏照 OpenAI 公开的 Codex 说明(和它的桌面端一致):开始思考 [lead] 后第一次,
+/// 每次扫 [sweep],每 [period] 一次。其余时间控制器是停的,标签不重绘,也不挂
+/// [ShaderMask]。屏幕上同一时刻只扫一条:后开始思考的那条接过去。系统关了动画
+/// 就是静止的字。
+///
+/// 一起动的还有转圈的图形和滚动的实时窗口。三样同时抢眼就廉价了:窗口是信息,
+/// 不能动它;这道扫光是这一行的主角;图形退一步,转得很慢(见 [ThinkGlyph])。
+class ThinkingLabel extends StatefulWidget {
+  const ThinkingLabel(this.text, {super.key, this.active = false});
+
+  final String text;
+  final bool active;
+
+  static const lead = Duration(milliseconds: 600);
+  static const sweep = Duration(seconds: 1);
+  static const period = Duration(seconds: 4);
+
+  @override
+  State<ThinkingLabel> createState() => _ThinkingLabelState();
+}
+
+class _ThinkingLabelState extends State<ThinkingLabel> with SingleTickerProviderStateMixin {
+  /// 现在归谁扫。
+  static _ThinkingLabelState? _owner;
+
+  AnimationController? _sweep;
+  Timer? _timer;
+
+  void _sync() {
+    final run = widget.active && !AppMotion.reduced(context);
+    if (run == (_timer != null)) return;
+    if (run) {
+      _sweep ??= AnimationController(vsync: this, duration: ThinkingLabel.sweep);
+      _timer = Timer(ThinkingLabel.lead, () {
+        _timer = Timer.periodic(ThinkingLabel.period, (_) => _play());
+        // 在计时器里接手,不在 build 里:停别人的控制器会标脏别人的子树。
+        _owner?._sweep?.reset();
+        _owner = this;
+        _play();
+      });
+    } else {
+      _timer?.cancel();
+      _timer = null;
+      _sweep?.reset();
+      _release();
+    }
+  }
+
+  void _play() {
+    // 接手的那条结束了,轮到还在思考的这条。
+    _owner ??= this;
+    if (identical(_owner, this)) _sweep!.forward(from: 0);
+  }
+
+  void _release() {
+    if (identical(_owner, this)) _owner = null;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _sync();
+  }
+
+  @override
+  void didUpdateWidget(ThinkingLabel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.active != widget.active) _sync();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _sweep?.dispose();
+    _release();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final style = StreamRow.label(context);
+    final label = Text(widget.text, style: style);
+    final sweep = _sweep;
+    if (sweep == null || _timer == null) return label;
+    final muted = style?.color ?? Theme.of(context).colorScheme.onSurfaceVariant;
+    final bright = Theme.of(context).colorScheme.onSurface;
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: sweep,
+        child: label,
+        builder: (context, child) {
+          if (!sweep.isAnimating) return child!;
+          return ShaderMask(
+            blendMode: BlendMode.srcIn,
+            // 亮带和标签一样宽,从标签左外走到右外:两头都是静止时的颜色,起止不跳。
+            shaderCallback: (rect) =>
+                LinearGradient(colors: [muted, bright, muted])
+                    .createShader(Rect.fromLTWH((2 * sweep.value - 1) * rect.width, 0, rect.width, rect.height)),
+            child: child,
+          );
+        },
+      ),
     );
   }
 }
@@ -249,12 +383,15 @@ class ThinkingTicker extends StatelessWidget {
           textDirection: Directionality.of(context),
           textScaler: scaler,
         )..layout(maxWidth: width);
+        final textHeight = painter.height;
+        // 每次发布都量一遍:排版对象持有原生资源,不能等 GC。
+        painter.dispose();
         final window = lineHeight * ThinkingTicker.rows;
         // 恒高三行:流式期间块高不变,列表就不会一行一行地追底,快写时也不抖。
         final height = window;
         // 多出来的部分往上推,露出来的永远是最后三行。写满一行时目标只
         // 挪一行,由 AnimatedContainer 平滑推上去 —— 不换内容、不叠字。
-        final shift = (painter.height - window).clamp(0.0, double.infinity);
+        final shift = (textHeight - window).clamp(0.0, double.infinity);
         return SizedBox(
           width: width,
           height: height,

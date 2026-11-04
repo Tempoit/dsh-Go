@@ -13,7 +13,6 @@ import '../../state/sessions_state.dart';
 import '../common/app_sheet.dart';
 import '../common/empty_view.dart';
 import '../common/fade_in.dart';
-import '../common/pressable.dart';
 import '../common/side_insets.dart';
 import '../common/status_dot.dart';
 import '../theme/app_icons.dart';
@@ -49,28 +48,26 @@ class SessionSearchBar extends ConsumerWidget {
         label: l10n.shellSearchChats,
         onTap: () => _open(context, ref),
         excludeSemantics: true,
-        child: Pressable(
-          child: GlassSurface(
-            tier: GlassTier.pill,
-            stadium: true,
-            onTap: () => _open(context, ref),
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 40),
-              child: Row(
-                children: [
-                  Icon(AppIcons.search, size: 20, color: tertiary),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      l10n.shellSearchChats,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodyMedium?.copyWith(color: tertiary),
-                    ),
+        child: GlassSurface(
+          tier: GlassTier.pill,
+          stadium: true,
+          onTap: () => _open(context, ref),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 40),
+            child: Row(
+              children: [
+                Icon(AppIcons.search, size: 20, color: tertiary),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    l10n.shellSearchChats,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium?.copyWith(color: tertiary),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),

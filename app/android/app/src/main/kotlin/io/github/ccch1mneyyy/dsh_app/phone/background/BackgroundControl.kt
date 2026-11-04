@@ -60,10 +60,7 @@ class BackgroundControl private constructor(context: Context) {
     private val endedTaskId = AtomicLong(Long.MIN_VALUE)
 
     // Cached probe results (null = not probed this session).
-    @Volatile private var trustedDisplayOk: Boolean? = null
-    @Volatile private var injectOk: Boolean? = null
-    @Volatile private var injectError: String? = null
-    @Volatile private var gateDetail: String? = null
+    private val gate = BackgroundGateState()
 
     private fun notifyChanged() = runCatching { onStatusChanged() }
 
@@ -77,6 +74,7 @@ class BackgroundControl private constructor(context: Context) {
         val shizukuStatus = shizuku.status()
         val adbStatus = adb.status()
         val rootStatus = root.status()
+        val cached = gate.snapshot
         return mapOf(
             "mode" to PrivilegedPathPolicy.legacyMode(mode),
             "ready" to PrivilegedPathPolicy.legacyReady(mode, reason == null),
@@ -84,8 +82,8 @@ class BackgroundControl private constructor(context: Context) {
                 mode, reason, AppStrings.get(app, R.string.background_root_legacy_client),
             ),
             "androidOk" to androidOk(),
-            "trustedDisplay" to trustedDisplayOk,
-            "inject" to injectOk,
+            "trustedDisplay" to cached.trustedDisplayOk,
+            "inject" to cached.injectOk,
             "shizuku" to shizukuStatus.map(),
             "adb" to adbStatus.map(),
             "root" to rootStatus.map(),
@@ -120,14 +118,21 @@ class BackgroundControl private constructor(context: Context) {
         else -> AppStrings.get(app, R.string.background_unknown_mode)
     }
 
-    private fun gateReason(): String? = when {
-        trustedDisplayOk == false -> Reasons.withDetail(UNSUPPORTED, gateDetail)
-        injectOk == false -> Reasons.withDetail(AppStrings.get(app, when (injectError) {
-            "inputApiUnavailable" -> R.string.background_input_api_unavailable
-            "systemOperationDenied" -> R.string.background_input_permission_denied
-            else -> R.string.background_injection_denied
-        }), gateDetail)
-        else -> null
+    private fun gateReason(): String? {
+        val cached = gate.snapshot
+        return when {
+            cached.trustedDisplayOk == false -> Reasons.withDetail(UNSUPPORTED, cached.gateDetail)
+            cached.injectOk == false -> Reasons.withDetail(AppStrings.get(app, when (cached.injectError) {
+                "inputApiUnavailable" -> R.string.background_input_api_unavailable
+                "systemOperationDenied" -> R.string.background_input_permission_denied
+                "inputWindowNotReady" -> R.string.background_input_window_not_ready
+                "inputUnconfirmed" -> R.string.background_input_unconfirmed
+                "inputProbeCleanupFailed" -> R.string.background_input_cleanup_failed
+                "cancelled" -> R.string.background_input_cancelled
+                else -> R.string.background_injection_denied
+            }), cached.gateDetail)
+            else -> null
+        }
     }
 
     private fun rootReason(): String? {
@@ -162,10 +167,7 @@ class BackgroundControl private constructor(context: Context) {
             // prepared ahead belongs to the mode being enabled. Off closes everything.
             val leaving = if (mode == "sui") "shizuku" else mode
             disconnectAll { selected == "off" || it == leaving }
-            trustedDisplayOk = null
-            injectOk = null
-            injectError = null
-            gateDetail = null
+            gate.reset()
         }
         synchronized(keepGuard) { keep.select(selected); rootSelected = selected == "root" }
         val cleared = synchronized(preferenceGuard) {
@@ -379,11 +381,14 @@ class BackgroundControl private constructor(context: Context) {
         val response = runCatching {
             ch.execute(Bundle().apply { putString(Proto.OP, Proto.OP_GATE); putString(Proto.OWNER, "__gate__") })
         }.getOrNull() ?: return AppStrings.get(app, R.string.background_no_response)
-        val ok = response.getBoolean(Proto.OK)
-        trustedDisplayOk = ok
-        injectOk = if (response.containsKey(Proto.INJECT_OK)) response.getBoolean(Proto.INJECT_OK) else null
-        injectError = if (injectOk == false) response.getString(Proto.INJECT_ERROR) else null
-        gateDetail = response.getString(Proto.ERROR_DETAIL)
+        val completed = gate.update(
+            ok = response.getBoolean(Proto.OK),
+            error = response.getString(Proto.ERROR),
+            injectOk = if (response.containsKey(Proto.INJECT_OK)) response.getBoolean(Proto.INJECT_OK) else null,
+            injectError = response.getString(Proto.INJECT_ERROR),
+            detail = response.getString(Proto.ERROR_DETAIL),
+        )
+        if (!completed) return AppStrings.get(app, R.string.background_input_probe_busy)
         notifyChanged()
         return gateReason()
     }

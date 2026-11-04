@@ -33,7 +33,11 @@ async function fixture(t, profile, behavior = {}) {
     if (req.url === '/original.mp4' || req.url === '/original.png') { res.end(req.url.endsWith('mp4') ? MP4 : PNG); return; }
     const creating = req.method === 'POST' && !req.url.endsWith('/cancel') && !req.url.endsWith('/status');
     if (creating && behavior.drop) { req.socket.destroy(); return; }
-    if (creating && behavior.stall) return;
+    if (creating && behavior.stall) {
+      // Time out only after submission, not during the preceding filesystem preparation.
+      controller.abort(new DOMException('deadline', 'TimeoutError'));
+      return;
+    }
     if (creating && behavior.reject) { res.writeHead(behavior.reject); res.end('{}'); return; }
     if (req.method === 'DELETE' || req.url.endsWith('/cancel')) { state = 'cancelled'; res.end('{}'); return; }
     const url = 'https://result.example/original.' + (profile.includes('video') ? 'mp4' : 'png');
@@ -106,7 +110,6 @@ for (const profile of ['openai-gpt-image', 'ark-image', 'ali-wan-image', 'silico
   });
   test(`${profile}: create timeout has an uncertain submission outcome`, async t => {
     const f = await fixture(t, profile, { stall: true });
-    f.context.signal = AbortSignal.timeout(30);
     await assert.rejects(generateMedia(request(profile), f.context), { code: 'submission_unknown' });
     assert.equal(f.wires.length, 1);
   });
@@ -158,7 +161,7 @@ for (const profile of ['ark-video', 'ali-video', 'silicon-video']) {
     assert.equal(f.wires.filter(w => w.method === 'DELETE' || w.path.endsWith('/cancel')).length, 0);
   });
   test(`${profile}: create timeout is unknown and not re-submitted`, async t => {
-    const f = await fixture(t, profile, { stall: true }); f.context.signal = AbortSignal.timeout(30);
+    const f = await fixture(t, profile, { stall: true });
     await assert.rejects(generateMedia(request(profile), f.context), { code: 'submission_unknown' }); assert.equal(f.wires.length, 1);
   });
 }

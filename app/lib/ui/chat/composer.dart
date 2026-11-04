@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 
 import '../../l10n/l10n.dart';
 import '../common/expand_reveal.dart';
+import '../common/smooth_size.dart';
 import '../pets/pet_perch.dart';
 import '../settings/voice_settings_page.dart';
 import '../theme/app_icons.dart';
@@ -431,7 +432,14 @@ class _ComposerState extends State<Composer> {
                   open: widget.tray != null,
                   child: Padding(padding: const EdgeInsets.fromLTRB(4, 0, 4, _keyGap), child: _tray),
                 ),
-                row,
+                // A new line grows the glass instead of popping it: anchored
+                // at the bottom, where the caret and the keys stay put.
+                SmoothSize(
+                  duration: AppMotion.of(context, AppMotion.quick),
+                  curve: AppMotion.std,
+                  alignment: Alignment.bottomCenter,
+                  child: row,
+                ),
               ],
             );
             // Dictating: the pet steps away from the voice controls.
@@ -543,6 +551,7 @@ class _SendButtonState extends State<_SendButton> {
             decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
             child: AnimatedSwitcher(
               duration: AppMotion.of(context, AppMotion.quick),
+              switchInCurve: AppMotion.enter,
               transitionBuilder: (child, anim) => ScaleTransition(scale: anim, child: child),
               child: widget.busy
                   ? Padding(

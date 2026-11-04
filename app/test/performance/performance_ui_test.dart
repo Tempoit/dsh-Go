@@ -11,6 +11,7 @@ import 'package:dsh_app/pets/pet_pack.dart';
 import 'package:dsh_app/pets/pet_sheets.dart';
 import 'package:dsh_app/state/locale_state.dart';
 import 'package:dsh_app/state/ui_mode_state.dart';
+import 'package:dsh_app/ui/common/app_sheet.dart';
 import 'package:dsh_app/ui/common/display_image.dart';
 import 'package:dsh_app/ui/onboarding/runtime_choice.dart';
 import 'package:dsh_app/runtime/local_footprint.dart';
@@ -156,6 +157,121 @@ void main() {
     final context = tester.element(find.byKey(const ValueKey('system-probe')));
     expect(AppMotion.reduced(context), isTrue);
     expect(DshSurfaces.of(context).blurEnabled, isTrue);
+  });
+
+  testWidgets('remove animations turned on with the app open takes the transition off pages', (tester) async {
+    window(tester);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    SharedPreferences.setMockInitialValues({'performance.mode': 'full'});
+    await mount(
+      tester,
+      Builder(
+        builder: (context) => Scaffold(
+          body: Center(
+            child: TextButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const Scaffold(body: Center(child: Text('page'))),
+                ),
+              ),
+              child: const Text('push'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(AppMotion.reduced(tester.element(find.text('push'))), isFalse);
+
+    tester.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(disableAnimations: true);
+    await tester.pump();
+    expect(AppMotion.reduced(tester.element(find.text('push'))), isTrue);
+    await tester.tap(find.text('push'));
+    await tester.pump();
+    expect(tester.getCenter(find.text('page')).dx, 195);
+    Navigator.of(tester.element(find.text('page'))).pop();
+    await tester.pumpAndSettle();
+
+    // And off again: the transition is back.
+    tester.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures();
+    await tester.pump();
+    expect(AppMotion.reduced(tester.element(find.text('push'))), isFalse);
+    await tester.tap(find.text('push'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(tester.getCenter(find.text('page')).dx, greaterThan(195));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('the animation switch takes the transition off pages and sheets', (tester) async {
+    window(tester);
+    SharedPreferences.setMockInitialValues({'performance.mode': 'full'});
+    final c = await mount(
+      tester,
+      Builder(
+        builder: (context) => Scaffold(
+          body: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const Scaffold(body: Center(child: Text('page'))),
+                    ),
+                  ),
+                  child: const Text('push'),
+                ),
+                TextButton(
+                  onPressed: () => showAppSheet<void>(context, builder: (_) => const Text('sheet')),
+                  child: const Text('open'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    NavigatorState navigator() => tester.state<NavigatorState>(find.byType(Navigator).first);
+
+    // On: both take their time.
+    await tester.tap(find.text('push'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(tester.getCenter(find.text('page')).dx, greaterThan(195));
+    await tester.pumpAndSettle();
+    navigator().pop();
+    await tester.pump();
+    expect(find.text('page'), findsOneWidget, reason: 'still on its way out');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('open'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+    final rising = tester.getTopLeft(find.text('sheet')).dy;
+    await tester.pumpAndSettle();
+    final resting = tester.getTopLeft(find.text('sheet')).dy;
+    expect(rising, greaterThan(resting));
+    navigator().pop();
+    await tester.pumpAndSettle();
+
+    // Off, the switch from the settings page: the first frame is the last one.
+    await c.read(performancePrefsProvider.notifier).setAnimations(false);
+    await tester.pumpAndSettle();
+    expect(AppMotion.reduced(tester.element(find.text('push'))), isTrue);
+    await tester.tap(find.text('push'));
+    await tester.pump();
+    expect(tester.getCenter(find.text('page')).dx, 195);
+    navigator().pop();
+    await tester.pump();
+    expect(find.text('page'), findsNothing);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('open'));
+    await tester.pump();
+    expect(tester.getTopLeft(find.text('sheet')).dy, resting);
+    navigator().pop();
+    await tester.pump();
+    expect(find.text('sheet'), findsNothing);
   });
 
   for (final brightness in Brightness.values) {

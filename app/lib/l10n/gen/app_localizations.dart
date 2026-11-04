@@ -12602,6 +12602,18 @@ abstract class L10n {
   /// **'对话'**
   String get fileChatFallback;
 
+  /// No description provided for @hostDetailsConnectionType.
+  ///
+  /// In zh, this message translates to:
+  /// **'连接方式'**
+  String get hostDetailsConnectionType;
+
+  /// No description provided for @hostDetailsSshNetworkHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'通过 SSH 隧道连接。此连接不提供 LAN / P2P 路径检测或延迟测量。'**
+  String get hostDetailsSshNetworkHint;
+
   /// No description provided for @hubSessionDetails.
   ///
   /// In zh, this message translates to:
@@ -13513,6 +13525,30 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'关于 DSH Go'**
   String get hubAbout;
+
+  /// No description provided for @hubAboutAuthor.
+  ///
+  /// In zh, this message translates to:
+  /// **'DSH Go 原作者'**
+  String get hubAboutAuthor;
+
+  /// No description provided for @hubAboutBilibili.
+  ///
+  /// In zh, this message translates to:
+  /// **'B站主页'**
+  String get hubAboutBilibili;
+
+  /// No description provided for @hubAboutX.
+  ///
+  /// In zh, this message translates to:
+  /// **'X 主页'**
+  String get hubAboutX;
+
+  /// No description provided for @hubAboutGithub.
+  ///
+  /// In zh, this message translates to:
+  /// **'GitHub 主页'**
+  String get hubAboutGithub;
 
   /// No description provided for @hubAboutNewVersion.
   ///
@@ -24643,6 +24679,48 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'最近观测'**
   String get remoteNetworkObservedAt;
+
+  /// No description provided for @stateWorkspaceFilesHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'已上传到当前工作区的文件：'**
+  String get stateWorkspaceFilesHint;
+
+  /// No description provided for @stateRemoteUploadNameInvalid.
+  ///
+  /// In zh, this message translates to:
+  /// **'文件名不受主机支持，请去掉特殊字符或缩短后再试'**
+  String get stateRemoteUploadNameInvalid;
+
+  /// No description provided for @stateRemoteUploadWorkspaceUnavailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前对话没有可写的工作目录'**
+  String get stateRemoteUploadWorkspaceUnavailable;
+
+  /// No description provided for @stateRemoteUploadWorkspaceChanged.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作目录已变化，请确认后重新上传'**
+  String get stateRemoteUploadWorkspaceChanged;
+
+  /// No description provided for @stateRemoteUploadLimit.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机拒绝了上传，请检查文件大小或稍后重试'**
+  String get stateRemoteUploadLimit;
+
+  /// No description provided for @stateRemoteUploadUnsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台主机不支持文件上传，请更新主机上的 Remote 插件后重连'**
+  String get stateRemoteUploadUnsupported;
+
+  /// No description provided for @stateRemoteUploadTooLarge.
+  ///
+  /// In zh, this message translates to:
+  /// **'文件超过远程上传协议的大小上限'**
+  String get stateRemoteUploadTooLarge;
 
   /// No description provided for @riskDontShowAgain.
   ///

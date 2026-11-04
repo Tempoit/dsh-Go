@@ -200,7 +200,19 @@ class _HomeShellState extends ConsumerState<HomeShell> with TickerProviderStateM
   /// [velocity]: pixels a second towards fully open.
   void _onDragEnd(AnimationController side, double width, double velocity) {
     if (velocity.abs() >= kMinFlingVelocity && width > 0) {
-      side.fling(velocity: velocity / width);
+      final target = velocity > 0 ? 1.0 : 0.0;
+      if (AppMotion.reduced(context)) {
+        side.value = target;
+        return;
+      }
+      // Not `fling`, which refuses a spring with any bounce. The controller's
+      // bounds clip it: the bounce shapes the arrival, nothing goes past the edge.
+      final spring = AppMotion.settle(AppMotion.flingSpring, side.value, target, velocity / width, landing: false);
+      if (velocity > 0) {
+        side.animateWith(spring);
+      } else {
+        side.animateBackWith(spring);
+      }
       return;
     }
     if (side.value >= 0.5) {

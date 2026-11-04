@@ -228,6 +228,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     _draftScope = Object();
     _creating = null;
     _syncWait = null;
+    _composerToastWait?.cancel();
     if (_voice.active) unawaited(_voice.cancel());
     _mentions.dismiss();
     _saveDraft();
@@ -329,25 +330,34 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     if (insert.skill case final name?) _handedSkills.add(name);
     _input.value = insertComposerToken(_input.value, insert.token);
     _focus.requestFocus();
-    showComposerToast(context, composerInsertedText, composerHeight: _veilHeight.value + _ChatLayout.overlap);
+    _composerToast(composerInsertedText);
   }
 
-  /// A toast from the list (a fork's 「返回原对话」): above the composer, once
-  /// the frame has laid out whatever just went into it (编辑后重发's text).
+  /// A toast about the composer (a fork's 「返回原对话」, an inserted skill): above
+  /// it, once the frame has laid out whatever just went into it (编辑后重发's text)
+  /// and the capsule has finished growing to it.
   void _composerToast(String message, {String? actionLabel, VoidCallback? onAction}) {
+    void show() {
+      if (!mounted) return;
+      showComposerToast(
+        context,
+        message,
+        composerHeight: _veilHeight.value + _ChatLayout.overlap,
+        actionLabel: actionLabel,
+        onAction: onAction,
+      );
+    }
+
     WidgetsBinding.instance
       ..addPostFrameCallback((_) {
         if (!mounted) return;
-        showComposerToast(
-          context,
-          message,
-          composerHeight: _veilHeight.value + _ChatLayout.overlap,
-          actionLabel: actionLabel,
-          onAction: onAction,
-        );
+        _composerToastWait?.cancel();
+        _composerToastWait = Timer(AppMotion.of(context, AppMotion.quick), show);
       })
       ..ensureVisualUpdate();
   }
+
+  Timer? _composerToastWait;
 
   @override
   void dispose() {
@@ -357,6 +367,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     _draftScope = Object();
     _creating = null;
     _syncWait = null;
+    _composerToastWait?.cancel();
     _input.removeListener(_saveDraft);
     _mentions.dispose();
     _voice.removeListener(_reportVoice);
@@ -803,8 +814,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     try {
       final choice = await showPlusPanel(
         context,
-        // DSH Remote stages no files: photos only.
-        files: client?.supportsEndpoint('fileUploads/upload') ?? true,
+        files: canStageFiles(ref.read(activeConnectionProvider).value, ref.read(activeHostProvider)),
         sessionId: ref.read(currentSessionProvider),
         generate: ref.read(mediaPluginProvider) != MediaPluginState.absent,
       );
@@ -824,10 +834,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         picked = switch (source) {
           AttachSource.gallery => PickedAttachments(await picker.pickImages(limit: room)),
           AttachSource.camera => PickedAttachments([?await picker.takePhoto()]),
-          AttachSource.files => await picker.pickFiles(
-            limit: room,
-            heldBytes: totalAttachmentBytes(_drafts),
-          ),
+          AttachSource.files => await picker.pickFiles(limit: room, heldBytes: totalAttachmentBytes(_drafts)),
         };
       } on PlatformException catch (e) {
         if (!ownsDraft()) return;

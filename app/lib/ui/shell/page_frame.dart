@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../l10n/l10n.dart';
-import '../common/pressable.dart';
 import '../common/ui_trace.dart';
 import '../common/side_insets.dart';
 import '../settings/index/spot_anchor.dart' show seekSpot;
@@ -308,7 +307,6 @@ class GlassIconButton extends StatelessWidget {
         ),
       ),
     );
-    button = Pressable(enabled: enabled, child: button);
     if (badge case final badge?) {
       button = Stack(
         clipBehavior: Clip.none,

@@ -45,7 +45,9 @@ Frees up storage. Chats, workspaces, plugins, settings, interface settings and s
 
 ## Switch hosts
 
-Open the chat list and tap the current host at the bottom to open **Switch host**, then choose **This phone** or a remote host. With no remote hosts yet, tap **Connect a computer or server**; otherwise tap **Manage remote hosts**.
+Open the chat list and tap the current host's name at the bottom to open **Switch host**, then choose **This phone** or a remote host. With no remote hosts yet, tap **Connect a computer or server**; otherwise tap **Manage remote hosts**.
+
+Tap the icon to the left of the host name for details: remote hosts show their name, connection status and current network path, with an on-demand latency measurement where supported. For this phone, it opens **Local engine**. The host name and dropdown arrow still switch hosts.
 
 <!-- nav: remoteSwitchHost,remoteManageHosts -->
 `Switch host › Manage remote hosts` · [Open](dshgo://open/remote)

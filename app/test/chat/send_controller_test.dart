@@ -29,8 +29,10 @@ class _FakeClient extends DshClient {
   /// Refuse inline images like DSH does for a text-only model (V4 Pro).
   bool textOnlyModel = false;
 
-  /// False like DSH Remote, which stages no files.
+  /// Receipt uploads are unavailable on DSH Remote.
   bool uploadsAllowed = true;
+  bool workspaceUploadsAllowed = false;
+  Object? uploadError;
   Object? promptError;
   Object? cancelError;
   Object? responseError;
@@ -40,6 +42,16 @@ class _FakeClient extends DshClient {
 
   @override
   bool supportsEndpoint(String endpoint) => endpoint != 'fileUploads/upload' || uploadsAllowed;
+
+  @override
+  bool get supportsFileUpload => super.supportsFileUpload || workspaceUploadsAllowed;
+
+  @override
+  Future<WorkspaceUploadedFile> uploadWorkspaceFile(String sessionId, List<int> bytes, {required String name}) async {
+    calls.add('workspace:$name');
+    if (uploadError case final error?) throw error;
+    return WorkspaceUploadedFile(name: name, path: './$name', bytes: bytes.length);
+  }
 
   @override
   Stream<DshEvent> watch(String sessionId, {WatchOptions options = const WatchOptions()}) => events.stream;
@@ -184,6 +196,47 @@ void main() {
       expect(client.prompts, hasLength(1));
       expect(state().error, '发送失败：AI 正忙，稍后再试');
       expect(state().pending, isEmpty);
+    });
+  });
+
+  group('Remote workspace uploads', () {
+    setUp(() {
+      client.uploadsAllowed = false;
+      client.workspaceUploadsAllowed = true;
+    });
+
+    test('files supply workspace paths, never fictitious receipt IDs', () async {
+      expect(await chat().send('read this', attachments: [file]), isTrue);
+      expect(client.calls.first, 'workspace:notes.md');
+      expect(client.calls.last, contains('"./notes.md"'));
+      expect(client.prompts.single.receipts, isEmpty);
+      expect(client.uploads, isEmpty);
+    });
+
+    test('file-only prompts still name the uploaded file', () async {
+      expect(await chat().send('', attachments: [file]), isTrue);
+      expect(client.calls.last, contains('"./notes.md"'));
+      expect(client.prompts.single.receipts, isEmpty);
+    });
+
+    test('text-only fallback keeps file paths and the same prompt ID', () async {
+      client.textOnlyModel = true;
+      expect(await chat().send('read these', attachments: [file, image]), isTrue);
+      expect(client.calls.where((call) => call.startsWith('workspace:')), ['workspace:notes.md', 'workspace:cat.png']);
+      expect(client.prompts, hasLength(2));
+      expect(client.prompts.last.images, 0);
+      expect(client.prompts.last.receipts, isEmpty);
+      expect(client.prompts.last.requestId, client.prompts.first.requestId);
+      expect(client.calls.last, contains('"./notes.md"'));
+      expect(client.calls.last, contains('"./cat.png"'));
+    });
+
+    test('Host upload refusal prevents the prompt and preserves its reason', () async {
+      client.uploadError = const DshRemoteException('UPLOAD_LIMIT', 'Host refused');
+      expect(await chat().send('read this', attachments: [file]), isFalse);
+      expect(client.prompts, isEmpty);
+      expect(state().pending, isEmpty);
+      expect(state().error, contains('主机拒绝了上传'));
     });
   });
 

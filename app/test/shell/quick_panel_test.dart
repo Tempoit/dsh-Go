@@ -167,6 +167,20 @@ void main() {
       expect(_panel, findsOneWidget);
     });
 
+    testWidgets('a fling settles it on the edge and never past', (tester) async {
+      await _pump(tester);
+      await tester.fling(find.byType(HomeShell), const Offset(-80, 0), 3000);
+      await tester.pump();
+      for (var i = 0; i < 60; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(_panelIn(tester), lessThanOrEqualTo(QuickPanel.width));
+      }
+      expect(_panelIn(tester), QuickPanel.width);
+      await tester.fling(find.byType(HomeShell), const Offset(80, 0), 3000);
+      await pumpFrames(tester, 8);
+      expect(_panel, findsNothing);
+    });
+
     testWidgets('open: right pushes it back, left keeps it, and the drawer stays out of it', (tester) async {
       await _pump(tester);
       await _swipeOpen(tester);

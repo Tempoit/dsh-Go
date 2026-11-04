@@ -82,6 +82,7 @@ void main() {
           networkKicksProvider.overrideWithValue(const Stream.empty()),
           relayBackendProvider.overrideWithValue(FakeRelayBackend(user: sampleRelayUser)),
           hostLinkProvider.overrideWith((ref, host) => link),
+          hostNameProvider.overrideWith((ref, host) => 'Workstation'),
           localRuntimeProvider.overrideWith(
             () => FakeRuntime(const LocalRuntimeState(loaded: true, status: runningStatus)),
           ),
@@ -108,7 +109,10 @@ void main() {
       await tester.ensureVisible(entry);
       await tester.tap(entry);
       await frames(tester);
-      expect(find.byType(RemoteNetworkDetailsSheet), findsOneWidget);
+      final sheet = find.byType(RemoteNetworkDetailsSheet);
+      expect(sheet, findsOneWidget);
+      expect(find.descendant(of: sheet, matching: find.text('Workstation')), findsOneWidget);
+      expect(find.descendant(of: sheet, matching: find.text('DSH Remote')), findsOneWidget);
       expect(find.text(path.label), findsWidgets);
       expect(find.text('未测量'), findsNWidgets(2));
       expect(link.inspections, 0, reason: 'opening details does not continuously probe the connection');
@@ -183,7 +187,10 @@ void main() {
       goldenApp(
         home: const Scaffold(body: RemoteNetworkDetailsSheet(host: _host)),
         brightness: Brightness.light,
-        overrides: [hostLinkProvider.overrideWith((ref, host) => link)],
+        overrides: [
+          hostLinkProvider.overrideWith((ref, host) => link),
+          hostNameProvider.overrideWith((ref, host) => 'Workstation'),
+        ],
       ),
     );
     await frames(tester);

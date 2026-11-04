@@ -2,6 +2,50 @@
 
 每个版本先中文、后英文。发版时把对应版本的正文（不含版本标题）作为 Release 正文，见 `docs/release.md`。
 
+## 1.0.10 · 2026-11-04
+
+### 中文
+
+- **更新前请注意：这一版换了运行时。** 升级后 Linux 环境里只保留 `/root`，用 `apt` 装的软件和放在 `/usr/local`、`/opt` 等目录的文件会被清掉，需要重新装。对话和设置不受影响。也因为换了运行时，这次还是下整包。
+- 定时任务：新建任务、修改任务的名称、指令或时间，都要单独确认。确认卡会展示完整指令、规则、时区和实际触发时间；完全权限、自动审查和「本对话都允许」都不能代替这次确认。拒绝、两分钟内没确认或没有可用的确认界面时，这次改动不会保存。限制：更新前已经存在的任务不会补做授权，请检查并删除不认识的任务；远程主机要装同样的引擎修复才有这道检查；授权不能代替凭据和工具执行的系统隔离。这项还没在真机上验证过，遇到问题请开 issue 反馈。
+- 动效：弹窗和返回手势跟手，松手后顺着手指的速度由弹簧收住；拉过头有阻尼，回弹途中再抓住会从当前位置接着拖。
+- 动效：按压改用弹簧；滚动列表时不再闪一下按下的效果，快速点按也看得见。
+- 动效：等待的三个点换成思考或正文时不再硬切；思考文字上有一道缓慢的亮度扫光，图标转得更慢；工具之后直接出正文时，回复不再跳一下；输入框多一行时平滑长高。
+- 动画开关现在也管页面切换、底部弹窗和壁纸、启动画面的预览。系统的「移除动画」同样生效，App 开着时改也立刻生效。弹窗移动时不做模糊，只在停稳后模糊，中低端手机上更省。这些手感还没在真机上验证过，遇到问题请开 issue 反馈。
+- 安装包小了约 13 MB：arm64 包不再带另外两种架构用不上的库。
+- 远程：聊天输入框可以把文件上传到当前会话的工作目录，不再只能传图片。单个文件最大 200 MiB；走 Relay/TURN、未知路径或旧版主机时通常仍限 20 MiB，以主机的回复为准。这项还没在真实远程主机上验证过，遇到问题请开 issue 反馈。
+- 远程：抽屉底部的主机图标直接打开连接详情，点主机名或下拉仍是切换主机；本机图标打开引擎页。
+- 模型：`设置 › 模型` 顶部新增**新对话默认**，可以沿用上次的选择，也可以固定一个模型和思考深度。固定默认需要新版引擎支持。
+- 对话：回复里由引擎提供的图片（比如表情包插件的图）现在能显示，不再一律显示“无法显示”。展开的待办清单超长时，滑到底不再被拉回，能看到最后几项。
+- 对话：手动 `/compact` 不再在 120 秒时被中断，等待上限改为 30 分钟；模型、远程主机或代理自己的限制仍然有效。
+- 不打扰模式：能力自检改用测试窗口实际收到的触摸来判断，并等新建的后台屏准备好，部分 Android 17 设备不再一直显示未就绪；后台屏被任务占用时提示任务结束后重试，失败提示会带上出错的步骤。这些还没在 Android 17 真机上验证过。
+- 手机操控：拿不到有效画面时，不再把空白界面当成“界面没变”或“已经到底”，也不再把手势发出去就当成操作成功；读屏连接超时后也会关闭。
+- 引擎：PRoot 启动早期的权限错误和符号链接循环会归为启动失败；启动前清理已确认无主的 PRoot 临时目录，清理失败不影响启动。
+- 远程连接：每次新建连接都会重新尝试获取 TURN 凭据。
+- 语音：下载模型时写入失败（比如磁盘满）会正常报错，不再卡住。
+- 关于：展示原作者和 B 站、X、GitHub 主页的链接。
+
+### English
+
+- **Before you update: this version changes the runtime.** Only `/root` stays in the Linux environment. Software installed with `apt` and files in `/usr/local`, `/opt` and similar places are removed and need installing again. Chats and settings aren't affected. Because the runtime changed, this update is still a full download.
+- Scheduled tasks: creating a task, or changing its name, instructions or time, now needs its own confirmation. The card shows the full instructions, rule, time zone and actual trigger time, and full access, auto review and **Allow for chat** can't stand in for it. If you reject it, don't confirm within two minutes, or no confirmation screen is available, the change isn't saved. Limits: tasks that existed before this update aren't reviewed retroactively, so please check them and delete any you don't recognize; a remote host needs the same engine fix to have this check; and the confirmation doesn't replace system isolation of credentials and tool execution. This hasn't been tried on a real device yet, so please open an issue if it misbehaves.
+- Motion: sheets and the back gesture follow your finger, and on release a spring carries on at the finger's speed. Pulling too far meets resistance, and catching a sheet on its way back carries on from where it is.
+- Motion: presses settle on a spring. Scrolling a list no longer flashes a press, and quick taps still show one.
+- Motion: the waiting dots no longer cut to thinking or text. The thinking label has a slow brightness sweep and its icon turns more slowly. A reply no longer jumps when text comes straight after a tool, and the composer grows smoothly by a line.
+- The animation switch now also covers page transitions, bottom sheets, and the wallpaper and launch previews. The system's remove-animations setting does too, including when changed with the app open. Sheets blur only at rest, not while moving, which is cheaper on mid-range and low-end phones. None of this has been felt on a real device yet, so please open an issue if it misbehaves.
+- The APK is about 13 MB smaller: the arm64 package no longer carries libraries for the other two architectures.
+- Remote: the composer can upload files to the current chat's working directory, not only images. Each file can be up to 200 MiB; over Relay or TURN, on an unknown path or with an older host the limit is usually still 20 MiB, and the host's reply decides. This hasn't been tried on a real remote host yet, so please open an issue if it misbehaves.
+- Remote: the host icon at the bottom of the drawer opens the connection details directly, and the host name or dropdown still switches hosts. The local icon opens the engine page.
+- Models: `Settings › Models` has **New chat defaults** at the top. Keep your last choice, or fix a model and thinking effort. A fixed default needs an engine that supports it.
+- Chat: images the engine serves itself in replies, such as those from an emoji plugin, now load instead of showing "can't display". A long expanded to-do list no longer pulls back when you scroll to the end, so the last items can be seen.
+- Chat: a manual `/compact` is no longer cut off at 120 seconds. It can now wait up to 30 minutes, though limits set by the model, a remote host or a proxy still apply.
+- Do Not Disturb: the capability check now goes by the touches a test window really receives and waits for a new background screen to be ready, so some Android 17 devices no longer stay on Not ready. While a task holds the background screen, it says to retry when the task ends, and failures name the step that failed. None of this has been tried on an Android 17 device.
+- Phone control: without a usable view of the screen, a blank capture no longer reads as "nothing changed" or "reached the end", and a sent gesture no longer counts as a success by itself. A screen-reading connection that times out is now closed too.
+- Engine: permission and symlink-loop errors early in PRoot startup are classified as launch failures. Before a launch, PRoot temp directories confirmed abandoned are cleaned up, and a failed cleanup doesn't block the launch.
+- Remote: each new connection tries again for TURN credentials.
+- Voice: a failed write during a model download, such as a full disk, now reports an error instead of hanging.
+- About: shows the original author, with links to their Bilibili, X and GitHub profiles.
+
 ## 1.0.9 · 2026-11-02
 
 ### 中文

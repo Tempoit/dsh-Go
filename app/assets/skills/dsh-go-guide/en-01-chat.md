@@ -21,7 +21,7 @@ Tap the model capsule at the top right to open **Choose model**. Tap a model to 
 
 Tap the plus button next to the composer and choose **Photos**, **Take photo** or **File**. You can attach up to 9 items per message. Under **This chat** in the same panel you can change this chat's **Permissions** and turn **Plan mode** on or off; while phone control is on, **Confirmation** is there too.
 
-- On a host connected through DSH Remote, you can send images only.
+- On DSH Remote, **File** appears when the host's Remote plugin supports uploads. The app adds no separate 20 MB limit; the normal 200 MB attachment limit still applies. The host decides whether it can accept the file based on its plugin version and current network path (Relay/TURN typically allow up to 20 MB). Files are uploaded in chunks to the current chat's working directory when you send. Existing files are never overwritten; the host assigns a new name on collision. If an upload fails, the question is not sent. Older hosts accept images only; update their Remote plugin and reconnect.
 - If the current model can't view images, they're sent to the AI as files. Switch to a model that can view images to let the AI see them.
 
 When the composer is empty and speech recognition is available, the send button becomes a microphone. Tap it and speak; your words fill the composer so you can check them before sending. When the recognition service isn't available, **Change** on the notice opens the voice input settings.

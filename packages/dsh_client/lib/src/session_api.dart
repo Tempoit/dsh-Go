@@ -17,6 +17,7 @@ import 'models.dart';
 import 'mux.dart';
 import 'rpc.dart';
 import 'rpc_envelope.dart';
+import 'workspace_upload.dart';
 
 /// `queue` waits for the next turn; `steer` injects into the running turn's
 /// next step.
@@ -295,6 +296,21 @@ class DshClient {
   /// Whether [endpoint] is reachable through this client's carrier (remote
   /// tunnels serve a fixed allow-list; `fileUploads/upload` is not on it).
   bool supportsEndpoint(String endpoint) => carrier.allowsEndpoint(endpoint);
+
+  /// Receipt staging or the current connection's workspace upload protocol.
+  bool get supportsFileUpload =>
+      supportsEndpoint('fileUploads/upload') ||
+      (carrier is WorkspaceUploadCarrier && (carrier as WorkspaceUploadCarrier).supportsWorkspaceUpload);
+
+  /// Publishes a file into this session's workspace, without a receipt.
+  /// The returned relative path must be included in the prompt instead.
+  Future<WorkspaceUploadedFile> uploadWorkspaceFile(String sessionId, List<int> bytes, {required String name}) {
+    final transport = carrier is WorkspaceUploadCarrier ? carrier as WorkspaceUploadCarrier : null;
+    if (transport == null || !transport.supportsWorkspaceUpload) {
+      throw const DshRemoteException('WORKSPACE_UPLOAD_UNSUPPORTED', 'This Host does not support workspace uploads.');
+    }
+    return transport.uploadWorkspaceFile(sessionId, bytes, name: name);
+  }
 
   /// All `$events` items (session added/status/error, approvals, ...).
   Stream<HostEvent> get hostEvents => mux.hostEvents;
@@ -786,9 +802,16 @@ class DshClient {
       executeCommand(sessionId, '/permission $preset');
 
   /// `commands/execute` (slash commands as typed in the composer).
+  /// Compaction waits for model generation; its request owns the cancellation
+  /// signal, so the ordinary HTTP deadline would cancel a healthy compaction.
   Future<CommandResult> executeCommand(String sessionId, String line) async {
+    final compact = RegExp(r'^/compact(?:\s|$)').hasMatch(line.trim());
     final value = asMap(
-      await rpc.call('commands/execute', {'agentId': sessionId, 'line': line, 'submittedAttachments': <Object?>[]}),
+      await rpc.call('commands/execute', {
+        'agentId': sessionId,
+        'line': line,
+        'submittedAttachments': <Object?>[],
+      }, compact ? const Duration(minutes: 30) : null),
     );
     final result = asMapOrEmpty(value?['result']);
     return CommandResult(asString(value?['commandId']), result['kind'] == 'success', asString(result['text']));

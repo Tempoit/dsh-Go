@@ -627,27 +627,34 @@ class _ChatListState extends ConsumerState<ChatList> {
     final row = _rows[index];
     final previous = index > 0 ? _rows[index - 1] : null;
     final fresh = _fresh.remove(row.key);
+    final padding = EdgeInsets.fromLTRB(AppSpace.gutter, _gapBefore(row, previous), AppSpace.gutter, 0);
+    final body = StreamFadeIn(enabled: fresh != null, index: fresh ?? 0, child: _rowWidget(row));
     return KeyedSubtree(
       key: ValueKey<String>(row.key),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: AppSpace.readingWidth),
           // 撑满阅读宽度:否则短行(用户气泡、提示行)会被 Center 居中。
-          child: Container(
-            width: double.infinity,
-            padding: EdgeInsets.fromLTRB(AppSpace.gutter, _gapBefore(row, previous), AppSpace.gutter, 0),
-            child: StreamFadeIn(enabled: fresh != null, index: fresh ?? 0, child: _rowWidget(row)),
-          ),
+          child: row is AssistantRow
+              // 等待和思考算过程行,正文不算:接上正文时间距缓缓让开,回复不跳。
+              ? AnimatedPadding(
+                  duration: AppMotion.of(context, AppMotion.quick),
+                  curve: AppMotion.std,
+                  padding: padding,
+                  child: SizedBox(width: double.infinity, child: body),
+                )
+              : Container(width: double.infinity, padding: padding, child: body),
         ),
       ),
     );
   }
 
-  /// 过程行:工具、工具组、只有思考的回复、斜杠指令、非错误提示。
+  /// 过程行:工具、工具组、只有思考的回复(或还在等第一个字:接上来多半是思考,
+  /// 间距先按它算,交接时不跳)、斜杠指令、非错误提示。
   /// 它们自带上下 4 的留白,彼此之间不再加间距(图形块之间正好 8)。
   static bool _isProcess(ChatRow? row) => switch (row) {
     ToolCallRow() || ToolGroupRow() || CommandNoticeRow() => true,
-    AssistantRow(:final item) => item.text.trim().isEmpty && item.reasoning.trim().isNotEmpty,
+    AssistantRow(:final item) => item.text.trim().isEmpty && (item.reasoning.trim().isNotEmpty || item.streaming),
     NoticeRowData(:final item) => item.kind != 'error',
     _ => false,
   };

@@ -36,6 +36,7 @@ class _DshAppState extends ConsumerState<DshApp> with WidgetsBindingObserver {
   AppAccent? _accent;
   bool? _english;
   bool? _glassBlur;
+  bool? _instantPages;
   late ThemeData _light;
   late ThemeData _dark;
 
@@ -77,17 +78,23 @@ class _DshAppState extends ConsumerState<DshApp> with WidgetsBindingObserver {
     if (ref.read(appLanguageProvider) == AppLanguage.system) setState(() {});
   }
 
-  void _themesFor(AppAccent accent, bool english, bool glassBlur) {
-    if (accent == _accent && english == _english && glassBlur == _glassBlur) return;
+  /// The system's remove-animations setting changed while the app was open: page
+  /// transitions are chosen in [build], so they would keep the old answer.
+  @override
+  void didChangeAccessibilityFeatures() => setState(() {});
+
+  void _themesFor(AppAccent accent, bool english, bool glassBlur, bool instantPages) {
+    if (accent == _accent && english == _english && glassBlur == _glassBlur && instantPages == _instantPages) return;
     _accent = accent;
     _english = english;
     _glassBlur = glassBlur;
+    _instantPages = instantPages;
     // Plugin views that ask for `accent: "app"` follow the palette.
     DshUiAppAccent.set(accent.seed.toARGB32());
     // English UI still shows Chinese content: keep its glyphs Chinese.
     final glyphs = english ? AppLocale.zhCN : null;
-    _light = buildLightTheme(accent: accent, glyphLocale: glyphs, glassBlur: glassBlur);
-    _dark = buildDarkTheme(accent: accent, glyphLocale: glyphs, glassBlur: glassBlur);
+    _light = buildLightTheme(accent: accent, glyphLocale: glyphs, glassBlur: glassBlur, instantPages: instantPages);
+    _dark = buildDarkTheme(accent: accent, glyphLocale: glyphs, glassBlur: glassBlur, instantPages: instantPages);
   }
 
   Locale _resolveLocale() {
@@ -126,12 +133,12 @@ class _DshAppState extends ConsumerState<DshApp> with WidgetsBindingObserver {
         (appearance.source == AccentSource.wallpaper && ref.watch(wallpaperAccentProvider).isLoading);
     final locale = _resolveLocale();
     final performance = ref.watch(performanceDefaultsProvider);
-    _themesFor(ref.watch(accentProvider), locale.languageCode == 'en', performance.blur);
+    final reduced =
+        performance.reduceMotion || WidgetsBinding.instance.platformDispatcher.accessibilityFeatures.disableAnimations;
+    _themesFor(ref.watch(accentProvider), locale.languageCode == 'en', performance.blur, reduced);
     if (!waiting && !_settled) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _settled = true);
     }
-    final reduced =
-        performance.reduceMotion || WidgetsBinding.instance.platformDispatcher.accessibilityFeatures.disableAnimations;
     return MaterialApp(
       title: AppInfo.name,
       debugShowCheckedModeBanner: false,

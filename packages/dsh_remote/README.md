@@ -123,13 +123,21 @@ A terminal failure **sticks**: the client stops reconnecting, so it never fights
 
 | | Local `dsh web` | Remote tunnel |
 |---|---|---|
-| Endpoints | everything | Fixed upstream allow-list (`harnessRemoteAllowlist`, 89 + 10 terminal). Others fail locally with `DshRemoteException('METHOD_NOT_ALLOWED')`. **`uploadFile` (`fileUploads/upload`) is not available**, so send images inline (`PromptImage`). Check first with `client.supportsEndpoint(...)` |
+| Endpoints | everything | Fixed upstream allow-list (`harnessRemoteAllowlist`). Others fail locally with `DshRemoteException('METHOD_NOT_ALLOWED')`. `uploadFile` (`fileUploads/upload`) remains unavailable; `client.supportsFileUpload` also checks the live `workspace.upload.v1` capability for `uploadWorkspaceFile`. Workspace uploads return a relative path, not an attachment receipt |
 | Uplink stream items | yes | **no**: `MuxStream.supportsUplink == false` and `send()` throws `UnsupportedError` |
 | Size | 300 MiB HTTP body | Calls up to 2 MiB go direct; larger ones (big inline images) use chunked `harness.remote.transfer.*` (512 KiB chunks, 288 MiB max). Responses over 4 MiB are retried through a transfer |
 | Binary results | multipart (rejected) | `workspaceFiles/readBytes`, `officeToPdf/render` return `data` as a base64 string |
 | Tunnel failures | HTTP 401/403/404 | Host refusals (`RPC_TIMEOUT`, `RATE_LIMITED`, `TERMINAL_DISABLED`, ...) become `DshRemoteException` with `details.remote = true`. A lost connection or a local deadline becomes `DshTransportException`, meaning the outcome is unknown, so don't blindly retry mutations |
 | Streams | unlimited | 16 per connection (Host limit) |
 | `client.connection` | `DshConnection` | throws `StateError`; use `client.remoteCarrier` |
+
+### Workspace file uploads
+
+`client.uploadWorkspaceFile(sessionId, bytes, name: 'notes.md')` uses the upstream top-level `workspace.upload.open/chunk/commit/abort` RPCs, with sequential chunks on one authenticated connection, using the Host's advertised `chunkBytes` (1–65536 bytes). Include the returned `path` in prompt text; do not invent a `fileReceiptId`. `client.supportsFileUpload` follows the current connection's capability, so reconnecting to an older Host can disable it again.
+
+There is no extra client-side 20 MiB cap. The carrier enforces the protocol's absolute **1 GiB** ceiling; the app retains its normal **200 MiB** attachment budget. The Host remains authoritative for its version/path-specific limits (usually 20 MiB for Relay/TURN/unknown paths and older plugins, up to 1 GiB for newer verified LAN/P2P), writable session workspaces, safe basenames and collision-safe publication. Failed transfers are aborted best-effort; no mutation is automatically replayed after a timeout or reconnect. A timed-out commit may already have published the file.
+
+Protocol reference: [ds-harness-remote 0.6.2, `479b943`](https://github.com/liguobao/ds-harness-remote/blob/479b94341c0d0de63846f21d0fcca26997d158d1/docs/protocol.md#L1529-L1618), MIT.
 
 ## Security model
 

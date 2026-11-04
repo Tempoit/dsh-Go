@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../common/pressable.dart';
 import '../common/ui_trace.dart';
 
 import 'shapes.dart';
@@ -45,6 +46,7 @@ class GlassSurface extends StatelessWidget {
     this.padding,
     this.blur,
     this.grouped = false,
+    this.settled,
     this.style,
     this.onTap,
     this.onLongPress,
@@ -71,6 +73,12 @@ class GlassSurface extends StatelessWidget {
 
   /// 与同一 `BackdropGroup` 下的其他玻璃共享一次背景采样。
   final bool grouped;
+
+  /// 会动的玻璃(升起、被拖动的弹层)。0 = 在动:不采样背景,用不透明填充。
+  /// 停稳后走向 1:模糊立刻开,藏在近乎不透明的填充后面,填充渐变回玻璃,所以
+  /// 模糊出现时不跳。和 `blur: false` 不同,切换时模糊层留在树里,子树不重建。
+  /// null = 一直是玻璃。
+  final double? settled;
 
   /// 覆盖主题给的材质(极少用;例如审批卡要换警示色描边)。
   final GlassStyle? style;
@@ -105,16 +113,25 @@ class GlassSurface extends StatelessWidget {
     if (uiTraceEnabled) {
       uiTrace('glass', 'build', {'tier': tier.name, 'blur': useBlur, 'grouped': grouped});
     }
-    final fill = useBlur ? s.fill : (reduce || s.blurs ? s.fallbackFill : s.fill);
+    final fill = useBlur
+        ? Color.lerp(s.fallbackFill, s.fill, settled ?? 1)!
+        : (reduce || s.blurs ? s.fallbackFill : s.fill);
     final shape = _shape;
     final textDirection = Directionality.maybeOf(context);
 
     Widget content = child ?? const SizedBox.shrink();
     if (padding != null) content = Padding(padding: padding!, child: content);
     if (onTap != null || onLongPress != null) {
+      // Press feedback on the content, not the glass: scaling a surface that
+      // blurs would re-sample what is behind it at a new size every frame.
       content = Material(
         type: MaterialType.transparency,
-        child: InkWell(customBorder: shape, onTap: onTap, onLongPress: onLongPress, child: content),
+        child: InkWell(
+          customBorder: shape,
+          onTap: onTap,
+          onLongPress: onLongPress,
+          child: Pressable(behavior: HitTestBehavior.translucent, child: content),
+        ),
       );
     }
 
@@ -134,9 +151,10 @@ class GlassSurface extends StatelessWidget {
 
     if (useBlur) {
       final config = _filterFor(s.blurs ? s.blurSigma : 14, s.saturation);
+      final sampling = settled != 0;
       content = grouped
-          ? BackdropFilter.grouped(filterConfig: config, child: content)
-          : BackdropFilter(filterConfig: config, child: content);
+          ? BackdropFilter.grouped(filterConfig: config, enabled: sampling, child: content)
+          : BackdropFilter(filterConfig: config, enabled: sampling, child: content);
       content = _clip(content);
     }
 
