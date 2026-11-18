@@ -154,6 +154,11 @@ class GuestAgentsModeTest {
             GuestSetup.writeAgentsMd(root, phoneStorage = false, rootAccess = false)
             val off = File(root, "root/.dsh/AGENTS.md").readText()
             assertFalse(off.contains("## 本机 root"))
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
     @Test fun safeDiagnosticsLeaveOriginalHomeUntouchedAndNormalDiagnosticsReturnToIt() {
         val root = kotlin.io.path.createTempDirectory("diagnostics-safe").toFile()
         try {
