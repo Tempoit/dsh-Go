@@ -48,12 +48,30 @@ install_jdk() {
 install_flutter() {
   if [ -x "$FLUTTER_DIR/bin/flutter" ] && [ ! -f "$FLUTTER_DIR/.dsh-toolchain-incomplete" ]; then log "Flutter present"; return; fi
   local name="flutter_linux_${FLUTTER_VERSION}-stable.tar.xz"
-  local url="https://storage.flutter-io.cn/flutter_infra_release/releases/stable/linux/$name"
-  local alt="https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/$name"
+  # 国内镜像偶发：慢、断流，或干脆给了个 SHA 对不上的文件。逐个源试，校验通过才算数。
+  local sources=(
+    "https://storage.flutter-io.cn/flutter_infra_release/releases/stable/linux/$name"
+    "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/$name"
+  )
   log "Flutter: $name"
-  # 国内镜像偶尔极慢或断流（curl 92）；失败就换官方源重下一次。
-  download_cached "$DL/$name" "$url" || { log "Flutter: 镜像失败，改用官方源"; download_cached "$DL/$name" "$alt"; }
-  echo "$FLUTTER_SHA256  $DL/$name" | sha256sum -c -
+  local src ok=0
+  for src in "${sources[@]}"; do
+    rm -f "$DL/$name"
+    if ! download_cached "$DL/$name" "$src"; then
+      log "Flutter: 下载失败（$src）"
+      continue
+    fi
+    if echo "$FLUTTER_SHA256  $DL/$name" | sha256sum -c - >/dev/null 2>&1; then
+      log "Flutter: 校验通过（$src）"
+      ok=1
+      break
+    fi
+    log "Flutter: 校验不匹配（$src），换下一个源"
+  done
+  if [ "$ok" != 1 ]; then
+    log "Flutter: 所有源都失败"
+    return 1
+  fi
   mkdir -p "$FLUTTER_DIR"
   touch "$FLUTTER_DIR/.dsh-toolchain-incomplete"
   tar -xJf "$DL/$name" -C "$DEV_ROOT"
