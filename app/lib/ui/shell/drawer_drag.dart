@@ -1,4 +1,6 @@
-// Ported from PiPilot (https://github.com/CikeSeven/pi_pilot), MIT, Copyright (c) 2026 CikeSeven. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 CikeSeven
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 //
 // There is no PageView behind the chat here, so a leftward swipe while the
 // drawer is closed is simply rejected and left to whatever else wants it: a

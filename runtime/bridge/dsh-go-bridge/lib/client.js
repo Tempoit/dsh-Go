@@ -1,6 +1,32 @@
 window.__ModuleLoader__.load({
 	id: "dsh-go-bridge",
 	factory: (require) => {
+		// Boot awaits this factory before mounting Markdown, whose file-link parser
+		// calls URL.canParse. Older WebViews have URL but lack that static method.
+		const URLConstructor = URL;
+		if (typeof URLConstructor.canParse !== "function") {
+			Object.defineProperty(URLConstructor, "canParse", {
+				configurable: true,
+				enumerable: true,
+				writable: true,
+				value: {
+					canParse(url) {
+						if (arguments.length === 0) throw new TypeError("URL.canParse requires a URL argument");
+						// WebIDL converts both arguments before parsing; conversion errors
+						// must escape rather than becoming an invalid-URL result.
+						const urlString = `${url}`;
+						const base = arguments[1];
+						const baseString = base === undefined ? undefined : `${base}`;
+						try {
+							new URLConstructor(urlString, baseString);
+							return true;
+						} catch {
+							return false;
+						}
+					},
+				}.canParse,
+			});
+		}
 		var module = { exports: {} };
 		// dsh-go-bridge, browser half (docs/design/plugin-seams.md §5.2, §6.1).
 		//
@@ -90,6 +116,8 @@ window.__ModuleLoader__.load({
 			const stamps = window[STAMPS] || (window[STAMPS] = new WeakMap());
 			const masks = new Map();        // `${slot}\0${cell}` -> { entry?, dispose }
 			const maskedSlots = new Map();  // slot -> disposer
+			const filters = new Map();      // slot -> package/cell allowlist (display only)
+			const syncing = new Set();
 			let wrappedSlots;
 			let stampedFrom = "late";
 
@@ -240,6 +268,10 @@ window.__ModuleLoader__.load({
 				timer = setTimeout(report, REPORT_DELAY_MS);
 			};
 			ctx.on("slots/changed", schedule);
+			ctx.on("connection/reset", () => {
+				lastSent = "";
+				schedule();
+			});
 			// Tab names live in their own registry; a rename or a new type reports too.
 			let tabsWatched;
 			const watchTabs = (registry) => {
@@ -313,25 +345,57 @@ window.__ModuleLoader__.load({
 			const Empty = () => null;
 			const syncMasks = (key) => {
 				const slots = ctx.get("slots");
-				if (!slots) return;
-				const names = nameMap();
-				for (const entry of slots.entries(key)) {
-					if (!isOfficial(resolvePackage(entry, names))) continue;   // unresolved entries stay visible
-					const o = entry.options || {};
-					const field = o.id !== undefined ? "id" : o.key !== undefined ? "key" : undefined;
-					if (field === undefined) continue;
-					const id = `${key}\u0000${o[field]}`;
-					if (masks.has(id)) continue;
-					const record = { entry: undefined, dispose: undefined };
-					masks.set(id, record);
-					try {
-						const before = new Set(slots.entries(key));
-						record.dispose = slots.register({ name: key, [field]: o[field], order: o.order, priority: MASK_PRIORITY }, Empty);
-						for (const e of slots.entries(key)) if (!before.has(e)) record.entry = e;
-					} catch (error) {
-						console.warn(`[${NAME}] cannot mask ${key}/${o[field]}:`, error);
+				if (!slots || syncing.has(key)) return;
+				syncing.add(key);
+				try {
+					const names = nameMap();
+					const allow = filters.get(key);
+					const own = new Set([...masks.values()].map((m) => m.entry));
+					const seen = new Set();
+					const hidden = new Set();
+					for (const entry of slots.entries(key)) {
+						if (own.has(entry)) continue;
+						const pkg = resolvePackage(entry, names);
+						const cell = String((entry.options || {}).id ?? (entry.options || {}).key ?? "");
+						if (allow) {
+							// Keep the original election: never promote a lower-priority allowed plugin.
+							if (seen.has(cell)) continue;
+							seen.add(cell);
+							if (!isOfficial(pkg) && allow.some((a) => a.package === pkg && a.cell === cell)) continue;
+						} else if (!isOfficial(pkg)) continue; // legacy mask leaves unresolved entries visible
+						const o = entry.options || {};
+						const field = o.id !== undefined ? "id" : o.key !== undefined ? "key" : undefined;
+						if (field === undefined) {
+							if (allow) throw new Error("filter requires a list or keyed cell");
+							continue;
+						}
+						const id = `${key}\u0000${o[field]}`;
+						hidden.add(id);
+						const priority = allow ? Math.min(MASK_PRIORITY, finite(o.priority) - 1) : MASK_PRIORITY;
+						const previous = masks.get(id);
+						if (previous) {
+							if (!allow || (previous.entry && previous.entry.options.priority <= priority)) continue;
+							masks.delete(id);
+							previous.dispose && previous.dispose();
+						}
+						const record = { entry: undefined, dispose: undefined };
+						masks.set(id, record);
+						try {
+							const before = new Set(slots.entries(key));
+							record.dispose = slots.register({ name: key, [field]: o[field], order: o.order, priority }, Empty);
+							for (const e of slots.entries(key)) if (!before.has(e)) record.entry = e;
+						} catch (error) {
+							masks.delete(id);
+							if (allow) throw error;
+							console.warn(`[${NAME}] cannot mask ${key}/${o[field]}:`, error);
+						}
 					}
-				}
+					for (const [id, record] of masks) {
+						if (!allow || !id.startsWith(`${key}\u0000`) || hidden.has(id)) continue;
+						masks.delete(id);
+						record.dispose && record.dispose();
+					}
+				} finally { syncing.delete(key); }
 			};
 			const mask = (keys) => {
 				const slots = ctx.get("slots");
@@ -353,6 +417,17 @@ window.__ModuleLoader__.load({
 				}
 				return true;
 			};
+			// Fail closed for unsupported/malformed requests; [] deliberately hides every entry.
+			const filter = (key, allow) => {
+				if (typeof key !== "string" || !Array.isArray(allow) || allow.some((a) => !a || typeof a.package !== "string" || typeof a.cell !== "string")) return false;
+				if (!ctx.get("slots")) return false;
+				filters.set(key, allow.map((a) => ({ package: a.package, cell: a.cell })));
+				try {
+					mask([key]);
+					syncMasks(key);
+					return true;
+				} catch { return false; }
+			};
 			const pending = islandSlots();
 			const tryMask = () => pending.length === 0 || mask(pending);
 			if (!tryMask()) {
@@ -364,11 +439,12 @@ window.__ModuleLoader__.load({
 				window.__dshGoBridge = {
 					version: 1,
 					mask: (keys) => mask(Array.isArray(keys) ? keys : [keys]),
-					/** Current entries of one slot (report shape); `masked` marks official ones shadowed here. */
+					filter,
+					/** Original report entries; `masked` is local display state, never sent to occupancy. */
 					occupants: (key) => {
 						const collected = collect();
 						const own = new Set([...masks.keys()].filter((id) => id.startsWith(`${key}\u0000`)).map((id) => id.slice(key.length + 1)));
-						return ((collected && collected.slots[key]) || []).map((o) => ({ ...o, masked: own.has(o.cell) && isOfficial(o.package) }));
+						return ((collected && collected.slots[key]) || []).map((o) => ({ ...o, masked: own.has(o.cell) && (filters.has(key) || isOfficial(o.package)) }));
 					},
 					report: () => {
 						lastSent = "";
@@ -384,6 +460,7 @@ window.__ModuleLoader__.load({
 						try { dispose(); } catch {}
 					}
 					maskedSlots.clear();
+					filters.clear();
 				};
 			}, "dsh-go-bridge: island API");
 		}

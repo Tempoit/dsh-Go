@@ -1,93 +1,390 @@
-# dsh-app 架构
+# dsh-Go 架构与代码地图
 
-> 2026-10-23 定稿的实现约定。之后代码有扩展（插件、远程、手机操控等），细节以当前源码为准。
+> 给要改这个仓库的人（或 AI）：§0 看全局，§1 找目录，§2–§5 看各层，
+> §7 按「要改什么」找入口和检查，§8 查专题文档。
+> 代码是事实来源；本文与源码冲突时以源码为准，发现过时请直接改这里。
 
-## 技术栈
+## 0. 一页全貌
 
-| 层 | 选型 | 理由 |
+```text
+┌──────────────────── Android App 进程（Flutter + Kotlin）────────────────────┐
+│ Dart: ui/ ──Riverpod──> state/ ──DshClient(packages/dsh_client)──┐          │
+│        │                                                         │ HTTP+WS  │
+│        └─ MethodChannel/EventChannel ─> Kotlin 原生层            │          │
+│             runtime/ PRoot 生命周期   phone/ 无障碍·Shizuku·ADB  │          │
+│             update/ pet/ notify/ files/ media/ voice/ ...        │          │
+└──────────────────────────────────────────────┬───────────────────┼──────────┘
+                                               │ 127.0.0.1:3080    │
+                                               │ 或 SSH / 中继（远程主机）
+┌──────────────────────────────────────────────▼───────────────────▼──────────┐
+│ PRoot Ubuntu 24.04 用户态                                                    │
+│   dsh web --patch /etc/dsh-app/dsh-web.patch.yml --host 127.0.0.1 --port …  │
+│     ├─ 官方 DSH 引擎（runtime/patches 打了补丁）                              │
+│     └─ dsh-go-bridge（Cordis 插件：/dsh-go/v1/*，原生插件协议/伙伴/删除/配置） │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+技术栈（2026-10 定稿）：
+
+| 层 | 选型 | 说明 |
 |---|---|---|
-| UI | Flutter 3.47（Dart 3.13）+ Riverpod 3 | 玻璃质感（`BackdropFilter`）在各 ROM 上表现一致；可直接移植 PiPilot（MIT）的聊天组件；未来 iOS / OpenHarmony 有路径 |
-| 原生层 | Kotlin（Flutter 插件形式，写在 app 内） | 解压运行时、管理 proot 进程、前台服务 |
-| DSH 客户端 | 纯 Dart 包 `packages/dsh_client` | 无 Flutter 依赖，可单测；本地与远程共用 |
-| 本地运行时 | Ubuntu 24.04 base + Node + `@deepseek-ai/dsh`，经 proot 运行 | App 自带，免 Root、免 Termux |
+| UI | Flutter 3.47（Dart 3.13）+ Riverpod 3 | 玻璃质感用 `BackdropFilter`；手写 Notifier，无 codegen |
+| 原生层 | Kotlin，Flutter 插件形式写在 `app/android/` | 解压运行时、管理 proot 进程、前台服务、手机操控 |
+| DSH 客户端 | 纯 Dart `packages/dsh_client` | 无 Flutter 依赖，可单测；本机与远程共用 |
+| 本地运行时 | Ubuntu 24.04 + Node + `@deepseek-ai/dsh`，经 proot 运行 | 免 Root、免 Termux |
 
-## 目录
+五条贯穿主线：
 
-```
-dsh-app/
-  app/                         Flutter 应用（包名 dsh_app）
-    lib/
-      main.dart / app.dart     入口、主题、路由
-      runtime/                 原生运行时的 Dart 侧（平台通道 + Riverpod 状态）
-      state/                   应用状态：端点、会话、聊天、设置
-      ui/
-        theme/  common/        设计系统
-        shell/                 外壳：抽屉 + 导航
-        onboarding/            首次引导：选择运行位置 → 本机（安装运行环境 → 登录 DeepSeek 或填 API Key）/ 远程主机
-        chat/                  聊天页与组件（移植自 PiPilot）
-        sessions/              会话抽屉
-        settings/              设置
-        engine/                引擎状态与日志
-        web/                   官方 DSH Web 的 WebView 兜底
-        remote/                远程
-    android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/
-      MainActivity.kt
-      runtime/                 RuntimeInstaller / DshProcess / DshService / RuntimePlugin
-  packages/dsh_client/         纯 Dart 的 DSH Web API 客户端
-  runtime/                     运行时打包脚本与产物（out/<abi>/…）
-  tooling/                     工具链安装脚本、env.sh
-  docs/
-```
-
-## 平台通道约定（Dart ↔ Kotlin）
-
-MethodChannel `dsh/runtime`：
-
-| 方法 | 参数 | 返回 |
+| 主线 | 一句话 | 入口（详见 §5） |
 |---|---|---|
-| `getStatus` | — | `RuntimeStatus` map（见下） |
-| `install` | — | `null`；进度经事件流推送；已安装且版本一致时立即完成 |
-| `start` | `{env: Map<String,String>}`（如 `DEEPSEEK_API_KEY`） | `null`；启动前台服务与进程 |
-| `stop` | — | `null` |
-| `getLogs` | `{lines: int}` | `List<String>` |
-| `getLogSnapshot` | `{lines: int}`（默认 300，最多 2000） | `{entries: [LogEntry], throughSeq: int}`：内存里最后几行，`throughSeq` 是同一时刻已接收的最大序号 |
-| `reset` | — | `null`；删除已解压运行时（保留 `/root` 用户数据需另行确认） |
+| 对话 | UI 订阅 session/follow 事件流，ChatTranscript 折叠成 ChatState | `state/chat_state.dart` → `dsh_client` `watch()` |
+| 插件 | 引擎桥 /dsh-go/v1/* 提供 contributions/invoke/stream，App 只读渲染 | `state/plugins_state.dart`、`plugins/` |
+| 手机操控 | 引擎发工具调用 → 原生 phone/ 驱动无障碍/Shizuku/ADB | `phone/`（Kotlin）、`state/phone_state.dart` |
+| 远程 | 另开一条加密隧道（SSH 或 WebRTC/中继），复用同一个 DshClient | `packages/dsh_remote`、`remote/` |
+| 自更新 | 检查→下载→校验→安装（可走 Shizuku/ADB 特权） | `state/update_state.dart`、`update/`（Kotlin） |
 
-`RuntimeStatus`：
+## 1. 仓库地图
+
+| 路径 | 是什么 | 关键入口 | 备注 |
+|---|---|---|---|
+| `app/` | Flutter App + Android 原生实现 | `lib/main.dart`、`android/.../MainActivity.kt` | 4789 文件，本仓库主体 |
+| `packages/dsh_client/` | DSH Web API 纯 Dart 客户端（连接/RPC/mux/事件/各域 API） | `lib/dsh_client.dart`（barrel） | 不依赖 Flutter，可单测 |
+| `packages/dsh_remote/` | 远程传输：账号、SSH 宿主、Noise IK 加密通道、WebRTC/中继、隧道 carrier | `lib/dsh_remote.dart` | 依赖 dsh_client 的 carrier 抽象 |
+| `packages/dsh_tavern/` | SillyTavern 兼容酒馆引擎（纯 Dart，191 个测试文件） | `lib/dsh_tavern.dart` | 与 AGPL 上游同许可，来源见 NOTICES |
+| `packages/dartssh2/` | vendored dartssh2 4.1.0 + 补丁 | `VENDORED.md` | app 的 SSH 链路用它 |
+| `runtime/` | 引擎运行时：构建脚本、补丁（139 个）、桥、boot/direct 启动、测试 | `build-runtime.sh`、`patches/series`、`bridge/` | 产物在 `runtime/out/<abi>/` |
+| `sdk/plugin-kit/` | 原生插件作者 SDK（schema、checker、视图解析 JS 孪生、技能） | `bin/check.mjs`、`schema/` | private 包，不发 npm |
+| `examples/plugins/` | 10 个插件示例 + e2e（只覆盖 weather/usage/quick） | 各 `package.json` `scripts.check` | |
+| `services/share-worker/` | Cloudflare Worker：分享链接、下载、市场/工坊、统计 | `src/index.ts` | sparse-checkout 外 |
+| `market/` | 插件市场目录源码（schema/审核/构建） | `scripts/check.mjs` | sparse-checkout 外 |
+| `infra/forum/` | Discourse 部署配置 | `containers/app.yml` | sparse-checkout 外 |
+| `site/` | 官网与分享页静态站 | `home/`、`share/` | sparse-checkout 外 |
+| `tooling/` | 构建/发版/真机脚本与 Python 工具 | `build-apk.sh`、`dev-run.sh`、`release_assets.py` | |
+| `docs/` | 设计（50）、维护合同（61）、测试（14）、用户指南、插件教程 | `architecture.md`（本文） | §8 有索引 |
+| `.github/workflows/` | CI（ci/goldens/pr-gate） | `ci.yml` | §9 |
+| `.agents/skills/` | 内部流程技能：pr/review/audit/bug/vuln-check | `SKILL.md` | |
+
+> **sparse-checkout**：默认工作区只检出 `.agents .github app docs examples packages runtime sdk/plugin-kit tooling`；
+> `market/`、`site/`、`services/`、`infra/` 需要 `git sparse-checkout add <dir>` 才在工作区；
+> root CI 会跑 market/site/services 的检查，`infra/` 没有 CI（线上运维不在普通贡献检查内）。不要为此 checkout/reset 整个仓库。
+
+## 2. App 的 Dart 层
+
+### 2.1 启动与外壳
+
+```text
+main.dart → app.dart(DshApp/MaterialApp) → RootGate ─┬─ 引导未完成 OnboardingFlow
+                                                     └─ ModeHome ─┬─ HomeShell(原生界面)
+                                                                  └─ WebHome(官方 Web)
+HomeShell = [ChatScreen] + [SessionsDrawer 左] + [QuickPanel 右] + [SystemEntryHost/LinkHost（只分发，不绘制）]
 ```
-{
-  abi: "arm64-v8a" | "x86_64",
-  bundledVersion: String,        // APK 内运行时版本（manifest.json）
-  installedVersion: String?,     // 已解压版本
-  phase: "notInstalled" | "installing" | "installed" | "starting" | "running" | "stopping" | "error",
-  baseUrl: String?,              // 如 http://127.0.0.1:3080
-  token: String?,                // dsh web 启动 token
-  error: String?
-}
+
+1. `lib/main.dart`：帧探针 → 载入语言与启动画面 → 注册许可与深链 → `runApp(ProviderScope(DshApp))`。唯一的 `ProviderScope` 在这里（全仓不锁定屏幕方向，平板由自适应布局处理）。
+2. `lib/app.dart`：唯一 MaterialApp；主题/语言/动效/启动层；主题按 accent/语言/blur/instant/fluid 缓存重建（`_themesFor` 的缓存键要同步扩）。
+3. `lib/ui/shell/root_gate.dart`：落地页判定（`initialOnboardingStep()` 是单一判据）：引导 / 首页 / Web 兜底；负责自动起引擎与诊断发布。
+4. `lib/ui/shell/home_shell.dart` + `sessions_drawer.dart` + `quick_panel.dart` + `adaptive/`：原生外壳（聊天 + 左抽屉 + 右快捷面板 + ≥840dp 自适应）。
+5. 二级页统一用 `ui/shell/page_frame.dart` 的 `AppPage`（浮动返回/大标题/滚动淡出）。
+
+### 2.2 ui/ 目录（40 个子目录，按职责分组）
+
+| 分组 | 目录 | 说明 |
+|---|---|---|
+| 外壳/路由 | `shell/` `modes/` | 主壳、抽屉、快捷面板、系统入口、自适应；深链集中表在 `app/lib/links/page_links.dart`（不在 ui/ 下） |
+| 聊天 | `chat/`（123 文件） | 页 `chat_screen.dart`、列表 `chat_list.dart`、行模型 `chat_rows.dart`、`render/`（Markdown/流式修补/代码块/diff）、`widgets/`（消息/工具卡）、`dsh_ui/`（App 声明式视图卡）、`composer`、`voice/` |
+| 会话 | `sessions/` `session/` `replay/` | 列表、详情、导出/回放 |
+| 设置 | `settings/`（六组：AI/能力/外观/通用/主机/帮助） `engine_settings/` `access/` `safe_mode/` `providers/` `account/` | 设置 hub + 子页 + 搜索索引（`settings/index/spots.dart` 是标题与页面的单一来源） |
+| 引擎/连接 | `engine/` `remote/` `onboarding/` `web/` | 引擎状态与日志、远程主机、首次引导、官方 Web 兜底 |
+| 扩展 | `plugins/` `cordis/` `workshop/` | 原生插件详情/列表、Cordis、创意工坊 |
+| 内容功能 | `tavern/`（酒馆） `bots/` `companion/` `pets/` `star/` | 酒馆页、机器人、伙伴小屋、桌宠、Star 提示 |
+| 工具 | `phone/` `terminal/` `files/` `workspace/` `agents/` `notify/` `update/` | 手机操控/审批页、终端、文件、工作区、子代理、通知、更新 |
+| 分享/外观 | `share/` `share_code/` `share_hosted/` `wallpaper/` `launch/` `theme/` `common/` `features/` | 分享、壁纸、开屏、设计系统（`theme/` 主要 import l10n；个别文件 import `common/`，已有 theme↔common 循环）、功能目录 |
+| 其他 | `forum/` `community/` | 论坛、社区 |
+
+> 路由是**分散的**：页面自己 `Navigator.of(context).push(...)`（ui 下 168 处、106 个文件，其中 `MaterialPageRoute` 155 处），
+> 只有深链（`app/lib/links/page_links.dart`）和设置索引（`settings/index/spots.dart`）有集中表。
+> 二级页的转场统一走 `theme/page_transitions.dart`。
+
+> **加新页面**：放 `ui/<域>/`，用 `AppPage`，状态放 `state/`（不要在 ui 里新建跨页状态）。
+> 入口至少接一处：抽屉 `_openDestination`（`home_shell.dart`）/ `SettingsPageId` + `settings_pages.dart` /
+> `featureSections`（`ui/features/feature_catalog.dart`）；可深链则再加 `app/lib/links/page_links.dart` 的 id 并在 `main.dart` 注册。
+
+### 2.3 state/ 状态所有权（123 文件）
+
+| 状态 | owner | 关键点 |
+|---|---|---|
+| 主机列表/SSH/ActiveHost/relay 账号 | `state/hosts_state.dart` | 写 prefs + 安全存储；`ActiveHostController` 唯一改当前主机 |
+| 三路连接装配 | `state/connection_state.dart` | `_connectionForHost()` 是唯一装配点（本机/SSH/relay）；`activeConnectionProvider` 给全 App 用 |
+| 单会话聊天 | `state/chat_state.dart` | `autoDispose.family(sessionId)`；mux 事件折叠、发送/停止、审批、inbox |
+| 会话列表 | `state/sessions_state.dart` | hostEvents 驱动刷新；删除是占位+确认流 |
+| 设置与密钥 | `state/settings_state.dart` | 普通偏好 prefs；API key/provider key 只走 secure storage |
+| 插件 | `state/plugins_state.dart` + `state/plugins/` | 安装队列、失败归一、市场索引、更新后需重启引擎 |
+| 更新 | `state/update_state.dart` + `update/` | 检查/下载/校验/安装/特权安装 |
+| 本机运行时 | `runtime/runtime_state.dart` | **事实源在 Kotlin** `RuntimeController.status()`；Dart 只镜像 dsh/runtime/events |
+| 手机操控 | `state/phone_state.dart` + `phone/` | 开关/审批应答/自检/技能；原生 `SafetyGate` 是最终门 |
+
+> 约定：一个状态只有**一个 owner**；UI 通过 `ref.read(x.notifier).method()` 改，不直接写状态。
+> 全局 provider 一律在 `lib/state/`（手写 `Notifier`/`AsyncNotifier`，无 riverpod_generator）；
+> 页面级 provider 留在页面文件里，用 `UncontrolledProviderScope` 覆盖的只有测试/重放。
+
+**聊天流式性能契约**（改聊天页必须守住）：
+
+- `ChatScreen.build` 只 watch 一个 `select` 元组；全量 `ChatState` 只在 `ChatList.build` 里 watch。
+- 行缓存 `ChatRowsCache` 依赖 item identity、「仅 draft 变化时不清 `_built`」、以及 `deriveRows` 的键比对；
+  改行模型要跑 `app/test/chat/chat_rows_test.dart`、`chat_rows_cache_test.dart`、`stream_geometry_test.dart`。
+- 抽屉/快捷面板共用一组 AnimationController，抽屉移动时聊天不得重建。
+
+### 2.4 其余业务目录（app/lib）
+
+| 目录 | 职责 | 关键入口 |
+|---|---|---|
+| `l10n/` | 71 组 `parts/*_{zh,en}.arb` → 合并 ARB → 生成 `gen/`（生成物入库，CI 校验不手改） | `app/tool/l10n_merge.py`、`l10n.dart` `appL10n` |
+| `ui_config/` | ui.json 声明式界面：读取/校验/缓存/恢复默认（本机 `root/.dsh/dsh-go/ui.json`，远程 `workspaceFiles/`） | `ui_config_state.dart` `uiOverridesProvider`、`ui_config_source.dart` |
+| `plugins/native/` | 原生插件协议客户端（contributions/view/invoke/stream/assets） | `native_state.dart`、`native_surface.dart` |
+| `plugins/seams/` | 原生座位：4 个 adapter（cordis/dsh_ui_panel/pet/schema_config）+ 座位规划 | `seat_planner.dart`、`slot_catalog.dart` |
+| `phone/` | 手机操控 Dart 端（通道/审批/自检/技能录放） | `phone_channel.dart`、`phone_approval.dart` |
+| `diagnostics/` | 诊断快照/zip/脱敏/发布 | `diagnostics_bundle.dart`、`diagnostics_publish.dart` |
+| `share_code/` `share_hosted/` | 分享码/对话导出（打码）；加密托管链接 | `conversation_redact.dart`、`hosted_client.dart` |
+| `remote/` | 远程 UI 侧：链路状态、网络监测、WebRTC peer、SSH 转发 | `relay/webrtc_peer.dart`、`ssh/local_forward.dart` |
+| `tavern/` `companion/` `pets/` | 酒馆逻辑、伙伴小屋、桌宠 overlay 桥 | 各自 `*_state.dart`/`*_bridge.dart` |
+| `links/` `launch/` `notify/` `voice/` `usage/` `performance/` `wallpaper/` `forum/` `workshop/` | 深链、开屏、通知、语音、用量、性能、壁纸、论坛、工坊 | 各自通道/服务 |
+| `dev/` | 开发探针入口（不进发行包） | `runtime_probe_main.dart` 等 |
+
+> **ui.json 现状**：内核/解析/schema 齐全，但当前只有 4 处真正接线——
+> `theme.mode`、`composer.quickActions`、`hide.pluginCapsule`、`plugins.seats`；
+> `header.actions`、`emptyState.suggestions`、`drawer.*`、`density`、`shortcuts`、`pet` 已解析但 lib 内无消费者。
+> 改 parser ≠ 生效，先全局搜 provider 符号。
+> `app/assets/skills/dsh-go-ui/schema.json` 与 `ui_config_schema.dart` 必须同步（`app/test/ui_config/schema_sync_test.dart`）。
+
+### 2.5 依赖方向、生成物与 l10n
+
+- 硬规则：`ui/` 可以 import 任何目录；**`ui/` 以外不能 import `ui/`**（入口 `main.dart`/`app.dart` 除外）。
+  守卫：`app/test/arch/import_direction_test.dart`（当前允许 56 条历史边，**只减不增**）；
+  用 `cd app && dart run tool/import_graph.dart --edges` 看现状。**ui 内部互引不受守卫**（已有 theme↔common 循环）。
+- 语言/主题不是 InheritedWidget：`appL10n` 是静态跟随，语言切换靠 `app.dart` 手动重建全树；
+  widget 里优先用 `context.l10n`，不要在 `initState`/const 里缓存 `appL10n.xxx`。
+- 不手改生成物：`l10n/gen/`、`app/assets/skills/*`、`sdk/plugin-kit/types/`、`lib/bridge/`、
+  `lib/messages.json`、`test/parity/*`。改输入后跑对应生成器（§9）。
+- l10n 链路：改 `parts/*_{zh,en}.arb`（中英同步、key 全局唯一 lowerCamel、占位符一致）
+  → `python3 app/tool/l10n_merge.py` → 产物入库；CI 用 `git diff --exit-code -- lib/l10n` 防手改。
+
+## 3. Android 原生层（Kotlin）
+
+> 主源码 315 个 `.kt`（另有 278 个测试 `.kt`），集中四大块：引擎运行时、手机操控、外设/通知、自更新。
+
+### 3.1 注册与入口
+
+`MainActivity.kt`：单例 FlutterEngine（`dsh-main`）+ 一次注册 26 个插件；处理 `dsh/app` 通道、启动画面、刷新率。
+
+### 3.2 引擎运行时（`.../runtime/`）
+
+| 文件 | 职责 |
+|---|---|
+| `RuntimePlugin.kt` | `dsh/runtime` + `dsh/runtime/events`：install/start/stop/reset/safe/LKG |
+| `RuntimeController.kt` | 引擎生命周期单例：Phase 状态机、`runGen/stopGen` 运行代、健康/重启决策 |
+| `RuntimeInstaller.kt` | rootfs 安装/升级/reset/保留：`filesDir/runtime/{rootfs,rootfs.version,staging}`；`filesDir/runtime.reset` 与 `filesDir/runtime-keep` 在同级 |
+| `DshProcess.kt` | PRoot/direct/tawc 启动、日志泵与 token 识别、`/proc` 归属清理 |
+| `DshService.kt` | 前台服务：安装/运行/停止、通知、网络回调 |
+| `SafeMode.kt` | 救援 profile 与失败决策（崩溃后自动重启的策略） |
+| `EngineUpgrade.kt` / `RuntimeUpgradeCompatibility.kt` | 分层升级事务（prepare/pending/version/done）与兼容拒绝 |
+
+> **事实源**：本机引擎状态只认 `RuntimeController.status()`；Dart `LocalRuntimeController` 是只读镜像。
+> `EngineUpgrade` 的 `ENGINE_PATHS` 与 `rtbuild.py` 的清单必须一致，否则升级被兼容检查拒绝。
+
+### 3.3 手机操控（`.../phone/`）
+
+`McpServer`/`PhonePlugin`（`dsh/phone` 通道）→ `PhoneCore`/`PhoneTasks`（任务状态机）→
+`SafetyGate`（最终审批门）→ 执行器：`a11y/`（无障碍读屏与操作、OCR、浮层、受保护页面）、
+`background/`（不打扰模式特权虚拟屏/Shizuku/ADB）、`shell/`（Android shell 会话）。
+技能录放在 `phone/skills/`；自检在 `phone/selfcheck/`。
+手机工具与提示词由 Kotlin 侧注入：`PhoneGuest.kt` 启动时往 rootfs 写 `/opt/dsh-app/phone/{relay.cjs,phone.patch.yml}`，用 `--patch` 挂上 `@deepseek-ai/dsh-mcp-client`（serverName=phone）；`PhoneToolCatalog.kt` 定义固定工具集；`GuestSetup.kt` 把 `PhoneGuest.AGENTS_SECTION` 写进 `$DSH_HOME/AGENTS.md`。`dsh-go-bridge/lib/native/` 只实现原生插件协议（contributions/views/stream/invoke），与手机工具无关。
+
+### 3.4 其余原生块
+
+| 目录 | 职责 |
+|---|---|
+| `update/`（含 `privileged/`） | 自更新：APK 下载/校验/安装，Shizuku/ADB 特权安装与恢复 |
+| `pet/` | 桌宠悬浮窗、精灵渲染、边缘吸附、菜单/截图 |
+| `notify/` | 通知、实时活动（Live Activity）、回合提醒、通知动作回调 |
+| `files/` `media/` `nativemedia/` | 文件选择器/保存、相册权限队列、视频/音频/麦克风、JS 预览 |
+| `launch/` `icons/` `shortcuts/` `tile/` | 开屏、桌面图标、快捷方式、磁贴 |
+| `links/` `share/` `theme/` `islands/` `voice/` `usage/` `performance/` `web/` `mlkit/` `i18n/` | 深链、分享接收、动态取色、插件岛、语音、用量、性能策略、Web 文件、ML Kit、原生文案 |
+
+### 3.5 平台通道（Dart ↔ Kotlin）
+
+| 通道 | 用途 | 形态 |
+|---|---|---|
+| `dsh/runtime` + `dsh/runtime/events` | 引擎安装/启动/停止/重置、状态/日志/进度/通知事件 | Method+Event |
+| `dsh/phone` + `/events` + `/preview` | 手机操控方法面、任务事件、预览图 | Method+Event |
+| `dsh/update` | 自更新安装 | Method |
+| `dsh/app` | 置前台、时区等应用级查询 | Method |
+| 其余 `dsh/files` `dsh/diagnostics` `dsh/share` `dsh/notify` `dsh/native-media` `dsh/voice` `dsh/islands` `dsh/web-files` `dsh/launcher_icon` `dsh/picture_shortcut` `dsh/dynamic_color` `dsh/launch` `dsh/launch_clip` `dsh/links` `dsh/shortcuts` | 各功能域 | 以各目录的 `*Plugin.kt` 与 Dart 端 `*_channel.dart` 为准 |
+
+> `dsh/runtime` 的方法/状态模型以 `app/lib/runtime/runtime_bridge.dart` 为准
+> （`RuntimeStatus`/`RuntimePhase`/事件类型都在那里；本文不再复制方法表）。
+
+## 4. 包
+
+### 4.1 dsh_client（连接层，40 个导出文件）
+
+```text
+DshConnection      单个 Host 的物理连接：launch-token → cookie、Host 头、HTTP/WS upgrade
+  └─ DshCarrier    传输抽象；默认 DshHttpCarrier（POST /api/<endpoint> + WS）
+       ├─ DshRpc     unary Typert 调用（{type:client-request,rpcId,method,payload}）
+       └─ DshMux     /api/remote.mux 逻辑流 + $events ready 世代 + 重连退避
+            └─ DshClient  会话/提示/审批/模型/工作区/插件/终端…（27 个 *_api.dart extension）
+                 └─ ChatTranscript  $events → 聊天条目 reducer
 ```
 
-EventChannel `dsh/runtime/events`，事件 map：
-- `{type: "progress", step: "extract"|"verify"|"configure", done: int, total: int}`
-- `{type: "status", status: RuntimeStatus}`
-- `{type: "logs", entries: [LogEntry]}`：日志约每 100 ms 一批；`LogEntry` 为 `{seq: int, line: String, stream: "stdout"|"stderr"|"system"}`，`line` 已脱敏，`seq` 在进程内递增、重启引擎或重置都不归零。App 先订阅再取快照，只接 `seq > throughSeq` 的批次，批次与快照不重叠也不漏行。
+- 业务/网关错误：**HTTP 200 + `result.ok:false`**；只有传输拒绝用 4xx。
+- 错误类型 `DshRemoteException`（Host 决定）vs `DshCarrierRefusedException`（管道故障）要分清。
+- 没导出的内部件：`background_session_read`、`rpc_envelope` 等只供 `lib/src/` 内部 import（barrel 头注释只列 5 层，不列它们）。
 
-## 打包
+### 4.2 dsh_remote
 
-- Gradle 产品风味 `abi`：`arm64`（真机）、`x64`（模拟器测试）。各风味只带自己的 `runtime/out/<abi>/` 资产与 jniLibs，并设置对应 `abiFilters`；Flutter 插件默认的全架构过滤由 `gradle.properties` 的 `disable-abi-filtering` 关掉，`tooling/release_assets.py` 拒收带其他架构的包。
-- 构建：`tooling/build-apk.sh`（默认 release arm64，`-f x64` / `-f all`）。脚本按构建时间生成 versionCode，见 `docs/release.md`「构建号」。
-- proot 等可执行文件以 `lib*.so` 形式放 jniLibs，`useLegacyPackaging = true` 使其解压到 `nativeLibraryDir`（可执行）。
-- `targetSdk = 28`（与 Termux 相同），避开 Android 10+ 对应用私有目录 `exec` 的限制；上架前再评估提升。
-- Maven / Gradle / pub 走国内镜像（阿里云、腾讯云、flutter-io.cn）。
+`RemoteAccount`（登录/设备/Host 目录/key pinning）→ `RemoteServerApi`（REST）+
+`RelayTransport`（控制 WS）→ Noise IK `SecureChannel` → `WebRtcTransport`（LAN/P2P/TURN）或 relay →
+`RemoteRpcClient` → `RemoteTunnelCarrier`（实现 `DshCarrier`，交给普通 `DshClient`）。
+端点白名单 `harnessRemoteAllowlist` 与上游 Host 插件版本耦合，新增端点前先看它。
 
-## 本地连接
+### 4.3 dsh_tavern / dartssh2
 
-1. 原生层启动 `dsh web --host 127.0.0.1 --port 3080 --no-open`，从 stdout 解析 token。
-2. Dart 侧 `dsh_client` 用 token 换 cookie，之后所有 HTTP / WebSocket 带 cookie，不带 `Origin`。
-3. WebView 兜底直接打开 `http://127.0.0.1:3080/?token=…`。
+酒馆引擎（SillyTavern 兼容：角色卡/世界书/宏/斜杠命令/正则）纯 Dart；dartssh2 是 vendored 上游加压缩补丁。
 
-## 细节
+## 5. 协议与数据流
 
-- 运行时解压方式与具体 proot 参数：`runtime/` 与 `app/android/` 的运行时代码
-- API 细节：`packages/dsh_client/`
-- 远程接入方式：`packages/dsh_remote/`
-- 设计规范：`docs/design/`
+### 5.1 一次对话
+
+```text
+UI 输入 ─> ChatController.send() ─> DshClient.prompt(sessionId, text)
+                                    │ POST /api/session/prompt（RPC 信封）
+引擎 ─> $events 流 ─> DshMux ─> DshClient.watch(sessionId) ─> ChatTranscript.apply() ─> ChatState ─> UI
+         （快照 + 连续 seq 事件 + assistant-stream 增量；断线重连后重开 follow 并重新快照）
+```
+
+- 审批/提问：引擎发 `approval/request`/`user-questions/request`，客户端经 `$events/result` 应答；
+  断线重连后按同一 `eventId` 重投，已结算的不重放。
+- 发送结果未知（连接中断）：同一内容重发复用 requestId，由 Host 去重。
+- `watch()` 保证：每世代先快照；durable 事件 seq 严格连续；assistant revision 跳跃强制重同步；
+  连续 6 次瞬时失败结束；401/403 等下一次登录。
+
+### 5.2 RPC 与 mux
+
+- RPC：`POST /api/<namespace>/<method>`，body `{type:"client-request",rpcId,method,payload:{args}}`；
+  响应 `{type:"server-response",rpcId,result:{ok,value|error}}`。
+- mux：WebSocket `/api/remote.mux`；每世代先开 `$events` 流，首帧必须 `ready`；
+  帧词汇 `open/item/end/cancel`（上行）、`item/end/error`（下行）。跨 socket 不重放任何东西。
+
+### 5.3 bridge（/dsh-go/v1/*）
+
+| 路由家族 | 提供 | 消费方 |
+|---|---|---|
+| `/capabilities` `/inventory` `/occupancy` | 能力协商、boot/桥版本、卸载占位表 | `dsh_client/src/dsh_go_api.dart`、`client_inventory_api.dart` |
+| `/contributions` `/views/...` `/invoke` `/assets/...` | 原生插件协议 v1（清单/视图/调用/资源） | `plugins/native/`、`state/plugins_state.dart` |
+| WS `/stream`、`/media/...`、`/files/{id}/upload` / `complete` | 插件流、媒体、文件选择 | `ClientNativeBridge` |
+| `/plugin-config`（含 `/{entryId}`） | 插件配置编辑（含安全字段路径 `error.path`） | `plugin_config_state.dart` |
+| `/sessions/deletion` `/sessions/delete` | 安全删除会话（须先读 `supported:true`） | `session_deletion_state.dart` |
+| `/companion/...` | 伙伴状态/事件/记忆/召回/signals | `companion/`、`dsh_client companion_*` |
+
+- 错误统一 `{error:{code,message}}`；未知路由 404 `route-not-found`（旧桥降级判据）。
+  完整契约：`docs/design/bridge-contract.md`。
+- 注入方式：本机 = rtbuild 生成 `/etc/dsh-app/dsh-web.patch.yml` + `dsh web --patch`；
+  远程 = 插件包的 `dsh.bundle.patch`。`cordis.patch.yml` 里 `# --- shared rows ---` 是构建切分标记，改缩进会构建失败。
+- 新增路由要同时改：`bridge/lib/index.js`（分派 + `CAPABILITIES`）、`bridge-contract.md`、客户端消费端。
+
+### 5.4 运行时构建与分层升级
+
+```text
+DSH npm 前缀（runtime/locks）→ rtbuild 按 series 应用 139 个补丁（pins 双哈希校验）
+  → 加 bridge/boot/direct/patch.yml → assemble → runtime/out/<abi>/assets/runtime/
+       ├─ manifest.json（版本/baseId/分层或单包）
+       └─ rootfs-<abi>.tar.xz（schema 1）或 base+engine 两层（RUNTIME_LAYERS=1，schema 2）
+→ Gradle flavor 打为 APK 资产
+```
+
+升级：`manifest.upgrade` → `RuntimeInstaller` 解 staging → `EngineUpgrade` 事务
+（`engine.prepare` → `engine.upgrade` → 换入 → `rootfs.version`）→ 只替换固定引擎路径，
+用户 `/root` 数据保留；中断在任一步由 recover 续跑。详见 `docs/design/runtime-layers.md`。
+
+### 5.5 补丁（runtime/patches）
+
+- `series` 定序；`pins.json` 记录每个 DSH 版本的 before/after 哈希链；无 fuzz，
+  每个 hunk 必须唯一匹配。
+- 改一个补丁 = 改 `.diff` + `pins.json --record` + 同名 `runtime/tests/<name>.test.mjs`
+  + `docs/maintenance/<name>-contract.md`。改 `DSH_VERSION` 要全量重 pin。
+- `zzzzzz-session-deletion.diff` 文件名是 rtbuild 的硬编码开关，别改。
+
+### 5.6 打包与本地连接
+
+- Gradle 产品风味 `abi`：`arm64`（真机）/ `x64`（模拟器）；各风味只带自己的
+  `runtime/out/<abi>` 资产与 jniLibs，并设 `abiFilters`；`targetSdk = 28`（与 Termux 同，避开
+  Android 10+ 对私有目录 exec 的限制），`minSdk = 26`。
+- 构建：`tooling/build-apk.sh`（默认 release arm64，`-f x64` / `-f all`），versionCode 按构建时间生成。
+- proot 等可执行文件以 `lib*.so` 放 jniLibs，`useLegacyPackaging = true` 使其解压到 `nativeLibraryDir`。
+- 本地连接：原生层启动 `dsh web --host 127.0.0.1 --port 3080 --no-open`，从 stdout 解析 token；
+  Dart 侧 `dsh_client` 用 token 换 cookie（`dsh-auth-<base64url(sha256(authority))>`，30 天，绑定 host:port），
+  之后 HTTP/WS 带 cookie、不带 Origin；WebView 兜底直接打开 `http://127.0.0.1:3080/?token=…`。
+
+## 6. 关键约束速查
+
+1. **状态单一 owner**：见 §2.3；跨页状态放 `state/`，UI 不新造全局状态。
+2. **不改生成物**：§2.5、§4.1 列出的文件只改输入再跑生成器。
+3. **依赖方向**：`ui/` 外不 import `ui/`（守卫只减不增）。
+4. **危险操作**：删会话/权限/凭据以 Host 实际回答为准；失败给稳定错误码，不静默吞。
+5. **协议改动**：客户端/桥/插件协议改一处要查另一端的调用方与旧版本兼容。
+6. **验证边界**：手机操控、PRoot、直接启动、更新安装必须真机验证；桌面/CI 不能替代。
+7. **本机限制**：这台开发机是手机，默认不跑全量测试/编译，见 `AGENTS.local.md`。
+
+## 7. 改哪儿：任务导航
+
+| 要改什么 | 先读 | 主要文件 | 检查 |
+|---|---|---|---|
+| 聊天页/消息渲染 | `docs/design/rendering.md`、§2.2/§2.3 | `ui/chat/**`、`state/chat_state.dart`、`dsh_client transcript.dart` | `(cd app && flutter analyze && flutter test)`（本机禁止全量） |
+| 流式性能 | §2.3 | `ui/chat/chat_list.dart`、`chat_rows(_cache).dart` | `app/test/chat/chat_rows*_test.dart` |
+| 新建页面/设置项 | `docs/design/settings-ia.md`、§2.2 | `ui/features/feature_catalog.dart`、`settings/index/spots.dart` | 同上 + 截图 |
+| 文案/本地化 | §2.5 | `l10n/parts/*.arb`（中英） | `python3 app/tool/l10n_merge.py --check` |
+| 用户指南 | §8 | `docs/guide/**` | `python3 app/tool/guide_sync.py --check` |
+| 原生插件协议/座位 | `docs/design/native-plugins.md`、`plugin-seams.md` | `plugins/native/`、`plugins/seams/`、`sdk/plugin-kit` | `cd sdk/plugin-kit && npm test` |
+| 桥路由 | `docs/design/bridge-contract.md` | `runtime/bridge/**`、`dsh_client dsh_go_api.dart` | `node --test runtime/tests/*.test.mjs` |
+| 引擎补丁/升级 | §5.4/§5.5、`docs/maintenance/*-contract.md` | `runtime/patches/**`、`runtime/build-runtime.sh` | `python3 -I runtime/tests/test_patch_dsh.py`（构建需 x86_64 主机） |
+| 本机引擎生命周期 | `docs/design/runtime-cold-start.md` | Kotlin `runtime/`、`state/engine_control.dart` | 真机 + `gradle :app:testArm64DebugUnitTest` |
+| 手机操控 | `docs/design/phone-*.md` | Kotlin `phone/`、`state/phone_state.dart` | 真机 |
+| 远程连接 | `docs/testing/remote-*.md` | `packages/dsh_remote`、`app/lib/remote/` | `cd packages/dsh_remote && dart test` |
+| 自更新 | `docs/design/self-update-installation.md` | `state/update_state.dart`、Kotlin `update/` | `dart test` + 真机 |
+| 插件 SDK | `docs/plugins/README.md`、`sdk/plugin-kit/README.md` | `sdk/plugin-kit/**` | 按序生成链（§9） |
+| 插件市场 | `docs/design/plugin-market.md` | `market/**`、`state/plugins/plugin_market.dart` | `cd market && npm test` |
+| CI/构建 | `docs/release.md`、`CONTRIBUTING.md` | `.github/workflows/**`、`tooling/**` | 看 `CI OK` |
+
+## 8. 文档索引（docs/）
+
+| 目录 | 数量 | 什么时候读 |
+|---|---|---|
+| `docs/architecture.md` | 1 | 本文，全局入口 |
+| `docs/design/` | 50 | 实现规格/方案：改对应子系统前读（`bridge-contract`、`native-plugins-*`、`runtime-*`、`plugin-*`、`settings-ia`、`rendering`、`roleplay-*`、`pets`、`companion`、`phone-*`、`share-*`、`self-update-installation` 等） |
+| `docs/maintenance/` | 61 | 45 份 `*-contract` 是某行为/补丁的合同（复现+边界+测试），改对应代码前读；其余是故障/迁移记录 |
+| `docs/testing/` | 14 | 真机/专项验证记录（remote、self-update、android-shell 等） |
+| `docs/guide/` | 12+12 | 用户指南（中文/英文），App 内置技能输入 |
+| `docs/plugins/` | 23+23 | 插件作者教程（含能力边界、发布与上架） |
+| `docs/pets/` | 2 | 宠物包作者指南（格式/导入/校验/发布） |
+| `docs/live2d/` | 2 | Live2D 伙伴作者指南（素材包/适配/限制/许可） |
+| `docs/release.md` | 1 | 发版、构建号、签名、渠道 |
+| `docs/roadmap.md` / `official-parity.md` / `changelog.md` | 3 | 方向、与官方客户端对照、变更记录 |
+| `docs/i18n-*.md` / `docs/phone-eval/` / `docs/ops/` | — | 增量文案流程、评测、运维 |
+
+## 9. 验证与 CI
+
+按改动面选命令，PR 里写实际执行结果（完整说明见 `CONTRIBUTING.md`）：
+
+| 改动面 | 命令 |
+|---|---|
+| Flutter 应用 | `(cd app && flutter pub get && flutter analyze && flutter test)` |
+| Dart 包 | `(cd packages/dsh_client && dart pub get && dart analyze && dart test)`；dsh_remote / dsh_tavern 同理 |
+| 桥/补丁 | `node --test runtime/tests/*.test.mjs`；`python3 -I runtime/tests/test_patch_dsh.py`；`bash runtime/tests/run-guard-tests.sh "$DSH_PREFIX"`、`run-native-tests.sh "$DSH_PREFIX"` |
+| 插件 SDK | `(cd sdk/plugin-kit && npm install && npm test)`（含生成物过期检查） |
+| 生成链（改 SDK/bridge/schema 后按序） | `gen-types → sync-bridge → sync-messages → gen-parity → sync-skill` |
+| 文案 / 指南 / 教学技能 | `l10n_merge.py --check`、`guide_sync.py --check`、`sync-skill.mjs --check` |
+| Android JVM | `gradle :app:testArm64DebugUnitTest`（需 JDK17） |
+| 真机 | `tooling/dev-run.sh`（热重载）/ `tooling/build-apk.sh`；真机结论不能由桌面替代 |
+
+CI：`.github/workflows/ci.yml` 按 paths-filter 在 PR 上跑改动涉及部分，push `main` 全量，唯一看 `CI OK`；
+`pr-gate.yml` 关闭外部 PR；`goldens.yml` 手动渲染 golden。
+本机（手机）默认只做静态阅读/轻量检查，不跑全量测试/编译（`AGENTS.local.md`）。

@@ -1,5 +1,7 @@
 package io.github.ccch1mneyyy.dsh_app.pet
 
+import kotlin.math.hypot
+
 /** A short line over the pet; tapping it opens [sessionId] on [host]. */
 data class PetBubble(
     val id: String,
@@ -91,17 +93,36 @@ data class PetHost(val ref: String, val label: String, val current: Boolean)
 
 /** The long-press menu's rows (docs/design/pets.md §2.7): shortcuts only where they apply. */
 enum class PetMenuItem {
-    ASK, NEW_CHAT, STOP, SWITCH_HOST, SNOOZE, SETTINGS;
+    ASK, NEW_CHAT, SCREENSHOT, STOP, SWITCH_HOST, SNOOZE, SETTINGS;
 
     companion object {
-        fun of(push: PetPush?): List<PetMenuItem> = buildList {
+        /** [screenshots]: whether this Android can take one (the accessibility screenshot, Android 11+). */
+        fun of(push: PetPush?, screenshots: Boolean): List<PetMenuItem> = buildList {
             add(ASK)
             add(NEW_CHAT)
+            if (screenshots) add(SCREENSHOT)
             if (push?.canStop == true) add(STOP)
             if ((push?.hosts?.size ?: 0) > 1) add(SWITCH_HOST)
             add(SNOOZE)
             add(SETTINGS)
         }
+    }
+}
+
+/** Invalidating an action must not release the visibility gate before the actual capture ends. */
+internal class PetCaptureState {
+    class Request internal constructor() { internal var valid = true }
+    private var pending: Request? = null
+    val inFlight: Boolean get() = pending != null
+    fun begin(): Request? {
+        if (inFlight) return null
+        return Request().also { pending = it }
+    }
+    fun invalidate() { pending?.valid = false }
+    fun finish(request: Request): Boolean {
+        if (pending !== request) return false
+        pending = null
+        return request.valid
     }
 }
 
@@ -178,7 +199,13 @@ data class PetPush(
                 host = ((target?.get("host") ?: m["host"]) as? String)?.takeIf { it.length <= 2_000 },
                 // Older senders without `active`: busy states and a bubble count.
                 active = activeRaw ?: (state in BUSY || bubble != null),
-                size = (m["size"] as? String)?.takeIf { it == "small" || it == "medium" || it == "large" } ?: "medium",
+                size = when (val name = m["size"] as? String) {
+                    "small", "medium", "large" -> name
+                    // 自定义: its height rides along; the key changes with it, so the sprite reloads.
+                    "custom" -> (m["bodyHeight"] as? Number)?.toFloat()?.takeIf { it.isFinite() }
+                        ?.let { "custom:${Math.round(it.coerceIn(PetSize.CUSTOM_MIN, PetSize.CUSTOM_MAX) * 10) / 10f}" } ?: "medium"
+                    else -> "medium"
+                },
                 quiet = m["quiet"] == true,
                 reduceMotion = m["reduceMotion"] == true,
                 canStop = m["canStop"] == true,
@@ -257,6 +284,28 @@ data class Decision(
     val why: String,
 )
 
+/** A tap plays with the pet; a second one soon after, close by, opens the conversation instead. */
+internal class PetTaps(private val timeoutMs: Long, private val slop: Float) {
+    private var waiting = false
+    private var at = 0L
+    private var x = 0f
+    private var y = 0f
+
+    /**
+     * Whether the tap pressed at [downMs] and released at [upMs] on ([tapX], [tapY]) is the second
+     * of a pair. As the platform's double tap: the wait runs from one release to the next press.
+     */
+    fun second(downMs: Long, upMs: Long, tapX: Float, tapY: Float): Boolean {
+        val paired = waiting && downMs - at in 0..timeoutMs && hypot(tapX - x, tapY - y) <= slop
+        waiting = !paired
+        at = upMs; x = tapX; y = tapY
+        return paired
+    }
+
+    /** A drag, a long press or a cancelled touch came in between: the next tap starts over. */
+    fun clear() { waiting = false }
+}
+
 /**
  * The out-of-app pet's visibility and power rules:
  *
@@ -266,8 +315,8 @@ data class Decision(
  *   and for the rest of the day after 「今天不再显示」;
  * - pauses with the screen off or locked;
  * - collapses [IDLE_COLLAPSE_MS] after the last thing going on (not with 「一直显示」);
- * - dims after [DIM_AFTER_MS] without a touch or a new call for attention: whole where it docks,
- *   at [DIM_ALPHA], its animation paused;
+ * - stays lit while active; after activity ends, dims after [DIM_AFTER_MS] idle unless a touch
+ *   or a new call for attention restarts the wait: whole where it docks, at [DIM_ALPHA], animation paused;
  * - neither collapses nor dims while 问一句 is open ([holding]);
  * - keeps the process up with its own foreground service only when it is out and DshService is
  *   not running (remote hosts only).
@@ -298,7 +347,7 @@ class OverlayMachine {
     var lastActiveAt = 0L
         private set
 
-    /** Last touch or call for attention (a new bubble, a result, a request): back to full opacity. */
+    /** Idle starts when activity ends; touches and calls for attention restart the dim wait. */
     var lastCallAt = 0L
         private set
 
@@ -308,6 +357,7 @@ class OverlayMachine {
     fun onPush(p: PetPush, now: Long) {
         val prev = last
         last = p
+        if (prev?.active == true && !p.active) lastCallAt = now
         if (bubbles.set(p.bubble, inApp = appForeground)) {
             lastCallAt = now
             lastActiveAt = now
@@ -354,7 +404,7 @@ class OverlayMachine {
     }
 
     private fun withDim(d: Decision, now: Long): Decision {
-        if (d.bubble != null || holding) return d
+        if (last?.active == true || d.bubble != null || holding) return d
         val dimAt = lastCallAt + DIM_AFTER_MS
         if (now >= dimAt) return d.copy(dimmed = true)
         return d.copy(wakeAt = listOfNotNull(d.wakeAt, dimAt).minOrNull())

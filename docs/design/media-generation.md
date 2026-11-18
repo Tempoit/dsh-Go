@@ -568,7 +568,7 @@ NZ = %x31-39   DIGIT = %x30-39   LOWER = %x61-7A   ALNUM = DIGIT / %x41-5A / LOW
   - **音频 v1 没有定义，App 不发**，用模型的默认值；参数弹层也不放「声音」。
   - 目录里 ratios、qualities、durations、resolutions 为空时，对应字段不写，也不补 1:1、2k 这类默认值。目录里不合文法的值（比如视频清晰度 `4k`），App 不提供。
   - 质量的第一个选项是「自动」，选它就不写质量字段。
-  - 模型总写成 `label〈serviceId/modelId〉`，label 照抄目录原文。
+  - 模型总写成 `label〈serviceId/modelId〉`，label 与目录原文一致。
 
 #### 4.6.5 模型身份与歧义
 
@@ -640,7 +640,7 @@ golden：app/test/media/fixtures/header_grammar_v1.json
 
 二、App 的约定（插件不用改，但要知道）
 4. App 发出的头总带〈serviceId/modelId〉，哪怕 label 唯一；
-   label 照抄目录原文。插件照候选校验：有标记时 label 也要等于目录 label。
+   label 与目录原文一致。插件照候选校验：有标记时 label 也要等于目录 label。
 5. 音频：v1 不定义，App 不发，视频用模型默认。
    要加的话放进 v2，两端和 golden 一起改。
    建议放在清晰度和模型之间，写成「声音=开」/「声音=关」。

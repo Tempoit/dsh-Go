@@ -7,7 +7,9 @@ whenToUse: The user asks to change the dsh-go app (手机 App / 原生界面) it
 
 # dsh-go 界面配置（ui.json）
 
-dsh-go App 会读 `$DSH_HOME/dsh-go/ui.json`（`DSH_HOME` 默认 `~/.dsh`），按里面的声明改自己的原生界面。改完保存，App 一两秒内自动生效，不用重启。
+dsh-go App 会读 `$DSH_HOME/dsh-go/ui.json`（`DSH_HOME` 默认 `~/.dsh`），按里面的声明改自己的原生界面。改完保存，已接线的键一两秒内自动生效，不用重启。
+
+**当前只有部分键真正接线，见下面的「生效状态」表。**没接线的键 App 仍会解析和校验，但界面不会变——不要向用户保证写了就生效。
 
 文件只能声明，不能执行：没有脚本、没有网络请求、不能装东西。按钮能做的事只有四种动作（见下），而且都要用户亲手点才会发生。
 
@@ -23,16 +25,35 @@ dsh-go App 会读 `$DSH_HOME/dsh-go/ui.json`（`DSH_HOME` 默认 `~/.dsh`），�
 1. 先读现有文件：`cat "$DSH_HOME/dsh-go/ui.json"`（没有就新建，目录不存在就 `mkdir -p`）。
 2. 只改用户要求的部分，其他键原样保留。用户之前的配置不要删。
 3. 写回：严格 JSON，UTF-8，不要注释，不要尾逗号，不超过 64 KiB。最好先写临时文件再 `mv` 过去。
-4. 自查：`node "$DSH_HOME/skills/dsh-go-ui/scripts/check.mjs"`。输出和 App 设置里看到的完全一样：
+4. 自查：`node "$DSH_HOME/skills/dsh-go-ui/scripts/check.mjs"`。输出是 App 解析器的判断，**不是界面生效数**；只有「生效状态」表里已接线的键会改变界面：
    - `错误 /composer/quickActions/2/action/url：只支持 https 链接`：这一项不生效，其余照常；
    - `忽略`：App 不认识或超出上限的部分；
    - `提示`：已自动修正（比如文字太长被截断），仍然生效；
    - `ui.json 没有生效：…`：整份没读进去（语法错误、版本不对），App 继续用上一次有效的配置。
-   有错就改到没有 `错误` 为止。加 `--json` 得到机器可读结果。
+   有错就改到没有 `错误` 为止。加 `--json` 得到机器可读结果。checker 报的「已应用 N 项」只是解析器接收的声明的数量，不要转述成「已生效」。
 5. 本机（手机上的引擎）还会有 `$DSH_HOME/dsh-go/ui.status.json`，是 App 实际读到的结果，可以对照。
-6. 告诉用户改了什么。用户想撤销某一项，就把那个键删掉；也可以在 App 设置里点「来自 ui.json」→「恢复默认」，这只让 App 忽略那一项，不会改文件。
+6. 告诉用户改了什么。用户想撤销某一项，就把那个键删掉；已接线的项（`theme.mode`、`plugins.seats`）还能在 App 设置里点「来自 ui.json」→「恢复默认」，这只让 App 忽略那一项，不会改文件。
 
 完整字段定义在同目录的 `schema.json`，示例在 `examples/`。
+
+## 生效状态
+
+| 键 | 状态 |
+|---|---|
+| `theme.mode` | 已接线：明暗切换生效 |
+| `composer.quickActions` | 已接线：输入框上方胶囊生效 |
+| `hide.pluginCapsule` | 已接线：隐藏 App 的插件聚合入口 |
+| `plugins.seats` | 已接线：插件座位生效 |
+| `header.actions` | 只校验，尚未接线 |
+| `emptyState.suggestions` | 只校验，尚未接线 |
+| `drawer.groups` / `drawer.sort` / `drawer.filter` | 只校验，尚未接线 |
+| `density` | 只校验，尚未接线 |
+| `theme.accent` / `theme.accentPreset` | 只校验，尚未接线 |
+| `pet` | 只校验，尚未接线 |
+| `shortcuts` | 只校验，尚未接线 |
+| `hide` 的其余项 | 只校验，尚未接线 |
+
+未接线的键先如实告诉用户「这项目前还没有应用到界面」，不要编造已生效。
 
 ## 字段
 
@@ -69,7 +90,7 @@ dsh-go App 会读 `$DSH_HOME/dsh-go/ui.json`（`DSH_HOME` 默认 `~/.dsh`），�
 | `theme.mode` | `system`、`light`、`dark` |
 | `theme.accentPreset` | `mist` 雾蓝、`daiqing` 黛青、`dusk` 暮紫、`turquoise` 松石、`amber` 琥珀、`graphite` 石墨 |
 | `theme.accent` | 自定义强调色 `#RRGGBB`（App 会自动调到对比度达标）；和 `accentPreset` 二选一 |
-| `pet` | `id`、`position`（`top-left` / `top-right` / `bottom-left` / `bottom-right`）、`quiet`（布尔）。宠物功能上线前只校验 |
+| `pet` | `id`、`position`（`top-left` / `top-right` / `bottom-left` / `bottom-right`）、`quiet`（布尔）。当前只校验，不改变界面 |
 | `shortcuts` | 平板外接键盘快捷键，≤ 20 条：`keys` 如 `ctrl+k`、`ctrl+shift+n`、`alt+1`、`f5`（必须带 ctrl 或 alt，F 键除外；不能用 meta/cmd/win；`ctrl+a/c/v/x/y/z`、`ctrl+shift+v/z`、`alt+f4` 被占用）+ `action` |
 | `plugins.seats` | 插件在原生界面里怎么出现：`{ "<slot>": { "<npm 包名>": "native" \| "island" \| "web" \| "hidden" } }`（原生画 / 内嵌网页 / 在网页版打开 / 隐藏）。slot 名见 `schema.json` 的 `x-dsh-go.slots.known`；`unseatable` 里的是 App 自己的界面，不放插件 |
 

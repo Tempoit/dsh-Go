@@ -9,9 +9,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../state/chat_state.dart';
 import '../tool_view.dart' show toolMedia;
 
-/// Every file the conversation's media cards show.
+/// Every file the conversation's media cards show. Media comes with a call's
+/// result, a log event: recomputed when the log changes (the turns are
+/// traced afresh then), not on every streamed delta.
 final sessionMediaPathsProvider = Provider.autoDispose.family<Set<String>, String>((ref, sessionId) {
-  final items = ref.watch(chatProvider(sessionId).select((s) => s.items));
+  ref.watch(chatProvider(sessionId).select((s) => s.turns));
+  final items = ref.read(chatProvider(sessionId)).items;
   return {
     for (final item in items)
       if (item is ToolChatItem)
@@ -63,4 +66,5 @@ AssistantChatItem replyWithText(AssistantChatItem item, String text) => Assistan
   interrupted: item.interrupted,
   usage: item.usage,
   model: item.model,
+  isFinalAnswer: item.isFinalAnswer,
 );

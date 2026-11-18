@@ -6,6 +6,7 @@
 // holds.
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter/services.dart';
@@ -20,10 +21,13 @@ import '../state/notify_state.dart' show FlagController, appForegroundProvider, 
 import '../state/run_pulse.dart';
 import '../state/session_attention_state.dart';
 import '../ui/chat/run_info.dart';
+import 'overlay_channel.dart' show petOverlayChannelProvider;
 import 'pet_mood.dart';
 import 'pet_overlay_actions.dart';
+import 'pet_library.dart';
 import 'pet_pack.dart';
 import 'pet_prefs.dart';
+import 'pet_sheets.dart';
 import 'pet_state.dart';
 
 /// The pet's clock (tests drive it by hand).
@@ -32,10 +36,101 @@ final petClockProvider = Provider<DateTime Function()>((ref) => DateTime.now);
 /// Where packs load from (tests swap in a file bundle).
 final petAssetBundleProvider = Provider<AssetBundle>((ref) => rootBundle);
 
-/// One pack, loaded once per id.
+/// One pack, loaded once per id: a brought one from its folder, a built-in
+/// one from the assets.
 final petPackProvider = FutureProvider.family<PetPack, String>(
-  (ref, id) => PetPack.load(id, ref.watch(petAssetBundleProvider)),
+  (ref, id) =>
+      isUserPet(id) ? ref.watch(petLibraryProvider).load(id) : PetPack.load(id, ref.watch(petAssetBundleProvider)),
 );
+
+/// The brought pets, oldest first, for the picker.
+class UserPetsController extends AsyncNotifier<List<PetPack>> {
+  /// Listings asked for, and the newest that has come back: one that comes
+  /// back late (the first, slow, after an import's) never overwrites a newer.
+  int _asked = 0;
+  int _landed = 0;
+  List<PetPack> _latest = const [];
+
+  @override
+  Future<List<PetPack>> build() {
+    ref.watch(petLibraryProvider);
+    return _list();
+  }
+
+  Future<List<PetPack>> _list() async {
+    final ticket = ++_asked;
+    final found = await ref.read(petLibraryProvider).list();
+    // A pet that failed to read while it was away (an interrupted replacement,
+    // put right by this listing) is read again.
+    for (final pack in found) {
+      final read = petPackProvider(pack.id);
+      if (ref.exists(read) && ref.read(read).hasError) ref.invalidate(read);
+    }
+    if (ticket < _landed) return _latest;
+    _landed = ticket;
+    return _latest = found;
+  }
+
+  /// Lists again; when that fails, [fallback] says what changed.
+  Future<void> _relist(List<PetPack> Function(List<PetPack> was) fallback) async {
+    List<PetPack> next;
+    try {
+      next = await _list();
+    } on Object {
+      next = fallback(state.value ?? _latest);
+    }
+    if (ref.mounted) state = AsyncData(next);
+  }
+
+  /// A brought pet's files changed: nothing of the old ones may linger, here
+  /// or in the overlay.
+  void _changed(String id) {
+    PetSheets.instance.forget(id);
+    ref.invalidate(petPackProvider(id));
+    unawaited(ref.read(petOverlayChannelProvider).reloadPack(id));
+  }
+
+  /// Checks and unpacks [zip] (pet_library.dart). Returns the pet and whether
+  /// it replaced one of the same id; throws [PetImportException].
+  Future<({PetPack pack, bool replaced})> import(File zip) async {
+    final carrying = ref.read(petCarryingProvider.notifier);
+    carrying.set(true);
+    try {
+      final (:id, :replaced) = await ref.read(petLibraryProvider).install(zip);
+      _changed(id);
+      final pack = await ref.read(petPackProvider(id).future);
+      await _relist((was) => [...was.where((p) => p.id != id), pack]);
+      return (pack: pack, replaced: replaced);
+    } finally {
+      if (ref.mounted) carrying.set(false);
+    }
+  }
+
+  /// Removes a brought pet; when it was the chosen one, the default comes
+  /// back. When it can't be removed it stays whole (pet_library.dart), is
+  /// chosen again if it was, and the error is rethrown for the picker to say.
+  /// Neither switch is the person's pick: a hidden pet stays hidden.
+  Future<void> remove(String id) async {
+    if (!isUserPet(id)) return;
+    final prefs = ref.read(petPrefsProvider.notifier);
+    final chosen = ref.read(petPrefsProvider).packId == id;
+    if (chosen) await prefs.replacePack(defaultPetId);
+    try {
+      await ref.read(petLibraryProvider).remove(id);
+    } on Object {
+      if (chosen && ref.mounted && ref.read(petPrefsProvider).packId == defaultPetId) await prefs.replacePack(id);
+      await _relist((was) => was);
+      rethrow;
+    }
+    _changed(id);
+    // Picked again while it was being deleted: it is gone, the default it is
+    // (else no pet would draw, now or after a restart).
+    if (ref.mounted && ref.read(petPrefsProvider).packId == id) await prefs.replacePack(defaultPetId);
+    await _relist((was) => [...was.where((p) => p.id != id)]);
+  }
+}
+
+final userPetsProvider = AsyncNotifierProvider<UserPetsController, List<PetPack>>(UserPetsController.new);
 
 /// The chosen pack; null for none (or while it loads, or when it is broken).
 final currentPetPackProvider = Provider<PetPack?>((ref) {
@@ -49,6 +144,13 @@ final currentPetPackProvider = Provider<PetPack?>((ref) {
 /// Where `ChatAlertsController` hands every alert, for the pet.
 class PetEventBus {
   final _events = StreamController<PetEvent>.broadcast(sync: true);
+  final _companionSignals = StreamController<CompanionAlertDelivery>.broadcast(sync: true);
+
+  /// Independent metadata lane; it never calls old PetEvent text handlers.
+  Stream<CompanionAlertDelivery> get companionSignals => _companionSignals.stream;
+  void companionSignal(CompanionAlertDelivery delivery) {
+    if (!_companionSignals.isClosed && delivery.current) _companionSignals.add(delivery);
+  }
 
   Stream<PetEvent> get events => _events.stream;
 
@@ -98,7 +200,10 @@ class PetEventBus {
 
   void add(PetEvent event) => _events.add(event);
 
-  void dispose() => unawaited(_events.close());
+  void dispose() {
+    unawaited(_events.close());
+    unawaited(_companionSignals.close());
+  }
 }
 
 final petEventBusProvider = Provider<PetEventBus>((ref) {
@@ -426,6 +531,7 @@ PetFocus petFocusOf(HostRef host, String sessionId, ChatState s, {bool compactin
   return PetFocus(
     host: host,
     sessionId: sessionId,
+    title: s.title,
     activity: petActivityOf(runActivityOf(s)?.kind),
     compacting: compacting,
     waitingKey: approval?.eventId ?? question?.eventId,
@@ -449,6 +555,9 @@ final petPendingProvider = Provider<List<PetPending>>((ref) {
   ];
 });
 
+/// A pet pack is being unpacked: the pet carries it in (docs/design/pets.md §4.2).
+final petCarryingProvider = NotifierProvider<FlagController, bool>(() => FlagController(false));
+
 /// All level signals.
 final petSignalsProvider = Provider<PetSignals>((ref) {
   final focus = ref.watch(petFocusProvider);
@@ -458,6 +567,7 @@ final petSignalsProvider = Provider<PetSignals>((ref) {
     runs: ref.watch(petRunsProvider),
     pending: ref.watch(petPendingProvider),
     lastInteraction: ref.watch(petInteractionProvider),
+    carrying: ref.watch(petCarryingProvider),
     quiet: ref.watch(petPrefsProvider.select((p) => p.quiet)),
   );
 });
@@ -558,6 +668,7 @@ final petScopedStateProvider = Provider.family<PetState, PetScope>((ref, scope) 
     foreground: ref.watch(appForegroundProvider),
     packId: prefs.packId,
     size: prefs.size,
+    bodyHeight: prefs.bodyHeight,
     quiet: prefs.quiet,
     reduceMotion: ref.watch(performanceDefaultsProvider.select((p) => p.reduceMotion)),
     canStop: signals.runs.any((r) => PetTarget(r.host, r.root) == petTarget(global, signals) && r.host == activeHost),

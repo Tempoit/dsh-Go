@@ -1,5 +1,5 @@
-// Native mirror of the official Cordis panel (`dsh-client-ui-cordis`): the
-// Host's dynamic plugins, read again whenever the Host announces a change.
+// Native Cordis panel of the active host: the Host's dynamic plugins, read
+// again whenever the Host announces a change.
 
 import 'dart:async';
 

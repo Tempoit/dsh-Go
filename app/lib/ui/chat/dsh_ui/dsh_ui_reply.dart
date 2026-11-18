@@ -1,4 +1,6 @@
-// Portions derived from DS Bot (https://github.com/Fei2411/DeepSeek-Bot), Apache-2.0, Copyright 2026 Fei2411 and the DS Bot contributors. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 Fei2411 and the DS Bot contributors
+// SPDX-License-Identifier: Apache-2.0
+// See THIRD_PARTY_NOTICES.md.
 // Modified: the `validateOptions` selection rules translated to Dart; the
 // answer travels as a readable user message built only from visible labels
 // (`[dsh-ui reply]` + `选择：…`), and the card's state is derived from the

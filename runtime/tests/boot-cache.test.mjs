@@ -12,8 +12,9 @@ import { install, createBootCache, PASS } from '../boot/boot-cache.mjs';
 const MODULE = fileURLToPath(new URL('../boot/boot-cache.mjs', import.meta.url));
 
 /** A tree with the shapes DSH's install has: hoisted packages, file links, a dir link, an outside link. */
-function tree() {
+function tree(context) {
   const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'boot-cache-')));
+  context.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const dsh = path.join(base, 'opt/dsh');
   const nm = path.join(dsh, 'node_modules');
   fs.mkdirSync(path.join(nm, '@scope/pkg/lib'), { recursive: true });
@@ -79,8 +80,8 @@ function queries({ base, nm, dsh }) {
   ];
 }
 
-test('answers match node:fs for every shape', () => {
-  const t = tree();
+test('answers match node:fs for every shape', (context) => {
+  const t = tree(context);
   const { f } = spyFs();
   const out = fakeStdout();
   const expected = queries(t).map((q) => ({
@@ -113,8 +114,8 @@ test('answers match node:fs for every shape', () => {
   }
 });
 
-test('one lstat per component, misses remembered', () => {
-  const t = tree();
+test('one lstat per component, misses remembered', (context) => {
+  const t = tree(context);
   const { f, calls } = spyFs();
   const uninstall = install({ roots: t.roots, fsImpl: f, stdout: fakeStdout() });
   try {
@@ -136,8 +137,8 @@ test('one lstat per component, misses remembered', () => {
   }
 });
 
-test('package.json text is read once; other reads pass through', () => {
-  const t = tree();
+test('package.json text is read once; other reads pass through', (context) => {
+  const t = tree(context);
   const { f, calls } = spyFs();
   const uninstall = install({ roots: t.roots, fsImpl: f, stdout: fakeStdout() });
   try {
@@ -154,8 +155,8 @@ test('package.json text is read once; other reads pass through', () => {
   }
 });
 
-test('the URL line ends it: originals back, nothing cached', () => {
-  const t = tree();
+test('the URL line ends it: originals back, nothing cached', (context) => {
+  const t = tree(context);
   const { f, calls } = spyFs();
   const originals = [f.realpathSync, f.existsSync, f.readFileSync];
   const out = fakeStdout();
@@ -175,8 +176,8 @@ test('the URL line ends it: originals back, nothing cached', () => {
   assert.ok(calls.exists > 0);
 });
 
-test('a reference taken during boot stops caching afterwards', () => {
-  const t = tree();
+test('a reference taken during boot stops caching afterwards', (context) => {
+  const t = tree(context);
   const { f } = spyFs();
   const out = fakeStdout();
   install({ roots: t.roots, fsImpl: f, stdout: out });
@@ -189,8 +190,8 @@ test('a reference taken during boot stops caching afterwards', () => {
   assert.equal(exists(later), true);
 });
 
-test('gives up after maxMs without a URL line', async () => {
-  const t = tree();
+test('gives up after maxMs without a URL line', async (context) => {
+  const t = tree(context);
   const { f } = spyFs();
   const original = f.existsSync;
   install({ roots: t.roots, fsImpl: f, stdout: fakeStdout(), maxMs: 20 });
@@ -199,15 +200,15 @@ test('gives up after maxMs without a URL line', async () => {
   assert.equal(f.existsSync, original);
 });
 
-test('createBootCache passes on paths outside the roots', () => {
-  const t = tree();
+test('createBootCache passes on paths outside the roots', (context) => {
+  const t = tree(context);
   const cache = createBootCache({ roots: t.roots });
   assert.equal(cache.real(path.join(t.base, 'outside/target.js')), PASS);
   assert.equal(cache.real('relative/path'), PASS);
   assert.equal(cache.real(path.join(t.nm, 'dep/package.json')), path.join(t.nm, 'dep/package.json'));
 });
 
-test('as a preload: active for `web` only, inert for other commands', () => {
+test('as a preload: active for `web` only, inert for other commands', (context) => {
   const script = (marker) =>
     `import fs from 'node:fs';\n` +
     `const patched = fs.existsSync.name === 'existsSync' && !fs.existsSync.toString().includes('[native code]') && fs.existsSync.toString().includes('cache.real');\n` +
@@ -215,6 +216,7 @@ test('as a preload: active for `web` only, inert for other commands', () => {
     `process.stdout.write('dsh web: http://127.0.0.1:1/?token=x\\n');\n` +
     `process.stdout.write('after ' + fs.existsSync.toString().includes('cache.real') + '\\n');\n`;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'boot-cache-preload-'));
+  context.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const file = path.join(dir, 'probe.mjs');
   fs.writeFileSync(file, script('patched'));
   const run = (...args) => spawnSync(process.execPath, ['--import', MODULE, file, ...args], { encoding: 'utf8' });
@@ -231,8 +233,8 @@ test('as a preload: active for `web` only, inert for other commands', () => {
   assert.match(off.stdout, /^patched false$/m);
 });
 
-test('a URL line written as bytes ends it too', () => {
-  const t = tree();
+test('a URL line written as bytes ends it too', (context) => {
+  const t = tree(context);
   const { f } = spyFs();
   const original = f.existsSync;
   const out = fakeStdout();
@@ -242,8 +244,8 @@ test('a URL line written as bytes ends it too', () => {
 });
 
 
-test('raw dot parent slash and relative spellings preserve each original API', () => {
-  const t = tree();
+test('raw dot parent slash and relative spellings preserve each original API', (context) => {
+  const t = tree(context);
   fs.writeFileSync(t.nm + '/marker', 'lexical');
   fs.writeFileSync(t.nm + '/@scope/marker', 'physical');
   fs.symlinkSync('@scope/pkg/package.json', t.nm + '/file-link');
@@ -260,11 +262,11 @@ test('raw dot parent slash and relative spellings preserve each original API', (
       assert.equal(f.existsSync(q), fs.existsSync(q), q);
     }
     assert.notEqual(fs.realpathSync(raw[0]), fs.realpathSync.native(raw[0]), 'fixture retains the native/JS difference');
-  } finally { stop(); fs.rmSync(t.base, { recursive: true, force: true }); }
+  } finally { stop(); }
 });
 
-test('pnpm links compare original API results once then reuse components', () => {
-  const t = tree();
+test('pnpm links compare original API results once then reuse components', (context) => {
+  const t = tree(context);
   const target = t.nm + '/.pnpm/x@1/node_modules/x';
   fs.mkdirSync(target, { recursive: true }); fs.writeFileSync(target + '/package.json', '{"name":"x"}');
   fs.symlinkSync('.pnpm/x@1/node_modules/x', t.nm + '/x');
@@ -280,11 +282,11 @@ test('pnpm links compare original API results once then reuse components', () =>
       assert.equal(f.readFileSync(q, 'utf8'), '{"name":"x"}');
     }
     assert.equal(calls.native, 1); assert.equal(calls.realpath, 1); assert.equal(calls.exists, 0); assert.equal(calls.lstat, first); assert.equal(calls.read, 1);
-  } finally { stop(); fs.rmSync(t.base, { recursive: true, force: true }); }
+  } finally { stop(); }
 });
 
-test('outside target manifests and dangling or cyclic links stay on original fs', () => {
-  const t = tree();
+test('outside target manifests and dangling or cyclic links stay on original fs', (context) => {
+  const t = tree(context);
   fs.writeFileSync(t.base + '/outside/package.json', '{"v":1}');
   fs.symlinkSync(t.base + '/outside', t.nm + '/outside-dir'); fs.symlinkSync('cycle', t.nm + '/cycle');
   const { f } = spyFs(); const stop = install({ roots: t.roots, fsImpl: f, stdout: fakeStdout() });
@@ -296,11 +298,11 @@ test('outside target manifests and dangling or cyclic links stay on original fs'
       assert.deepEqual(outcome(() => f.realpathSync.native(raw)), outcome(() => fs.realpathSync.native(raw)));
       assert.equal(f.existsSync(raw), fs.existsSync(raw));
     }
-  } finally { stop(); fs.rmSync(t.base, { recursive: true, force: true }); }
+  } finally { stop(); }
 });
 
-test('automatic preload maps read-only roots from the actual Direct paths adapter', () => {
-  const t = tree(); const file = path.join(t.base, 'direct-probe.mjs');
+test('automatic preload maps read-only roots from the actual Direct paths adapter', (context) => {
+  const t = tree(context); const file = path.join(t.base, 'direct-probe.mjs');
   fs.writeFileSync(file, `import fs from 'node:fs';
 import { createPaths } from ${JSON.stringify(new URL('../direct/paths.mjs', import.meta.url).href)};
 const root = ${JSON.stringify(t.base)};
@@ -313,16 +315,14 @@ fs.realpathSync.native(q); fs.existsSync(q);
 console.log(JSON.stringify({ value, first, final: stats }));
 console.log('dsh web: http://127.0.0.1:1/?token=test');
 `);
-  try {
-    const result = spawnSync(process.execPath, [file, 'web'], { encoding: 'utf8', env: { ...process.env, DSH_GO_BOOT_CACHE: '1' } });
-    assert.equal(result.status, 0, result.stderr); const data = JSON.parse(result.stdout.split('\n')[0]);
-    assert.equal(data.value, t.nm + '/dep/package.json'); assert.ok(data.first > 0); assert.equal(data.final, data.first);
-  } finally { fs.rmSync(t.base, { recursive: true, force: true }); }
+  const result = spawnSync(process.execPath, [file, 'web'], { encoding: 'utf8', env: { ...process.env, DSH_GO_BOOT_CACHE: '1' } });
+  assert.equal(result.status, 0, result.stderr); const data = JSON.parse(result.stdout.split('\n')[0]);
+  assert.equal(data.value, t.nm + '/dep/package.json'); assert.ok(data.first > 0); assert.equal(data.final, data.first);
 });
 
 
-test('dot segments hidden in link targets preserve JS and native results with suffixes', () => {
-  const t = tree();
+test('dot segments hidden in link targets preserve JS and native results with suffixes', (context) => {
+  const t = tree(context);
   fs.mkdirSync(t.dsh + '/store/deep', { recursive: true });
   for (const dir of [t.dsh, t.dsh + '/store']) {
     fs.writeFileSync(dir + '/marker', dir);
@@ -341,5 +341,5 @@ test('dot segments hidden in link targets preserve JS and native results with su
         assert.equal(f.existsSync(q), fs.existsSync(q), q);
       }
     }
-  } finally { stop(); fs.rmSync(t.base, { recursive: true, force: true }); }
+  } finally { stop(); }
 });

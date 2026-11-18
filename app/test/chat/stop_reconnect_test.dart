@@ -153,9 +153,17 @@ class _Harness {
   }
 
   Future<void> running(_Client client, {String sessionId = 'S', List<Map<String, Object?>> inbox = const []}) async {
-    client.running(sessionId, inbox: inbox);
-    await flush();
-    expect(c.read(chatProvider(sessionId)).running, isTrue, reason: 'Probe must start with a live running session');
+    final ready = Completer<void>();
+    final subscription = c.listen(chatProvider(sessionId), (_, next) {
+      if (!ready.isCompleted && next.running) ready.complete();
+    });
+    try {
+      client.running(sessionId, inbox: inbox);
+      await ready.future;
+      expect(c.read(chatProvider(sessionId)).running, isTrue, reason: 'Probe must start with a live running session');
+    } finally {
+      subscription.close();
+    }
   }
 
   Future<void> close() async {
@@ -263,6 +271,7 @@ class _Loopback {
     server.listen((request) async {
       final body = jsonDecode(await utf8.decoder.bind(request).join()) as Map<String, dynamic>;
       received.add({'path': request.uri.path, 'body': body});
+      if (!requestReceived.isCompleted) requestReceived.complete();
       final answer = await result.future;
       request.response.headers.contentType = ContentType.json;
       request.response.write(jsonEncode({'type': 'server-response', 'rpcId': body['rpcId'], 'result': answer}));
@@ -270,6 +279,7 @@ class _Loopback {
     });
   }
   final HttpServer server;
+  final requestReceived = Completer<void>();
   final result = Completer<Map<String, Object?>>();
   final received = <Map<String, Object?>>[];
   static Future<_Loopback> start() async => _Loopback(await HttpServer.bind(InternetAddress.loopbackIPv4, 0));
@@ -288,6 +298,66 @@ class _RealHttp extends HttpOverrides {}
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  testWidgets('running fixture waits for a delayed status publication', (tester) async {
+    var publications = 0;
+    await runZoned(
+      () async {
+        final h = _Harness();
+        try {
+          final a = h.client('engine-A');
+          final connecting = h.use(a);
+          await tester.binding.delayed(Duration.zero);
+          await connecting;
+          expect(a.watched, ['S']);
+          expect(a.streams['S']!.hasListener, isTrue);
+
+          var prepared = false;
+          Object? setupError;
+          final preparing = h
+              .running(a, inbox: [_item('queued', 'queued text')])
+              .then<void>((_) => prepared = true, onError: (Object error) => setupError = error);
+          await tester.binding.delayed(Duration.zero);
+          await tester.binding.delayed(const Duration(milliseconds: 60));
+          expect(publications, 1);
+          expect(h.state.controlReady, isTrue);
+          expect(h.state.running, isFalse);
+          expect(h.state.pending.single.inboxId, 'queued');
+          final returnedBeforePublication = prepared;
+          expect(await h.chat.cancel(), isEmpty);
+          expect(a.wire.calls, isEmpty);
+
+          await tester.binding.delayed(const Duration(milliseconds: 60));
+          await preparing;
+          expect(h.state.running, isTrue);
+          final cancel = h.chat.cancel();
+          expect((a.wire.calls.single['args']! as Map)['request'], {'sessionId': 'S'});
+          a.wire.cancels.single.complete(const RpcOk(null));
+          expect(await cancel, isEmpty);
+          expect(a.wire.calls.map((call) => call['endpoint']), [
+            'session/cancel',
+            'session/updateQueue',
+            'session/prompt',
+          ]);
+          expect(setupError, isNull, reason: 'Setup must wait for the public running state.');
+          expect(returnedBeforePublication, isFalse);
+          expect(prepared, isTrue);
+        } finally {
+          await h.close();
+        }
+      },
+      zoneSpecification: ZoneSpecification(
+        createTimer: (self, parent, zone, duration, callback) {
+          // The snapshot arrives normally; only its following running status
+          // is published after the old fixture's fixed 60ms wait.
+          if (duration == const Duration(milliseconds: 32) && ++publications == 1) {
+            duration = const Duration(milliseconds: 120);
+          }
+          return parent.createTimer(zone, duration, callback);
+        },
+      ),
+    );
+  });
 
   test('P12 B1 stale cancel failure must not clear replacement client stop', () async {
     final h = _Harness();
@@ -629,46 +699,69 @@ void main() {
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, null);
   });
 
-  test('P12 B5 real HTTP in-flight failure after graceful close pollutes new stop', () async {
-    // Flutter widget tests replace HttpClient by a 400-only fake. This plain
-    // test explicitly uses Dart's real loopback HTTP transport in this zone.
+  testWidgets('P12 B5 real HTTP in-flight failure after graceful close pollutes new stop', (tester) async {
+    // Keep real loopback I/O, but drive provider updates and the chat's 32 ms
+    // publication timer with the test clock rather than a wall-clock sleep.
     await HttpOverrides.runWithHttpOverrides(() async {
-      final host = await _Loopback.start();
+      final host = (await tester.runAsync(_Loopback.start))!;
       final h = _LocalHarness();
-      addTearDown(() async {
+      try {
+        await tester.pump(Duration.zero);
+        expect(h.connects.map((entry) => entry.$1), ['A']);
+        final a = h.complete('A', carrier: host.carrier());
+        await tester.pump(Duration.zero);
+        expect(a.watched, ['S']);
+        a.running('S');
+        await tester.pump(Duration.zero);
+        await tester.pump(const Duration(milliseconds: 32));
+        expect(h.state.running, isTrue);
+        expect(h.state.syncing, isFalse);
+        late Future<List<PendingPrompt>> oldCancel;
+        await tester.runAsync(() async {
+          oldCancel = h.chat.cancel();
+          await host.requestReceived.future;
+        });
+        expect(host.received.single['path'], '/api/session/cancel');
+        h.runtime.replace('B');
+        await tester.pump(Duration.zero);
+        expect(h.connects.map((entry) => entry.$1), ['A', 'B']);
+        final b = h.complete('B');
+        await tester.pump(Duration.zero);
+        expect(b.watched, ['S']);
+        b.running('S');
+        // Deliver the asynchronous status first, then advance its publication
+        // timer. A watched stream alone does not mean cancel() can run yet.
+        await tester.pump(Duration.zero);
+        await tester.pump(const Duration(milliseconds: 32));
+        expect(h.state.running, isTrue, reason: 'The replacement status must publish before cancel');
+        expect(h.state.syncing, isFalse);
+        final newCancel = h.chat.cancel();
+        expect(b.wire.cancels, hasLength(1));
+        expect(b.wire.cancels.single.isCompleted, isFalse);
+        expect(h.state.stopping, isTrue);
+        expect(a.wire.closed, isTrue);
+        await tester.runAsync(() async {
+          host.result.complete({
+            'ok': false,
+            'error': {'code': 'probe/late-failure', 'message': 'old response after close'},
+          });
+          await oldCancel;
+        });
+        final stopping = h.state.stopping;
+        trace('B5-real-HTTP-graceful-close-failure', {
+          'oldClientClosed': a.wire.closed,
+          'serverReceived': host.received,
+          'stopping': stopping,
+          'error': h.state.error,
+        });
+        b.wire.cancels.single.complete(const RpcOk(null));
+        await newCancel;
+        expect(stopping, isTrue);
+        expect(h.state.error, isNull);
+      } finally {
         await h.close();
-        await host.close();
-      });
-      await _waitFor(() => h.connects.isNotEmpty);
-      final a = h.complete('A', carrier: host.carrier());
-      await _waitFor(() => a.watched.isNotEmpty);
-      a.running('S');
-      await flush();
-      final oldCancel = h.chat.cancel();
-      await _waitFor(() => host.received.isNotEmpty);
-      h.runtime.replace('B');
-      await _waitFor(() => h.connects.length == 2);
-      final b = h.complete('B');
-      await _waitFor(() => b.watched.isNotEmpty);
-      b.running('S');
-      await flush();
-      final newCancel = h.chat.cancel();
-      expect(a.wire.closed, isTrue);
-      host.result.complete({
-        'ok': false,
-        'error': {'code': 'probe/late-failure', 'message': 'old response after close'},
-      });
-      await oldCancel;
-      final stopping = h.state.stopping;
-      trace('B5-real-HTTP-graceful-close-failure', {
-        'oldClientClosed': a.wire.closed,
-        'serverReceived': host.received,
-        'stopping': stopping,
-        'error': h.state.error,
-      });
-      b.wire.cancels.single.complete(const RpcOk(null));
-      await newCancel;
-      expect(stopping, isTrue);
+        await tester.runAsync(host.close);
+      }
     }, _RealHttp());
   });
 

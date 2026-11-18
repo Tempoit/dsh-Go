@@ -7,6 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 import java.io.File
+import kotlin.random.Random
 
 class PetPackTest {
     private fun anim(name: String, frames: Int, box: String = """{"x": 12, "y": 12, "w": 52, "h": 49}""", loop: Boolean = true, scale: Int = 1): String {
@@ -136,7 +137,23 @@ class PetPackTest {
         assertEquals(listOf("thumbs-up"), b.anims.map { it.name })
         assertEquals(1f / 3, b.chance, 1e-6f)
         assertNull(p.bonusOf("idle", 0))
+        // A tier-reached state without an explicit bonus has none either, as the app: the list
+        // past its first animation is empty.
         assertNull(p.bonusOf("working", 2))
+    }
+
+    @Test fun anExplicitBonusWinsWhateverTheTierPlays() {
+        val p = PetPack.parse(
+            json.replace(
+                "\"reactions\":",
+                """"bonus": {"working": {"anims": ["building"], "chance": 0.5}},
+                   "reactions":""",
+            ),
+        )
+        val b = p.bonusOf("working", 2)!!
+        assertEquals(listOf("building"), b.anims.map { it.name })
+        assertEquals(0.5f, b.chance, 1e-6f)
+        assertNull(p.bonusOf("idle", 2))
     }
 
     @Test fun windowWithoutWideBoxCoversEveryStateButRoam() {
@@ -147,6 +164,14 @@ class PetPackTest {
         assertEquals(2f, w.y)
         assertEquals(64f, w.right)
         assertEquals(61f, w.bottom)
+    }
+
+    @Test fun customSizeRoundsItsOwnHeight() {
+        val p = PetPack.parse(json)
+        // 49 px body: 60 dp at 2.75 is round(3.37) = 3 whole px per art px, 15 dp is round(0.84) = 1.
+        assertEquals(3f, p.screenScale("custom:60.0", 2.75f))
+        assertEquals(1f, p.screenScale("custom:15.0", 2.75f))
+        assertEquals(p.screenScale(PetSize.LARGE, 2.75f), p.screenScale("large", 2.75f))
     }
 
     @Test fun screenScaleMatchesTheAppForEverySize() {
@@ -213,11 +238,100 @@ class PetPackTest {
 
     @Test fun reactionsAndPlayTimes() {
         val p = PetPack.parse(json)
+        // A string is a one-item list: both entries give it, random or not (old packs are unchanged).
+        assertEquals(listOf("poke-left"), p.reactions["tapLeft"])
         assertEquals("poke-left", p.reaction("tapLeft")?.name)
+        assertEquals("poke-left", p.reaction("tapLeft", Random(3))?.name)
+        assertEquals("drag", p.reaction("drag", Random(3))?.name)
         assertNull(p.reaction("tapRight"))
+        assertNull(p.reaction("tapRight", Random(3)))
         assertEquals(2110L, p.playMsOf(p.animations.getValue("poke-left")))
         // Without playMs: two cycles of a loop.
         assertEquals(2 * 800L, p.playMsOf(p.animations.getValue("music")))
+    }
+
+    @Test fun reactionsTakeOneAnimationOrSeveral() {
+        val p = PetPack.parse(
+            json.replace(
+                "\"reactions\": {\"tapLeft\": \"poke-left\", \"drag\": \"drag\"}",
+                "\"reactions\": {\"tapLeft\": [\"poke-left\", \"thumbs-up\", \"happy\"], \"drag\": [\"drag\", \"swim\"]}",
+            ),
+        )
+        assertEquals(listOf("poke-left", "thumbs-up", "happy"), p.reactions["tapLeft"])
+        assertEquals(listOf("drag", "swim"), p.reactions["drag"])
+        // The deterministic entry takes the first (the drag pose the window is built around).
+        assertEquals("poke-left", p.reaction("tapLeft")?.name)
+        assertEquals("drag", p.reaction("drag")?.name)
+        // The random entry draws every alternative: 300 draws cover all three.
+        val random = Random(7)
+        val drawn = List(300) { p.reaction("tapLeft", random)!!.name }.toSet()
+        assertEquals(setOf("poke-left", "thumbs-up", "happy"), drawn)
+    }
+
+    @Test fun anEmptyReactionListMeansTheReactionIsAbsent() {
+        val p = PetPack.parse(json.replace("\"tapLeft\": \"poke-left\"", "\"tapLeft\": []"))
+        assertNull(p.reactions["tapLeft"])
+        assertNull(p.reaction("tapLeft"))
+        assertNull(p.reaction("tapLeft", Random(1)))
+    }
+
+    /** Old apps read reactions as strings only, so a pack adds extras as numbered keys: they merge into the base. */
+    @Test fun numberedReactionsMergeIntoTheirBase() {
+        val p = PetPack.parse(
+            json.replace(
+                "\"reactions\": {\"tapLeft\": \"poke-left\", \"drag\": \"drag\"}",
+                "\"reactions\": {\"tickle\": \"happy\", \"tickle2\": \"thumbs-up\", \"tickle3\": \"music\"}",
+            ),
+        )
+        assertEquals(listOf("happy", "thumbs-up", "music"), p.reactions["tickle"])
+        assertNull(p.reactions["tickle2"])
+        assertEquals("happy", p.reaction("tickle")?.name)
+        val random = Random(7)
+        val drawn = List(300) { p.reaction("tickle", random)!!.name }.toSet()
+        assertEquals(setOf("happy", "thumbs-up", "music"), drawn)
+    }
+
+    @Test fun numberedReactionsMergeEvenWhenTheyComeFirst() {
+        val p = PetPack.parse(
+            json.replace(
+                "\"reactions\": {\"tapLeft\": \"poke-left\", \"drag\": \"drag\"}",
+                "\"reactions\": {\"tickle2\": \"thumbs-up\", \"tickle\": \"happy\", \"tickle3\": \"music\"}",
+            ),
+        )
+        // Appended in the order they appear in the file, whatever place the base takes.
+        assertEquals(listOf("happy", "thumbs-up", "music"), p.reactions["tickle"])
+    }
+
+    @Test fun aNumberedReactionWithoutItsBaseStaysItsOwn() {
+        val p = PetPack.parse(
+            json.replace(
+                "\"reactions\": {\"tapLeft\": \"poke-left\", \"drag\": \"drag\"}",
+                "\"reactions\": {\"tickle2\": \"thumbs-up\", \"drag\": \"drag\"}",
+            ),
+        )
+        assertEquals(listOf("thumbs-up"), p.reactions["tickle2"])
+        assertNull(p.reactions["tickle"])
+        assertNull(p.reaction("tickle"))
+    }
+
+    @Test fun numberedReactionsAppendToAList() {
+        val p = PetPack.parse(
+            json.replace(
+                "\"reactions\": {\"tapLeft\": \"poke-left\", \"drag\": \"drag\"}",
+                "\"reactions\": {\"tickle\": [\"happy\", \"thumbs-up\"], \"tickle3\": \"music\"}",
+            ),
+        )
+        assertEquals(listOf("happy", "thumbs-up", "music"), p.reactions["tickle"])
+    }
+
+    @Test fun usedAnimationsCountEveryReactionAlternative() {
+        val p = PetPack.parse(
+            """{"schema": 1, "id": "mini", "scale": 1, "canvas": {"w": 69, "h": 66},
+                "animations": {${listOf(anim("idle", 1), anim("alt", 1), anim("alt2", 1)).joinToString(",")}},
+                "states": {"idle": ["idle"]},
+                "reactions": {"tapLeft": ["alt", "alt2"]}}""",
+        )
+        assertEquals(setOf("idle", "alt", "alt2"), p.usedAnimations())
     }
 
     @Test fun brokenPacksAreRejected() {
@@ -229,6 +343,8 @@ class PetPackTest {
             // A state naming a missing animation.
             json.replace("\"waking\": [\"waking\"]", "\"waking\": [\"yawn\"]"),
             json.replace("\"tapLeft\": \"poke-left\"", "\"tapLeft\": \"poke\""),
+            // A reaction list naming a missing animation.
+            json.replace("\"drag\": \"drag\"", "\"drag\": [\"drag\", \"fly\"]"),
             json.replace("\"anim\": \"swim\"", "\"anim\": \"fly\""),
             // A zero frame time, a cell size that isn't box × scale, a sheet outside the folder.
             json.replace("{\"i\": 0, \"ms\": 100}", "{\"i\": 0, \"ms\": 0}"),

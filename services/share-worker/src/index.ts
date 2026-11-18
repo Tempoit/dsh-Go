@@ -34,7 +34,9 @@ export { StatsSalt } from './stats';
 import { usage } from './usage';
 import { githubStars } from './github';
 import { isMarketPath, market, publishMarket } from './market';
+import { isPetMarketPath, petMarket, publishPetMarket } from './pet-market';
 import type { Ctx } from './files';
+import { isWorkshopPath, workshop } from './workshop';
 import { notFound, redirect, viewer } from './site';
 
 const VIEWER_PATH = /^\/c\/([0-9A-Za-z]{6,32})\/?$/;
@@ -48,6 +50,7 @@ async function route(request: Request, env: Env, ctx: Ctx): Promise<Response> {
   const path = url.pathname;
   const method = request.method;
 
+  if (isWorkshopPath(path)) return workshop(request, env, ctx);
   if (path.startsWith('/api/')) {
     if (path === '/api/usage/v1') return usage(request, env);
     if (path === '/api/github/stars') return githubStars(request, env, ctx);
@@ -64,7 +67,8 @@ async function route(request: Request, env: Env, ctx: Ctx): Promise<Response> {
     return json(404, { error: 'not_found' });
   }
 
-  if (isMarketPath(path)) return market(request, env);
+  if (isPetMarketPath(path)) return petMarket(request, env, ctx);
+  if (isMarketPath(path)) return market(request, env, ctx);
   if (isBetaPath(path)) return beta(request, env, ctx);
   if (isDownloadPath(path) && accessMode(env) === 'public') return download(request, env, ctx);
   if (RETIRED.test(path) || path.startsWith('/__edge/')) return notFound();
@@ -85,6 +89,10 @@ export default {
     }
   },
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
-    await publishMarket(env);
+    if (env.PET_MARKET_ENABLED !== '1') return publishMarket(env);
+    // A plugin publication failure must not settle the scheduled handler while
+    // the independently started companion publication is still in flight.
+    const results = await Promise.allSettled([publishMarket(env), publishPetMarket(env)]);
+    for (const result of results) if (result.status === 'rejected') throw result.reason;
   },
 } satisfies ExportedHandler<Env>;

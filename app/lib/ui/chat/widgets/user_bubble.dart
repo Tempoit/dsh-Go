@@ -1,10 +1,12 @@
-// Portions derived from PiPilot (https://github.com/CikeSeven/pi_pilot), MIT, Copyright (c) 2026 CikeSeven. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 CikeSeven
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 
 import 'package:flutter/material.dart';
 
-import '../../../l10n/l10n.dart';
 import '../../../state/composer_quote.dart' show splitQuote;
 import '../../common/expand_reveal.dart';
+import '../../common/fluid_bits.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/theme.dart';
 import '../media/generate_header.dart';
@@ -14,7 +16,7 @@ import '../secret_mask.dart';
 import 'message_actions.dart';
 import 'quote_chip.dart';
 
-/// 用户消息:**右对齐的软气泡**,比页面深一档,像"按进去"的(Claude 式)。
+/// 用户消息:**右对齐的软气泡**,比页面深一档,像"按进去"的。
 ///
 /// 禁配:气泡底上只用主文字 / 次级文字;三级文字(4.32)与主色(4.22)
 /// 不过 AA。
@@ -40,8 +42,8 @@ class UserBubble extends StatelessWidget {
 
   final String text;
 
-  /// Images and file cards, shown right-aligned above the bubble (Claude 式:
-  /// 附件不塞进气泡里)。
+  /// Images and file cards, shown right-aligned above the bubble (附件不塞进
+  /// 气泡里)。
   final Widget? attachments;
 
   /// 非空 = 乐观气泡(还没被 DSH 回显),显示在气泡下方("发送中" / "排队中")。
@@ -75,14 +77,17 @@ class UserBubble extends StatelessWidget {
         await showSelectTextSheet(context, _shown);
       case MessageAction.edit:
         onEdit?.call();
-      case MessageAction.quote || MessageAction.share || MessageAction.regenerate || MessageAction.branch:
+      case MessageAction.quote ||
+          MessageAction.share ||
+          MessageAction.readAloud ||
+          MessageAction.regenerate ||
+          MessageAction.branch:
         break;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final l10n = context.l10n;
     final surfaces = DshSurfaces.of(context);
     final style = AppType.chatBody(context, color: surfaces.onUserBubble);
     // A generation request (generation mode's parameter header on the first
@@ -112,8 +117,7 @@ class UserBubble extends StatelessWidget {
     final bubble = Semantics(
       container: true,
       header: true,
-      label: l10n.chatMe,
-      child: GestureDetector(
+      child: HoldLift(
         onLongPress: () => _menu(context),
         child: DecoratedBox(
           decoration: ShapeDecoration(color: surfaces.userBubble, shape: AppShape.bubble),
@@ -210,7 +214,7 @@ class _PendingSlotState extends State<_PendingSlot> {
   );
 }
 
-/// 乐观气泡下方的一行:状态("排队中 · 本轮结束后发送")+ 文字操作。
+/// 乐观气泡下方的状态与文字操作;放不下时按可用宽度换行。
 ///
 /// 右端与气泡的直边对齐(缩进 8):只有状态时状态文字留 8;有操作时最后
 /// 一个操作自带左右 8 的点按区,文字同样停在 8 处。
@@ -228,14 +232,20 @@ class _PendingMeta extends StatelessWidget {
     final style = theme.textTheme.labelSmall?.copyWith(color: muted);
     return Padding(
       padding: EdgeInsets.only(top: actions.isEmpty ? 4 : 0, right: actions.isEmpty ? 8 : 0),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+      child: Wrap(
+        alignment: WrapAlignment.end,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 4,
         children: [
-          Icon(icon, size: 12, color: muted),
-          const SizedBox(width: 4),
-          Text(label, style: style),
-          for (final (text, onTap) in actions) ...[
-            const SizedBox(width: 4),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 12, color: muted),
+              const SizedBox(width: 4),
+              Flexible(child: Text(label, style: style)),
+            ],
+          ),
+          for (final (text, onTap) in actions)
             TextButton(
               onPressed: onTap,
               style: TextButton.styleFrom(
@@ -247,7 +257,6 @@ class _PendingMeta extends StatelessWidget {
               ),
               child: Text(text),
             ),
-          ],
         ],
       ),
     );

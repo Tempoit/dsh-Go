@@ -1,4 +1,6 @@
-// Portions derived from Phase (https://github.com/CikeSeven/phase), used with the author's permission. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 CikeSeven
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 // Local changes: blocking calls with timeouts; clickable-ancestor lookup before the gesture
 // fallback; directional scrolls; IME enter; injected gestures pass through the overlay and are
 // recorded in InjectGuard so its confirm buttons can refuse them.
@@ -9,10 +11,10 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
 import android.graphics.Rect
-import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.Looper
 import android.os.SystemClock
 import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityNodeInfo
@@ -34,6 +36,7 @@ internal object InjectGuard {
 internal class Actuator(private val service: AccessibilityService, private val overlay: ControlOverlay) {
     private val gestureThread = HandlerThread("dsh-a11y-gesture").apply { start() }
     private val gestureHandler = Handler(gestureThread.looper)
+    private val main = Handler(Looper.getMainLooper())
 
     enum class Via { NODE, ANCESTOR, GESTURE }
 
@@ -41,11 +44,17 @@ internal class Actuator(private val service: AccessibilityService, private val o
 
     fun close() { gestureThread.quitSafely() }
 
-    /** ACTION_CLICK / ACTION_LONG_CLICK on the node or its nearest clickable ancestor; a tap gesture last. */
-    fun click(node: AccessibilityNodeInfo, bounds: Box, screen: Box, long: Boolean): Outcome {
+    /** Try one node action; use a tap gesture only when neither node nor ancestor offers one. */
+    fun click(node: AccessibilityNodeInfo, bounds: Box, screen: Box, long: Boolean, allowed: () -> Boolean): Outcome {
         val action = if (long) AccessibilityNodeInfo.ACTION_LONG_CLICK else AccessibilityNodeInfo.ACTION_CLICK
         fun able(n: AccessibilityNodeInfo) = n.isEnabled && if (long) n.isLongClickable else n.isClickable
-        if (able(node) && node.performAction(action)) return Outcome(true, Via.NODE)
+        // A node click is our input too: confirm cards refuse accessibility clicks while it lasts.
+        InjectGuard.mark(0)
+        if (able(node)) {
+            if (!allowed()) return Outcome(false, null)
+            val ok = node.performAction(action)
+            return Outcome(ok, if (ok) Via.NODE else null)
+        }
         // A text inside a clickable row: a finger there would hit the row.
         val rect = Rect()
         var parent: AccessibilityNodeInfo? = node.parent
@@ -53,14 +62,17 @@ internal class Actuator(private val service: AccessibilityService, private val o
         while (parent != null && depth < 4) {
             parent.getBoundsInScreen(rect)
             if (able(parent) && rect.contains(bounds.centerX, bounds.centerY)) {
-                if (parent.performAction(action)) return Outcome(true, Via.ANCESTOR)
-                break
+                if (!allowed()) return Outcome(false, null)
+                val ok = parent.performAction(action)
+                return Outcome(ok, if (ok) Via.ANCESTOR else null)
             }
             parent = parent.parent
             depth++
         }
         val point = visiblePoint(bounds, screen) ?: return Outcome(false, null)
-        val ok = tap(point.first, point.second, long)
+        val ok = tap(point.first, point.second, long, start = { send -> allowed() && send() })
+        // Ordinary fallback keeps await's throw-and-clear interruption contract.
+        if (Thread.interrupted()) throw InterruptedException()
         return Outcome(ok, if (ok) Via.GESTURE else null)
     }
 
@@ -71,15 +83,15 @@ internal class Actuator(private val service: AccessibilityService, private val o
         return clipped.centerX to clipped.centerY
     }
 
-    fun tap(x: Int, y: Int, long: Boolean = false): Boolean {
+    fun tap(x: Int, y: Int, long: Boolean = false, start: ((() -> Boolean) -> Boolean)? = null): Boolean {
         val path = Path().apply { moveTo(x.toFloat(), y.toFloat()) }
         val duration = if (long) ViewConfiguration.getLongPressTimeout().toLong() + 300 else 60L
-        return gesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, duration)).build(), duration)
+        return gesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, duration)).build(), duration, start)
     }
 
-    fun swipe(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Long = 350): Boolean {
+    fun swipe(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Long = 350, start: ((() -> Boolean) -> Boolean)? = null): Boolean {
         val path = Path().apply { moveTo(x1.toFloat(), y1.toFloat()); lineTo(x2.toFloat(), y2.toFloat()) }
-        return gesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, durationMs)).build(), durationMs)
+        return gesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, durationMs)).build(), durationMs, start)
     }
 
     /**
@@ -87,18 +99,26 @@ internal class Actuator(private val service: AccessibilityService, private val o
      * stroke reaches the app underneath, never the overlay; InjectGuard covers the
      * time it is in flight.
      */
-    fun gesture(description: GestureDescription, durationMs: Long): Boolean {
+    fun gesture(description: GestureDescription, durationMs: Long, start: ((() -> Boolean) -> Boolean)? = null): Boolean {
         overlay.setPassThrough(true)
         try {
             InjectGuard.mark(durationMs)
             val latch = CountDownLatch(1)
             var completed = false
-            val sent = service.dispatchGesture(description, object : AccessibilityService.GestureResultCallback() {
+            val send = { service.dispatchGesture(description, object : AccessibilityService.GestureResultCallback() {
                 override fun onCompleted(gestureDescription: GestureDescription?) { completed = true; latch.countDown() }
                 override fun onCancelled(gestureDescription: GestureDescription?) { latch.countDown() }
-            }, gestureHandler)
+            }, gestureHandler) }
+            val sent = if (start == null) send() else start(send)
             if (!sent) return false
-            latch.await(durationMs + 2_000, TimeUnit.MILLISECONDS)
+            try { latch.await(durationMs + 2_000, TimeUnit.MILLISECONDS) }
+            catch (e: InterruptedException) {
+                if (start == null) throw e
+                // The main start may already have sent the gesture. Preserve unknown effect,
+                // never replay it or turn a cancelled callback wait into "not submitted".
+                Thread.currentThread().interrupt()
+                return false
+            }
             return completed
         } finally {
             InjectGuard.mark(0)
@@ -106,30 +126,31 @@ internal class Actuator(private val service: AccessibilityService, private val o
         }
     }
 
-    fun setText(node: AccessibilityNodeInfo, text: String): Boolean {
+    fun coordinateStart(current: () -> Boolean, admission: ((() -> Boolean) -> Boolean), send: () -> Boolean): Boolean {
+        val ticket = CoordinateDispatch(Thread.currentThread(), current, admission, send)
+        if (!main.post(ticket)) ticket.cancelQueued()
+        return ticket.awaitStart(2_000)
+    }
+
+    fun setText(node: AccessibilityNodeInfo, text: String, allowed: () -> Boolean): Boolean {
         val args = Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text) }
-        if (!node.isFocused) node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
-        if (node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) return true
-        // Some fields only accept text once they were clicked into.
-        node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-        node.refresh()
+        if (!node.isFocused) {
+            if (!allowed()) return false
+            node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+        }
+        if (!allowed()) return false
         return node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
     }
 
-    /** The keyboard's action key (搜索 / 发送 / 完成): API 30+ only. */
-    fun imeEnter(node: AccessibilityNodeInfo): Boolean {
-        if (Build.VERSION.SDK_INT < 30) return false
-        val id = AccessibilityAction.ACTION_IME_ENTER.id
-        node.refresh()
-        if (node.actionList.none { it.id == id }) return false
-        return node.performAction(id)
-    }
-
     /** Node scroll action for [direction] if the node offers one, else a swipe inside [bounds]. */
-    fun scroll(node: AccessibilityNodeInfo?, scrollBits: Int, horizontal: Boolean, bounds: Box, screen: Box, direction: PhoneAction.Direction): Outcome {
+    fun scroll(node: AccessibilityNodeInfo?, scrollBits: Int, horizontal: Boolean, bounds: Box, screen: Box, direction: PhoneAction.Direction, allowed: () -> Boolean): Outcome {
         if (node != null) {
             val action = scrollAction(scrollBits, horizontal, direction)
-            if (action != null && node.performAction(action)) return Outcome(true, Via.NODE)
+            if (action != null) {
+                if (!allowed()) return Outcome(false, null)
+                val ok = node.performAction(action)
+                return Outcome(ok, if (ok) Via.NODE else null)
+            }
         }
         // Keep clear of the status bar and the gesture-navigation strip at the bottom.
         val area = bounds.intersect(Box(screen.left, screen.top + screen.height / 20, screen.right, screen.bottom - screen.height * 6 / 100))
@@ -138,13 +159,15 @@ internal class Actuator(private val service: AccessibilityService, private val o
         val cy = area.centerY
         val dy = area.height * 3 / 10
         val dx = area.width * 3 / 10
+        val start: (() -> Boolean) -> Boolean = { send -> allowed() && send() }
         val ok = when (direction) {
             // DOWN = show what is below: the finger moves up.
-            PhoneAction.Direction.DOWN -> swipe(cx, cy + dy, cx, cy - dy)
-            PhoneAction.Direction.UP -> swipe(cx, cy - dy, cx, cy + dy)
-            PhoneAction.Direction.RIGHT -> swipe(cx + dx, cy, cx - dx, cy)
-            PhoneAction.Direction.LEFT -> swipe(cx - dx, cy, cx + dx, cy)
+            PhoneAction.Direction.DOWN -> swipe(cx, cy + dy, cx, cy - dy, start = start)
+            PhoneAction.Direction.UP -> swipe(cx, cy - dy, cx, cy + dy, start = start)
+            PhoneAction.Direction.RIGHT -> swipe(cx + dx, cy, cx - dx, cy, start = start)
+            PhoneAction.Direction.LEFT -> swipe(cx - dx, cy, cx + dx, cy, start = start)
         }
+        if (Thread.interrupted()) throw InterruptedException()
         return Outcome(ok, if (ok) Via.GESTURE else null)
     }
 

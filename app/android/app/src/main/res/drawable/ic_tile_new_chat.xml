@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Portions derived from Material Icons (https://github.com/google/material-design-icons), Apache-2.0, Copyright Google LLC. See THIRD_PARTY_NOTICES.md. -->
+<!-- SPDX-FileCopyrightText: Google -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- See THIRD_PARTY_NOTICES.md. -->
 <!-- Quick Settings tile 「新对话」: Material `add_comment_outlined` at 24dp. The system tints it, so only
      the alpha counts. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"

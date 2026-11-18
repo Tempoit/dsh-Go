@@ -1,4 +1,6 @@
-// Portions derived from DeepSeek Harness (https://github.com/deepseek-ai/deepseek-harness), MIT, Copyright (c) 2026 DeepSeek. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 DeepSeek
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 // The five-field cron dialect the Host accepts, ported from the official
 // `dsh-client-ui-schedule` (`task-cron.js`): parse an expression exactly as
 // `@deepseek-ai/dsh-schedule` would (or refuse it), describe it in one

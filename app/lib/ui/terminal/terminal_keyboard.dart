@@ -77,8 +77,14 @@ class TerminalKeyboardState extends State<TerminalKeyboard> with TextInputClient
   }
 
   /// Brings the keyboard back (a tap on the screen after it was dismissed).
+  /// On a fresh connection: some IMEs ignore show() once Back has hidden them
+  /// (iFlytek on HyperOS, #1277), and a new attach is what brings them back,
+  /// as leaving the page does. Attaching in the same frame keeps an open
+  /// keyboard up.
   void show() {
     if (!widget.enabled) return;
+    flushComposing();
+    _close();
     if (!widget.focusNode.hasFocus) {
       widget.focusNode.requestFocus();
       return;
@@ -116,7 +122,8 @@ class TerminalKeyboardState extends State<TerminalKeyboard> with TextInputClient
         inputAction: TextInputAction.newline,
         keyboardAppearance: Brightness.dark,
         autocorrect: false,
-        enableSuggestions: false,
+        // Disabling suggestions sets Android's visible-password input type.
+        enableSuggestions: true,
         enableIMEPersonalizedLearning: false,
         smartDashesType: SmartDashesType.disabled,
         smartQuotesType: SmartQuotesType.disabled,

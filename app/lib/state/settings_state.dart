@@ -18,9 +18,11 @@ class AppSettings {
     this.autoStartLocal = true,
     this.autoStartLocalExplicit = true,
     this.autoApproveCommands = false,
+    this.automaticDiagnostics = false,
     this.phoneStorage = false,
     this.rootAccess = false,
     this.webPhoneLayout = true,
+    this.chatSuggestions = true,
     this.hardwareEnterSends = false,
     this.chatTextScale = 1.0,
     this.foldCompletedTurns = true,
@@ -42,6 +44,9 @@ class AppSettings {
   /// Off by default: there is no sandbox on Android, so each command escalation asks first.
   final bool autoApproveCommands;
 
+  /// Explicit opt-in to sending content-free local failure facts to the model.
+  final bool automaticDiagnostics;
+
   /// Mount the phone's shared storage at /sdcard in the Linux environment.
   final bool phoneStorage;
 
@@ -52,6 +57,9 @@ class AppSettings {
   /// Fit the embedded DSH Web to a phone (`assets/web/`). Off shows the
   /// official layout untouched, e.g. to check a plugin that restyles it.
   final bool webPhoneLayout;
+
+  /// Show the fixed suggestion cards on the native chat's start page.
+  final bool chatSuggestions;
 
   /// Hardware Enter sends; Shift+Enter and the software keyboard still insert newlines.
   final bool hardwareEnterSends;
@@ -86,9 +94,11 @@ class AppSettings {
     bool? autoStartLocal,
     bool? autoStartLocalExplicit,
     bool? autoApproveCommands,
+    bool? automaticDiagnostics,
     bool? phoneStorage,
     bool? rootAccess,
     bool? webPhoneLayout,
+    bool? chatSuggestions,
     bool? hardwareEnterSends,
     double? chatTextScale,
     bool? foldCompletedTurns,
@@ -101,9 +111,11 @@ class AppSettings {
     autoStartLocal: autoStartLocal ?? this.autoStartLocal,
     autoStartLocalExplicit: autoStartLocalExplicit ?? this.autoStartLocalExplicit,
     autoApproveCommands: autoApproveCommands ?? this.autoApproveCommands,
+    automaticDiagnostics: automaticDiagnostics ?? this.automaticDiagnostics,
     phoneStorage: phoneStorage ?? this.phoneStorage,
     rootAccess: rootAccess ?? this.rootAccess,
     webPhoneLayout: webPhoneLayout ?? this.webPhoneLayout,
+    chatSuggestions: chatSuggestions ?? this.chatSuggestions,
     hardwareEnterSends: hardwareEnterSends ?? this.hardwareEnterSends,
     chatTextScale: chatTextScale ?? this.chatTextScale,
     foldCompletedTurns: foldCompletedTurns ?? this.foldCompletedTurns,
@@ -126,9 +138,11 @@ class SettingsController extends Notifier<AppSettings> {
   static const _themeKey = 'theme_mode';
   static const _autoStartKey = 'auto_start_local';
   static const _autoApproveKey = 'auto_approve_commands';
+  static const _automaticDiagnosticsKey = 'automatic_diagnostics';
   static const _phoneStorageKey = 'phone_storage';
   static const _rootAccessKey = 'root_access';
   static const _webPhoneLayoutKey = 'web_phone_layout';
+  static const _chatSuggestionsKey = 'chat_suggestions';
   static const _hardwareEnterKey = 'hardware_enter_sends';
   static const _chatTextScaleKey = 'chat_text_scale';
   static const _foldTurnsKey = 'fold_completed_turns';
@@ -173,9 +187,11 @@ class SettingsController extends Notifier<AppSettings> {
       autoStartLocal: prefs.getBool(_autoStartKey) ?? ref.read(performanceDefaultsProvider).autoStartLocal,
       autoStartLocalExplicit: prefs.containsKey(_autoStartKey),
       autoApproveCommands: prefs.getBool(_autoApproveKey) ?? false,
+      automaticDiagnostics: prefs.getBool(_automaticDiagnosticsKey) ?? false,
       phoneStorage: prefs.getBool(_phoneStorageKey) ?? false,
       rootAccess: prefs.getBool(_rootAccessKey) ?? false,
       webPhoneLayout: prefs.getBool(_webPhoneLayoutKey) ?? true,
+      chatSuggestions: prefs.getBool(_chatSuggestionsKey) ?? true,
       hardwareEnterSends: prefs.getBool(_hardwareEnterKey) ?? false,
       chatTextScale: _knownScale(prefs.getDouble(_chatTextScaleKey)),
       foldCompletedTurns: prefs.getBool(_foldTurnsKey) ?? true,
@@ -220,6 +236,24 @@ class SettingsController extends Notifier<AppSettings> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_autoApproveKey, value);
     state = state.copyWith(autoApproveCommands: value);
+  }
+
+  Future<void> setAutomaticDiagnostics(bool value) async {
+    await _loaded;
+    if (!ref.mounted) return;
+    // Revocation is immediate; enabling must not start a paid request before
+    // its opt-in is durably saved. Storage exceptions fail closed too.
+    if (!value) state = state.copyWith(automaticDiagnostics: false);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!await prefs.setBool(_automaticDiagnosticsKey, value)) {
+        throw StateError('automatic_diagnostics_store_failed');
+      }
+      if (ref.mounted && value) state = state.copyWith(automaticDiagnostics: true);
+    } catch (_) {
+      if (ref.mounted) state = state.copyWith(automaticDiagnostics: false);
+      rethrow;
+    }
   }
 
   Future<void> setPhoneStorage(bool value) async {
@@ -268,6 +302,14 @@ class SettingsController extends Notifier<AppSettings> {
     state = state.copyWith(hardwareEnterSends: value);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_hardwareEnterKey, value);
+  }
+
+  Future<void> setChatSuggestions(bool value) async {
+    await _loaded;
+    if (!ref.mounted) return;
+    state = state.copyWith(chatSuggestions: value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_chatSuggestionsKey, value);
   }
 
   Future<void> setAutoStartLocal(bool value) async {

@@ -54,7 +54,7 @@ npm stage approve 87e228cd-1e3b-4014-8410-f49ab24581af --auth-type=web
 
 本包尚未配置公开来源的 `repository.url` 或 provenance workflow，**不能直接宣称满足公开 provenance 要求**。启用前须明确公开插件源码位置，在 package.json 填入与该公开仓库大小写一致的 `repository.url`；保持完整验证输入，重新跑测试。npm 的 provenance 要求公开源码和受支持的托管 runner；OIDC trusted publishing 的绑定也必须在 npm 侧配置。见 [provenance](https://docs.npmjs.com/generating-provenance-statements/) 与 [trusted publishing](https://docs.npmjs.com/trusted-publishers/)。
 
-下面是保留本仓库路径的模板，只有 owner 决定发布方案后才复制进 `.github/workflows/`。使用受保护 environment、显式 dispatch，并将 action tag 换成经 owner 审核的精确 commit。若抽出独立插件仓库，先移入同一 rc.4 锁和 header golden，再调整路径。
+下面是保留本仓库路径的模板，只有 owner 决定发布方案后才复制进 `.github/workflows/`。使用受保护 environment、显式 dispatch，并将 action tag 换成经 owner 审核的精确 commit。若抽出独立插件仓库，先移入两版已有 runtime 锁和 header golden，再调整路径。下面默认验证 `0.2.2-rc.1`；兼容性发布前还须用 `--dsh-version 0.2.1-rc.4` 准备另一套依赖并运行同样检查。
 
 ```yaml
 name: Publish media with provenance

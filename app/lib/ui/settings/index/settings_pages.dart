@@ -14,6 +14,7 @@ import '../../features/agent_presets_page.dart';
 import '../../features/all_features_page.dart';
 import '../../features/permission_page.dart';
 import '../../pets/pet_settings_page.dart';
+import '../../phone/android_shell_page.dart';
 import '../../phone/app_rules_page.dart';
 import '../../phone/dnd_mode_page.dart';
 import '../../phone/phone_control_screen.dart';
@@ -36,6 +37,7 @@ import '../privacy_page.dart';
 import '../reply_prefs_page.dart';
 import '../settings_screen.dart';
 import '../system_access_page.dart';
+import '../../companion/companion_voice_page.dart';
 import '../voice_settings_page.dart';
 import 'spot_anchor.dart';
 import 'spots.dart';
@@ -50,11 +52,13 @@ Widget settingsPage(SettingsPageId id, {String? sessionId}) => switch (id) {
   SettingsPageId.pets => const PetSettingsPage(),
   SettingsPageId.performance => const PerformancePage(),
   SettingsPageId.voice => const VoiceSettingsPage(),
+  SettingsPageId.voiceReading => const CompanionVoicePage(shared: true),
   SettingsPageId.notifications => const NotificationSettingsPage(),
   SettingsPageId.replyPrefs => const ReplyPrefsPage(),
   SettingsPageId.sharedLinks => const HostedLinksPage(),
   SettingsPageId.phone => const PhoneControlScreen(),
   SettingsPageId.phoneAppRules => const PhoneAppRulesPage(),
+  SettingsPageId.phoneAndroidShell => const AndroidShellPage(),
   SettingsPageId.phoneDnd => const PhoneDndPage(),
   SettingsPageId.phoneUnlocks => const PhoneUnlockPage(),
   SettingsPageId.engine => const EngineScreen(),

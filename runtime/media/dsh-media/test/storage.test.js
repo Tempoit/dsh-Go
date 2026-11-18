@@ -41,12 +41,13 @@ async function setup(t, authorize) {
   return { cwd, hostStateDir, indexPath, store, path, meta, policy };
 }
 
-test('a foreign image filename is never overwritten or removed during rollback', async t => {
+test('an existing foreign image filename is preserved during rollback', async t => {
   const f = await setup(t);
   await writeFile(f.path, 'foreign');
   await assert.rejects(f.store.commit(f.meta, { sessionId: 's', createdAt: DATE }));
   assert.equal(await f.store.abort(), true);
   assert.equal(await readFile(f.path, 'utf8'), 'foreign');
+  assert.deepEqual(await filesBelow(f.cwd), [f.path]);
   assert.deepEqual(await filesBelow(f.hostStateDir), []);
 });
 

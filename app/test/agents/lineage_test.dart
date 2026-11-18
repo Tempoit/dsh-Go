@@ -129,6 +129,35 @@ void main() {
   });
 
   group('header', () {
+    testWidgets('the hidden busy dot stops ticking once no child runs (#1094)', (tester) async {
+      Finder mutedDot() => find.descendant(
+        of: find.byType(HeaderAgentsKey),
+        matching: find.byWidgetPredicate((w) => w is TickerMode && !w.enabled),
+      );
+      await _pumpChat(tester, parentId);
+      expect(mutedDot(), findsNothing);
+
+      final idle = {
+        for (final MapEntry(:key, :value) in sampleAgentSessions().entries)
+          key: key == testsId ? value.copyWith(running: false) : value,
+      };
+      usePhoneView(tester);
+      await tester.pumpWidget(
+        testApp(
+          const ChatScreen(),
+          overrides: [
+            ..._harness(parentId).overrides,
+            ...agentsOverrides(idle),
+            workspaceSourceProvider.overrideWith((ref, id) => null),
+            workspaceRootProvider.overrideWith((ref, id) => null),
+          ],
+        ),
+      );
+      await pumpFrames(tester, 6);
+      expect(find.byType(HeaderAgentsKey), findsOneWidget);
+      expect(mutedDot(), findsOneWidget);
+    });
+
     testWidgets('「N 个子代理」 opens the sheet; a row opens the child', (tester) async {
       final container = await _pumpChat(tester, parentId);
       final key = find.byType(HeaderAgentsKey);
@@ -171,7 +200,7 @@ void main() {
       await pumpFrames(tester, 6);
       expect(find.byType(HeaderAgentsKey), findsNothing);
       expect(find.byType(HeaderBackKey), findsNothing);
-      expect(find.byType(ModelChip), findsOneWidget);
+      expect(find.byKey(const ValueKey('chat-new-chat')), findsOneWidget);
       expect(find.byIcon(AppIcons.menu), findsOneWidget);
     });
 
@@ -183,16 +212,10 @@ void main() {
       final capsule = tester.getRect(
         find.descendant(of: find.byType(HeaderAgentsKey), matching: find.byType(GlassSurface)).first,
       );
-      final chip = tester.getRect(
-        find.descendant(of: find.byType(ModelChip), matching: find.byType(GlassSurface)).first,
-      );
       final title = tester.getRect(find.ancestor(of: find.text('修复登录重复提交'), matching: find.byType(GlassSurface)).first);
       expect(capsule.height, closeTo(44, 0.01));
-      expect(capsule.height, closeTo(chip.height, 0.01));
       expect(capsule.height, closeTo(menu.height, 0.01));
-      expect(capsule.center.dy, closeTo(chip.center.dy, 0.01));
       expect(capsule.center.dy, closeTo(menu.center.dy, 0.01));
-      expect(chip.left - capsule.right, closeTo(8, 0.01));
       expect(capsule.left - title.right, greaterThanOrEqualTo(8 - 0.01));
       // Glyph and count sit 14 in from each end, centred on one line.
       final glyph = tester.getRect(

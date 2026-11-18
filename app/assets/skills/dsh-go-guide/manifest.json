@@ -15,6 +15,12 @@
     "zh-10-settings.md": "zh/10-settings.md",
     "zh-11-faq.md": "zh/11-faq.md",
     "zh-12-bots.md": "zh/12-bots.md",
+    "zh-13-tavern.md": "zh/13-tavern.md",
+    "zh-14-all-features.md": "zh/14-all-features.md",
+    "zh-15-agents.md": "zh/15-agents.md",
+    "zh-16-terminal.md": "zh/16-terminal.md",
+    "zh-17-workspaces.md": "zh/17-workspaces.md",
+    "zh-18-schedules.md": "zh/18-schedules.md",
     "en-01-chat.md": "en/01-chat.md",
     "en-02-models.md": "en/02-models.md",
     "en-03-engine-hosts.md": "en/03-engine-hosts.md",
@@ -26,6 +32,12 @@
     "en-09-appearance.md": "en/09-appearance.md",
     "en-10-settings.md": "en/10-settings.md",
     "en-11-faq.md": "en/11-faq.md",
-    "en-12-bots.md": "en/12-bots.md"
+    "en-12-bots.md": "en/12-bots.md",
+    "en-13-tavern.md": "en/13-tavern.md",
+    "en-14-all-features.md": "en/14-all-features.md",
+    "en-15-agents.md": "en/15-agents.md",
+    "en-16-terminal.md": "en/16-terminal.md",
+    "en-17-workspaces.md": "en/17-workspaces.md",
+    "en-18-schedules.md": "en/18-schedules.md"
   }
 }

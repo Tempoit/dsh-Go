@@ -34,6 +34,7 @@ import sys
 import zipfile
 
 import apk_delta
+from check_apk_jni import ApkJniError, check_apk_jni
 from build_number import MAX_VERSION_CODE, decode
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -76,10 +77,16 @@ def find_aapt2() -> str | None:
     if props.is_file():
         match = re.search(r"^sdk\.dir=(.+)$", props.read_text(encoding="utf-8"), re.MULTILINE)
         if match:
-            sdks.append(match.group(1).strip())
+            # local.properties uses Java escapes; environment paths do not.
+            sdks.append(re.sub(
+                r"(?:\\u[0-9a-fA-F]{4})+|\\([\\: =#!])",
+                lambda escaped: escaped[1] if escaped[1] is not None else
+                    bytes.fromhex(escaped[0].replace(r"\u", "")).decode("utf-16-be", "surrogatepass"),
+                match.group(1).strip(),
+            ))
     for sdk in filter(None, sdks):
         tools = sorted(
-            pathlib.Path(sdk).glob("build-tools/*/aapt2"),
+            pathlib.Path(sdk).glob("build-tools/*/aapt2" + (".exe" if sys.platform == "win32" else "")),
             key=lambda p: tuple(int(n) for n in re.findall(r"\d+", p.parent.name)),
         )
         if tools:
@@ -158,10 +165,31 @@ def published_apk(tag: str, cache: pathlib.Path) -> pathlib.Path:
     return apk
 
 
+def base_layer_sha256(path: pathlib.Path) -> str | None:
+    """The actual base archive digest; legacy APKs have no separate base to compare."""
+    with zipfile.ZipFile(path) as apk:
+        manifest = "assets/runtime/manifest.json"
+        if manifest not in apk.namelist():
+            return None
+        manifest = json.loads(apk.read(manifest))
+        if manifest.get("schema") != 2:
+            return None
+        digest = hashlib.sha256()
+        with apk.open("assets/runtime/" + manifest["layers"]["base"]["asset"]) as stream:
+            for chunk in iter(lambda: stream.read(1 << 20), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+
 def patch_from(old: pathlib.Path, old_version: str, new: pathlib.Path, name: str, out: pathlib.Path) -> dict | None:
     """The patch from [old] (version X.Y.Z+N) to the arm64 APK [new] of
     version [name], written to [out]; None, and nothing written, unless it's
     under PATCH_LIMIT of [new]."""
+    old_base = base_layer_sha256(old)
+    if old_base is not None:
+        new_base = base_layer_sha256(new)
+        if new_base is not None and old_base != new_base:
+            print(f"WARNING: base layer SHA-256 changed from {old_version}: {old_base} -> {new_base}; delta savings may be reduced")
     patch = out / f"dsh-go-{name}-from-{old_version.partition('+')[0]}-arm64.dshdelta"
     apk_delta.make(old, new, patch)
     size = patch.stat().st_size
@@ -226,7 +254,8 @@ def main() -> None:
         for flavor, path in sources.items():
             with zipfile.ZipFile(path) as apk:
                 check_abis(flavor, apk.namelist())
-    except ReleaseError as e:
+            check_apk_jni(path)
+    except (ReleaseError, ApkJniError) as e:
         sys.exit(str(e))
 
     args.out.mkdir(parents=True, exist_ok=True)
@@ -258,7 +287,7 @@ def main() -> None:
         except (ReleaseError, apk_delta.DeltaError) as e:
             sys.exit(str(e))
     sums += [f"{patch['sha256']}  {patch['name']}" for patch in patches]
-    (args.out / "SHA256SUMS").write_text("\n".join(sums) + "\n", encoding="utf-8")
+    (args.out / "SHA256SUMS").write_text("\n".join(sums) + "\n", encoding="utf-8", newline="\n")
 
     manifest = {
         "schema": 1,
@@ -272,7 +301,7 @@ def main() -> None:
     }
     if patches:
         manifest["patches"] = {"arm64": patches}
-    (args.out / "update.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (args.out / "update.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
 
     try:
         built = f"{decode(build):%Y-%m-%d %H:%M} UTC+8"

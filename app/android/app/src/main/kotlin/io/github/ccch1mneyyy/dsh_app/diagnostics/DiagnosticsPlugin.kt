@@ -28,9 +28,22 @@ import kotlin.concurrent.thread
  *   rotated `dsh.log.1` before it), which outlives the app process. Lines were already
  *   masked when written (`CrashClassifier.redact`); Dart masks them again.
  *
- * Nothing here reads user content, keys or tokens.
+ * - `info.evidence` contains bounded persisted app errors/voice stages and this app's
+ *   system exit metadata, with per-source availability. No exception bodies or exit traces.
+ * - `recordAppError` / `recordVoiceStage` validate fixed fields and acknowledge after
+ *   background durable storage; invalid_evidence / evidence_unavailable do not affect app handlers.
+ *
+ * System IME capture returns only allowlisted events; raw lines are confined to the
+ * privileged parser and are never returned, persisted or sent to the engine log.
  */
-class DiagnosticsPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
+class DiagnosticsPlugin : FlutterPlugin, io.flutter.embedding.engine.plugins.activity.ActivityAware, MethodChannel.MethodCallHandler {
+
+    private val systemIme = SystemImePrompt()
+
+    override fun onAttachedToActivity(binding: io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding) = systemIme.attach(binding.activity)
+    override fun onReattachedToActivityForConfigChanges(binding: io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding) = systemIme.attach(binding.activity)
+    override fun onDetachedFromActivityForConfigChanges() = systemIme.detach()
+    override fun onDetachedFromActivity() = systemIme.detach()
 
     private var methods: MethodChannel? = null
     private lateinit var context: Context
@@ -42,13 +55,18 @@ class DiagnosticsPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+        systemIme.detach()
         methods?.setMethodCallHandler(null)
         methods = null
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
-            "info" -> background(result) { mapOf("app" to app(), "device" to device(), "manifest" to manifest(), "voice" to VoiceDiagnostics.snapshot(context)) }
+            "info" -> background(result) { mapOf("app" to app(), "device" to device(), "manifest" to manifest(), "voice" to VoiceDiagnostics.snapshot(context), "evidence" to DiagnosticsEvidence.snapshot(context)) }
+            "recordAppError" -> DiagnosticsEvidence.record(context, "appErrors", call.arguments, result)
+            "recordVoiceStage" -> DiagnosticsEvidence.record(context, "voiceStages", call.arguments, result)
+            "collectSystemIme" -> systemIme.collect(result)
+            "cancelSystemIme" -> { systemIme.cancel(); result.success(null) }
             "engineLog" -> {
                 val maxBytes = (call.argument<Int>("maxBytes") ?: DEFAULT_LOG_BYTES).coerceIn(1024, MAX_LOG_BYTES)
                 background(result) { engineLog(maxBytes) }
@@ -118,7 +136,7 @@ class DiagnosticsPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         val current = File(dir, "dsh.log")
         val rotated = File(dir, "dsh.log.1")
         val fromCurrent = tail(current, maxBytes)
-        val room = maxBytes - fromCurrent.sumOf { it.length + 1 }
+        val room = maxBytes - fromCurrent.sumOf { it.toByteArray(Charsets.UTF_8).size + 1 }
         val fromRotated = if (room > 1024) tail(rotated, room) else emptyList()
         return fromRotated + fromCurrent
     }
@@ -155,11 +173,16 @@ class DiagnosticsPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                 val length = raf.length()
                 val start = (length - maxBytes).coerceAtLeast(0)
                 val bytes = ByteArray((length - start).toInt())
+                var cutFirstLine = false
+                if (start > 0) {
+                    raf.seek(start - 1)
+                    cutFirstLine = raf.read() != '\n'.code
+                }
                 raf.seek(start)
                 raf.readFully(bytes)
                 val lines = String(bytes, Charsets.UTF_8).split('\n')
-                // A cut first line is half a line: drop it.
-                val whole = if (start > 0) lines.drop(1) else lines
+                // Drop only a clipped first line; an exact line boundary is complete.
+                val whole = if (cutFirstLine) lines.drop(1) else lines
                 whole.dropLastWhile { it.isEmpty() }
             }
         }

@@ -1,8 +1,7 @@
-// 对话终端:官方网页版右侧栏「终端」(dsh-client-ui-sidebar-terminal)在手机上的
-// 状态层。一个对话一组终端页签;每个页签是 Host 上的一个 PTY,外加本地的
-// xterm 屏幕模型。
+// 对话终端的状态层。一个对话一组终端页签;每个页签是 Host 上的一个 PTY,
+// 外加本地的 xterm 屏幕模型。
 //
-// 行为照官方 TerminalView(dsh-api-terminal-controller/client):
+// 行为与官方 TerminalView 一致:
 // * 打开时先列出 Host 保留的终端并逐个恢复;一个都没有就新建一个;
 // * 新建前先定好 id(重复 create 幂等,关闭过的 id 不能再用);
 // * 先 retain 再 attach;每次 attach 都从完整屏幕快照开始,换一块新屏幕;
@@ -11,6 +10,7 @@
 // 页面离开只断开连接,不结束进程;关闭页签才结束进程。
 
 import 'dart:async';
+import 'dart:async' as dart_async show AsyncError; // Riverpod exports its own AsyncError.
 
 import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter/foundation.dart';
@@ -28,6 +28,9 @@ import 'connection_state.dart';
 abstract class TerminalBackend {
   /// False on connections that cannot carry terminal input (the relay).
   bool get supported;
+
+  /// A Remote Host that announced no terminal: its owner turned it off.
+  bool get offOnHost;
 
   /// Fires each time the link to the Host comes back.
   Stream<void> get reconnected;
@@ -50,6 +53,9 @@ class ClientTerminalBackend implements TerminalBackend {
 
   @override
   bool get supported => client.supportsTerminals;
+
+  @override
+  bool get offOnHost => client.terminalsOffOnHost;
 
   @override
   Stream<void> get reconnected => client.mux.generations.map((_) {});
@@ -220,6 +226,22 @@ abstract final class TerminalCopy {
   static String get offline => appL10n.commonEngineUnreachable;
   static String get limit => appL10n.stateTerminalLimit;
   static String get startFailed => appL10n.stateTerminalStartFailed;
+  static String get disabledOnHost => appL10n.stateTerminalDisabledOnHost;
+
+  /// A Remote Host whose owner switched the terminal off in its local Remote
+  /// settings (ds-harness-remote `TERMINAL_DISABLED`); only they can turn it on.
+  /// Also inside the [ParallelWaitError] of the first load's `(a, b).wait`.
+  static bool isDisabledOnHost(Object error) => switch (error) {
+    DshRemoteException(code: 'TERMINAL_DISABLED') => true,
+    ParallelWaitError(:final errors) => switch (errors) {
+      (final dart_async.AsyncError? a, final dart_async.AsyncError? b) => [
+        a?.error,
+        b?.error,
+      ].nonNulls.any(isDisabledOnHost),
+      _ => false,
+    },
+    _ => false,
+  };
 }
 
 // ── Controller ───────────────────────────────────────────────────────────────
@@ -299,6 +321,8 @@ class TerminalWorkspace extends Notifier<TerminalWorkspaceState> {
     if (backend == null) return const TerminalWorkspaceState(loading: false, offline: true);
     if (!backend.supported) return const TerminalWorkspaceState(loading: false, supported: false);
     _reconnects = backend.reconnected.listen((_) => reconnectAll());
+    // Retrying still tries: the Host applies its switch without reconnecting.
+    if (backend.offOnHost) return TerminalWorkspaceState(loading: false, error: TerminalCopy.disabledOnHost);
     scheduleMicrotask(() => _load(epoch));
     return const TerminalWorkspaceState();
   }
@@ -358,9 +382,10 @@ class TerminalWorkspace extends Notifier<TerminalWorkspaceState> {
         }
       }
       if (tabs.isEmpty) await newTerminal();
-    } on Object {
+    } on Object catch (error) {
       if (_stale(epoch)) return;
-      state = state.copyWith(loading: false, error: TerminalCopy.offline);
+      final message = TerminalCopy.isDisabledOnHost(error) ? TerminalCopy.disabledOnHost : TerminalCopy.offline;
+      state = state.copyWith(loading: false, error: message);
     }
   }
 
@@ -454,7 +479,13 @@ class TerminalWorkspace extends Notifier<TerminalWorkspaceState> {
     final previous = tab.title;
     _update(id, (t) => t.copyWith(title: next));
     try {
-      await backend.rename(id, next.length > 120 ? next.substring(0, 120) : next);
+      var end = next.length > 120 ? 120 : next.length;
+      if (end < next.length) {
+        final before = next.codeUnitAt(end - 1);
+        final after = next.codeUnitAt(end);
+        if (before >= 0xD800 && before <= 0xDBFF && after >= 0xDC00 && after <= 0xDFFF) end--;
+      }
+      await backend.rename(id, next.substring(0, end));
       return true;
     } on Object {
       if (_stale(epoch)) return false;
@@ -469,7 +500,10 @@ class TerminalWorkspace extends Notifier<TerminalWorkspaceState> {
     if (cached != null) return cached;
     final backend = _backend;
     if (backend == null) return const [];
-    return _shells = await backend.shells();
+    final epoch = _epoch;
+    final shells = await backend.shells();
+    if (_stale(epoch)) return const [];
+    return _shells = shells;
   }
 
   // ── Connection ──
@@ -483,6 +517,12 @@ class TerminalWorkspace extends Notifier<TerminalWorkspaceState> {
 
   /// Re-attaches every dropped tab (the link came back, the app resumed).
   void reconnectAll() {
+    // Nothing listed yet (the Host had the terminal off, or the link was
+    // down): the link coming back is the moment to list again.
+    if (state.tabs.isEmpty && state.error != null) {
+      unawaited(reload());
+      return;
+    }
     for (final tab in state.tabs) {
       final link = _links[tab.id];
       if (tab.phase == TerminalPhase.disconnected) {
@@ -567,7 +607,11 @@ class TerminalWorkspace extends Notifier<TerminalWorkspaceState> {
       _connect(id);
     } on DshRemoteException catch (error) {
       if (_stale(epoch)) return;
-      final message = error.code == 'terminal/limit-reached' ? TerminalCopy.limit : TerminalCopy.startFailed;
+      final message = switch (error.code) {
+        'terminal/limit-reached' => TerminalCopy.limit,
+        'TERMINAL_DISABLED' => TerminalCopy.disabledOnHost,
+        _ => TerminalCopy.startFailed,
+      };
       _update(id, (t) => t.copyWith(phase: TerminalPhase.failed, message: message));
     } on Object {
       if (_stale(epoch)) return;
@@ -689,10 +733,12 @@ class TerminalWorkspace extends Notifier<TerminalWorkspaceState> {
     if (token != link.generation) return;
     link.detach();
     final missing = error is DshRemoteException && error.code == 'terminal/unavailable';
+    // Still reconnectable once the Host owner turns the terminal back on.
+    final off = TerminalCopy.isDisabledOnHost(error) ? TerminalCopy.disabledOnHost : null;
     _update(link.id, (t) {
       if (missing) return t.copyWith(phase: TerminalPhase.missing, writable: false);
       if (t.info != null && !t.info!.running) return t.copyWith(phase: TerminalPhase.ended, writable: false);
-      return t.copyWith(phase: TerminalPhase.disconnected, writable: false);
+      return t.copyWith(phase: TerminalPhase.disconnected, writable: false, message: off, clearMessage: off == null);
     });
   }
 

@@ -140,7 +140,7 @@ test('secret any boundary preserves role and display metadata while hiding paylo
 for(const secretFirst of [true,false])test(`shared any with ordinary alias rejects, secretFirst=${secretFirst}`,async()=>{
  const any=z.any(),hidden=z.transform(any,x=>x,true).role('secret');
  const schema=z.object(secretFirst?{secret:hidden,ordinary:any}:{ordinary:any,secret:hidden});
- const response=await responseFor(schema,{secret:'private',ordinary:'public'});assert.equal(response.status,404);assert.equal(response.body.code,'entry-unavailable');
+ const response=await responseFor(schema,{secret:'private',ordinary:'public'});assert.equal(response.status,404);assert.equal(response.body.error.code,'entry-unavailable');
 });
 test('ordinary any remains unsupported',async()=>{assert.equal((await responseFor(z.object({ordinary:z.any()}),{ordinary:'public'})).status,404)});
 test('unknown type below secret remains unsupported',async()=>{const schema=z.object({secret:z.transform(z.never(),x=>x,true).role('secret')});const g=schema.toJSON();const fake={toJSON:()=>g};assert.equal((await responseFor(Object.assign(x=>x,fake),{})).status,404)});
@@ -148,4 +148,25 @@ test('unknown type below secret remains unsupported',async()=>{const schema=z.ob
 for(const malformed of ['cycle','unsafe-key'])test(`secret subtree keeps ${malformed} rejection`,async()=>{
  const graph={uid:0,refs:{0:{type:'object',dict:{secret:1},meta:{}},1:{type:'transform',inner:2,meta:{role:'secret'}},2:malformed==='cycle'?{type:'transform',inner:1,meta:{}}:{type:'object',dict:{constructor:3},meta:{}},3:{type:'any',meta:{}}}};
  const schema=Object.assign(x=>x,{toJSON:()=>graph});assert.equal((await responseFor(schema,{})).status,404);
+});
+
+test('detail limits real rc4 Schemastery root serialization to its requested entry', async t => {
+ const counts=Array(200).fill(0);
+ const entries=counts.map((_,i)=>{
+  const schema=z.object({visible:z.string()});
+  const serialize=schema.toJSON;
+  Object.defineProperty(schema,'toJSON',{value:function(){counts[i]++;return serialize.call(this);},configurable:true});
+  const config={visible:`value-${i}`};
+  return {options:{id:`item-${i}`,name:'test-plugin',config},fiber:{state:2,runtime:{Config:schema},config:schema(config)}};
+ });
+ const editor={canWrite:()=>true,entries:()=>entries,configuration:()=>entries.map(entry=>({entry,inherited:entry.options.config,override:entry.options.config}))};
+ const ctx={get:n=>n==='configEditor'?editor:n==='loader'?{entries:()=>entries}:undefined};
+ withSources(ctx,entries);
+ let response;
+ const api=createPluginConfig(ctx,{send(_r,status,body){response={status,body}},readBody(){throw Error('unused');}});
+ await api.handle({method:'GET'},{},'/dsh-go/v1/plugin-config/item-123');
+ assert.equal(response.status,200);assert.deepEqual(response.body.value,{visible:'value-123'});
+ assert.equal(globalThis.__schemastery_refs__,undefined,'real serializer releases its temporary graph state');
+ t.diagnostic(`real rc4 detail entries=200 rootSerializations=${counts.reduce((a,b)=>a+b,0)}`);
+ assert.deepEqual(counts,counts.map((_,i)=>i===123?1:0));
 });

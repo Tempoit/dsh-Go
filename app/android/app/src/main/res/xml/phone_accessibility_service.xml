@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Portions derived from Phase (https://github.com/CikeSeven/phase), used with the author's permission. See THIRD_PARTY_NOTICES.md. -->
+<!-- SPDX-FileCopyrightText: 2026 CikeSeven -->
+<!-- SPDX-License-Identifier: MIT -->
+<!-- See THIRD_PARTY_NOTICES.md. -->
 <!-- DSH 手机操控 (phone/a11y/PhoneA11yService).
      Not an accessibility tool (isAccessibilityTool=false): Play / Play Protect rules, and
      accessibilityDataSensitive views stay hidden from us, which is the safe side. -->

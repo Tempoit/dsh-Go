@@ -1,4 +1,6 @@
-// Portions derived from PiPilot (https://github.com/CikeSeven/pi_pilot), MIT, Copyright (c) 2026 CikeSeven. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 CikeSeven
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 // Layout after DSH Web's ApprovalPanel (warning hairline, warning strip, title,
 // monospace command, right-aligned buttons).
 
@@ -6,6 +8,7 @@ import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../l10n/host_text.dart';
 import '../../../l10n/l10n.dart';
 import '../../common/risk_notice.dart';
 import '../../theme/app_icons.dart';
@@ -86,12 +89,8 @@ class _ApprovalCardState extends State<ApprovalCard> {
     };
   }
 
-  String? get _reason {
-    final display = widget.request.displayReason;
-    final localized = display['zh-CN'] ?? display['zh-Hans'] ?? display['zh'] ?? display['en'];
-    final text = (localized ?? widget.request.reason)?.trim();
-    return text == null || text.isEmpty ? null : text;
-  }
+  String? _reason(String locale) =>
+      localizedHostText(widget.request.displayReason, locale: locale, fallback: widget.request.reason);
 
   @override
   Widget build(BuildContext context) {
@@ -102,7 +101,7 @@ class _ApprovalCardState extends State<ApprovalCard> {
     final view = widget.view;
     final code = view?.command ?? (view?.path == null ? null : view!.path);
     final description = view?.arg('description')?.trim();
-    final reason = _reason;
+    final reason = _reason(l10n.localeName);
     const button = Size(0, 44);
 
     return ChatCard(

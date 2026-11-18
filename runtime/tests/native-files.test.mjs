@@ -35,9 +35,20 @@ async function fixture(t, declaration = manifest, native = {}) {
   const ctx = { logger: { warn(error) { t.diagnostic(String(error?.stack ?? error)); } }, get: n => n === 'loader' ? { entries: () => entries } : n === 'connection' ? connection : services[n],
     provide(n, s) { services[n] = s; }, effect(fn) { const d = fn(); if (typeof d === 'function') disposers.push(d); return d; },
     on(n, fn) { hooks.set(n, fn); }, inject(deps, fn) { fn(ctx); },
-    webServer: { register(r) { routes.push(r); return () => {}; }, registerUpgrade(r) { upgrades.push(r); return () => {}; } } };
+    webServer: { tapIndex() { return () => {}; }, register(r) { routes.push(r); return () => {}; }, registerUpgrade(r) { upgrades.push(r); return () => {}; } } };
   apply(ctx, { persist: false, guardRoutes: false, native });
-  const server = createServer((req, res) => { const r = routes.find(r => r.kind === 'prefix' && req.url.startsWith(r.path)); if (r) r.handler(req, res); else { res.writeHead(404); res.end(); } });
+  let fileRouteGate;
+  const server = createServer(async (req, res) => {
+    const gate = req.url.startsWith('/dsh-go/v1/files/') && req.url.includes(`/${fileRouteGate?.operation}?`)
+      ? fileRouteGate : undefined;
+    if (gate) {
+      fileRouteGate = undefined;
+      gate.arrived.resolve({ req, res }); await gate.resume.promise;
+    }
+    const r = routes.find(r => r.kind === 'prefix' && req.url.startsWith(r.path));
+    if (r) await r.handler(req, res); else { res.writeHead(404); res.end(); }
+    gate?.done.resolve();
+  });
   server.on('upgrade', (req, socket, head) => upgrades[0].handler(req, socket, head));
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const port = server.address().port;
@@ -71,8 +82,28 @@ async function fixture(t, declaration = manifest, native = {}) {
     const extra = { options: { name: pathToFileURL(join(folder, 'index.js')).href }, parent: entry.parent, fiber: { uid: entries.length + 10 } }; entries.push(extra); hooks.get('internal/plugin')();
     return Object.assign(Object.create(services.dshGo), { ctx: { fiber: { entry: extra }, effect: ctx.effect } });
   }
-  return { service, ws, request, invoke, entry, hooks, addPlugin, port, guardCalls: () => guardCalls };
+  const holdFileRoute = operation => {
+    const gate = { operation, arrived: Promise.withResolvers(), resume: Promise.withResolvers(), done: Promise.withResolvers() };
+    fileRouteGate = gate;
+    return { arrived: gate.arrived.promise, resume: gate.resume.resolve, done: gate.done.promise };
+  };
+  return { service, ws, request, invoke, entry, hooks, addPlugin, port, guardCalls: () => guardCalls,
+    holdNextUploadRoute: () => holdFileRoute('upload'),
+    holdNextCompleteRoute: () => holdFileRoute('complete'),
+  };
 }
+
+
+test('native stream accepts empty continuations after the guarded upgrade and hello', async t => {
+  const f = await fixture(t);
+  const w = await f.ws([]);
+  assert.ok(f.guardCalls() > 0);
+  const frames = [encodeFrame(1, '', { mask: true, fin: false })];
+  for (let i = 0; i < 2048; i++) frames.push(encodeFrame(0, '', { mask: true, fin: false }));
+  frames.push(encodeFrame(0, JSON.stringify({ t: 'ping', at: 225 }), { mask: true }));
+  w.socket.write(Buffer.concat(frames));
+  assert.deepEqual(await w.next(m => m.t === 'pong'), { t: 'pong', at: 225 });
+});
 
 
 const choice = { type: 'pickFile', action: 'selected', maxFiles: 4 };
@@ -89,6 +120,98 @@ const complete = async (f, w, effect, status = 'selected') => {
   if (response.status === 200) assert.deepEqual(schemas.validate(body, 'invoke.schema.json', '/$defs/fileCompletionResponse'), []);
   return { status: response.status, ...body };
 };
+
+test('upload disconnected before dispatch permits error completion and a fresh selection', async t => {
+  const f = await fixture(t), events = [];
+  f.service.on('go', (_scope, event) => {
+    if (event.action !== 'selected') return choice;
+    events.push({ status: event.value.status, files: event.value.files.map(file => f.service.readPickedFile(file.handle).toString()) });
+  });
+  const w = await f.ws(['files']), effect = (await f.invoke(w)).effects[0];
+  assert.equal((await upload(f, w, effect, 'discard on interruption')).status, 200);
+  // Peer for the WebServer's awaited Connection guard. The partial upload,
+  // HTTP abort, file transaction, error completion and retry are real.
+  const gate = f.holdNextUploadRoute();
+  const socket = connect(f.port, '127.0.0.1'); t.after(() => socket.destroy());
+  await once(socket, 'connect');
+  socket.write(`POST /dsh-go/v1/${filePath(w, effect, 'upload', { name: 'partial.txt' })} HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer test\r\nContent-Type: application/octet-stream\r\nContent-Length: 100\r\n\r\npartial`);
+  const { req, res } = await gate.arrived, closed = once(res, 'close');
+  socket.destroy(); await closed;
+  assert.equal(req.aborted, true); assert.equal(res.destroyed, true);
+  gate.resume();
+  const failed = await upload(f, w, effect, 'must not revive the failed selection');
+  assert.equal(failed.status, 409); assert.equal(failed.error.code, 'cancelled');
+  assert.equal((await complete(f, w, effect, 'error')).status, 200);
+  assert.deepEqual(events, [{ status: 'error', files: [] }], 'interrupted selection discards its earlier bytes');
+  assert.equal((await upload(f, w, effect, 'expired request')).status, 404);
+  const fresh = (await f.invoke(w)).effects[0];
+  assert.ok(fresh?.request); assert.notEqual(fresh.request, effect.request);
+  assert.equal((await upload(f, w, fresh, 'new selected bytes')).status, 200);
+  assert.equal((await complete(f, w, fresh)).status, 200);
+  assert.deepEqual(events.at(-1), { status: 'selected', files: ['new selected bytes'] });
+});
+
+const until = async (predicate, label) => {
+  const deadline = Date.now() + 3000;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error(label);
+    await new Promise(resolve => setImmediate(resolve));
+  }
+};
+
+for (const timing of ['before dispatch', 'while reading']) {
+  test(`file JSON completion interrupted ${timing} settles and permits retry`, async t => {
+    const f = await fixture(t), events = [];
+    f.service.on('go', (_scope, event) => {
+      if (event.action !== 'selected') return choice;
+      events.push({ status: event.value.status, files: event.value.files.map(file => f.service.readPickedFile(file.handle).toString()) });
+    });
+    const w = await f.ws(['files']), effect = (await f.invoke(w)).effects[0];
+    assert.equal((await upload(f, w, effect, 'selected bytes')).status, 200);
+    const gate = f.holdNextCompleteRoute(); t.after(gate.resume);
+    const socket = connect(f.port, '127.0.0.1'); t.after(() => socket.destroy());
+    await once(socket, 'connect');
+    socket.write(`POST /dsh-go/v1/${filePath(w, effect, 'complete')} HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer test\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{"status":`);
+    const { req, res } = await gate.arrived;
+    let settled = false; gate.done.then(() => { settled = true; });
+    if (timing === 'while reading') {
+      gate.resume();
+      await until(() => req.listenerCount('data') > 0, 'JSON reader did not start');
+    }
+    const closed = once(res, 'close'); socket.destroy(); await closed;
+    assert.equal(req.aborted, true); assert.equal(req.destroyed, true);
+    const listeners = ['data', 'end', 'error'].map(event => req.listenerCount(event));
+    if (timing === 'before dispatch') gate.resume();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(settled, true, 'a closed IncomingMessage cannot supply later body events');
+    if (timing === 'before dispatch') {
+      assert.deepEqual(['data', 'end', 'error'].map(event => req.listenerCount(event)), listeners,
+        'an already closed request must not retain new body listeners');
+    }
+    assert.deepEqual(events, []);
+    assert.equal((await complete(f, w, effect)).status, 200);
+    assert.deepEqual(events, [{ status: 'selected', files: ['selected bytes'] }]);
+  });
+}
+
+test('file JSON completion accepts a complete but unread IncomingMessage', async t => {
+  const f = await fixture(t); let completed = 0;
+  f.service.on('go', (_scope, event) => {
+    if (event.action !== 'selected') return choice;
+    completed++;
+  });
+  const w = await f.ws(['files']), effect = (await f.invoke(w)).effects[0];
+  assert.equal((await upload(f, w, effect, 'selected bytes')).status, 200);
+  const gate = f.holdNextCompleteRoute(); t.after(gate.resume);
+  const response = complete(f, w, effect), { req } = await gate.arrived;
+  await until(() => req.complete, 'HTTP parser did not complete the request');
+  assert.equal(req.readableEnded, false);
+  assert.equal(req.aborted, false); assert.equal(req.destroyed, false);
+  gate.resume();
+  assert.equal((await response).status, 200);
+  await gate.done;
+  assert.equal(completed, 1);
+});
 
 const invokePanel = async (f, w) => {
   const response = await f.request('invoke', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({

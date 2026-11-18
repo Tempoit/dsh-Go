@@ -210,6 +210,11 @@ export function installMedia(ctx, config, { generate, admit = admitGeneration, e
   const production = generate === undefined;
   generate ??= (request, context) => generateMedia(request, { ...context, ...engineOptions });
   const results = new Map();
+  // Jobs emits removed only after owner teardown has awaited producer settlement.
+  // Retain cards while their jobs are queryable, not the Session after removal.
+  const stopResults = ctx.jobs.events.subscribe({ owners: 'all' }, event => {
+    if (event.type === 'removed') results.delete(event.job.id);
+  });
   const hostStateDir = join(resolveDshHome(config.dshHome), 'media', 'dsh-media');
   const lifetime = new AbortController();
   const operations = new Set();
@@ -300,7 +305,11 @@ export function installMedia(ctx, config, { generate, admit = admitGeneration, e
             if (!ctx.jobs) throw new MediaError('not_configured');
             return startVideo(selected.request, context, session, exec, controller);
           } catch (error) {
-            await admission?.releaseUnsent();
+            try { await admission?.releaseUnsent(); }
+            finally {
+              if (error instanceof MediaError && error.code === 'cleanup_failed') throw error;
+            }
+            if (error instanceof MediaError && error.code === 'submission_unknown') throw error;
             throw safeFailure(error, signal);
           }
         })());
@@ -445,6 +454,8 @@ export function installMedia(ctx, config, { generate, admit = admitGeneration, e
     lifetime.abort(new MediaError('cancelled'));
     retire();
     await Promise.allSettled([...operations]);
+    results.clear();
+    await stopResults();
   }
 
   ctx.effect(() => dispose);

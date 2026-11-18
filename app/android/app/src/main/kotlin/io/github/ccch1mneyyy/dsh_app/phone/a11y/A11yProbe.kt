@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import android.view.accessibility.AccessibilityManager
 import io.github.ccch1mneyyy.dsh_app.phone.AppVisibility
 import io.github.ccch1mneyyy.dsh_app.phone.ConfirmRequest
 import io.github.ccch1mneyyy.dsh_app.phone.PhoneAction
@@ -34,7 +35,9 @@ import java.util.concurrent.Executors
  *        palette dark|light|auto (the overlay's palette against the system's, for contrast checks) |
  *        form ball|capsule|card (as the person's taps would) | press key=pause|stop|steer|done |
  *        unlocks none|system|secrets|all|real (lifted limits to show) | freeze true|false (no timer changes the form) |
- *        app [name] (the task's app for the card) | state (what the control shows)
+ *        app [name] (the task's app for the card) | state (what the control shows) | task (task lifetime) |
+ *        interrupt (requests feedback interruption from ALL bound accessibility services;
+ *        asynchronous: inspect the service callback log, then task; own test devices only)
  */
 internal class A11yProbe(private val service: PhoneA11yService, private val driver: MainScreenDriver, private val overlay: ControlOverlay) {
     private val executor = Executors.newSingleThreadExecutor { r -> Thread(r, "dsh-a11y-probe") }
@@ -68,6 +71,17 @@ internal class A11yProbe(private val service: PhoneA11yService, private val driv
     }
 
     private fun run(seq: Int, cmd: String, a: Args) {
+        if (cmd == "navigation-material") {
+            // Never enter the generic body/Throwable logging or image output path below.
+            try {
+                PhoneControl.get(service).collectNavigationMaterial(driver, seq) { bytes ->
+                    val tmp = File(dir, "last.tmp")
+                    tmp.writeBytes(bytes)
+                    check(tmp.renameTo(File(dir, "last.txt")))
+                }
+            } catch (_: Exception) { /* No exception text or stale body is exported. */ }
+            return
+        }
         val t0 = SystemClock.uptimeMillis()
         var image: ByteArray? = null
         val out = try {
@@ -82,7 +96,11 @@ internal class A11yProbe(private val service: PhoneA11yService, private val driv
                 "scroll" -> result(driver.perform(PhoneAction.Scroll(a.s("sid")!!, a.i("id"), PhoneAction.Direction.valueOf((a.s("dir") ?: "down").uppercase()))))
                 "key" -> result(driver.perform(PhoneAction.Key(a.s("sid") ?: "s0", PhoneAction.GlobalKey.valueOf((a.s("key") ?: "back").uppercase()))))
                 "tapxy" -> result(driver.perform(PhoneAction.TapXY(a.s("sid")!!, a.i("x")!!, a.i("y")!!)))
-                "open" -> result(driver.open(a.s("pkg")!!))
+                "open" -> {
+                    val pkg = a.s("pkg")!!
+                    val output = PhoneControl.get(service).core.call("open", mapOf("app" to pkg))
+                    "ok=${!output.isError} msg=${output.text}"
+                }
                 "collect" -> driver.collect(a.s("sid")!!, a.i("id")!!, a.i("pages") ?: 10, a.s("until")).let { r ->
                     "pages=${r.pages} stop=${r.stopReason} items=${r.items.size}\n" + r.items.joinToString("\n") { "- $it" } +
                         "\n----\n${r.screen?.text}"
@@ -93,6 +111,15 @@ internal class A11yProbe(private val service: PhoneA11yService, private val driv
                 "handoff" -> overlay.handoff(a.s("reason") ?: AppStrings.get(service, R.string.overlay_probe_password), (a.i("ms") ?: 60_000).toLong()).name
                 "injecttest" -> injectTest(a.b("relax"))
                 "guard" -> "lastGuardVerdict=${overlay.lastGuardVerdict}"
+                "task" -> PhoneControl.get(service).tasks.snapshot().toString()
+                "interrupt" -> {
+                    val before = PhoneControl.get(service).tasks.snapshot()
+                    val manager = service.getSystemService(AccessibilityManager::class.java)
+                    if (!manager.isEnabled) "requested=false accessibility-disabled before=$before" else {
+                        manager.interrupt()
+                        "requested=true callback=pending before=$before"
+                    }
+                }
                 "begin" -> PhoneControl.get(service).tasks.let { t -> t.begin(); t.snapshot().toMap().toString() }
                 "finish" -> finish(a.s("session"), a.s("host"), a.intent.getBooleanExtra("reopen", true))
                 "palette" -> {
@@ -143,8 +170,8 @@ internal class A11yProbe(private val service: PhoneA11yService, private val driv
     /**
      * Shows a confirm card, then injects a tap on 允许一次 through this service's own
      * dispatchGesture — the attack the card must refuse — and reports whether it resolved.
-     * relax=true lifts the InjectGuard / pass-through layers so the event-flag check alone is
-     * observed (does FLAG_IS_ACCESSIBILITY_EVENT reach the view on this Android version?).
+     * relax=true lifts the InjectGuard / pass-through layers: with nothing else checking event
+     * fields (see PromptInputPolicy), the tap then gets through, which shows those layers are the guard.
      */
     private fun injectTest(relax: Boolean): String {
         val result = arrayOfNulls<String>(1)

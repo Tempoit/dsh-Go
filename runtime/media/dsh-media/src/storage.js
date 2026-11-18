@@ -1,5 +1,5 @@
 import { constants } from 'node:fs';
-import { mkdir, realpath, lstat, open, link, unlink, rmdir } from 'node:fs/promises';
+import { mkdir, realpath, lstat, open, rename, unlink, rmdir } from 'node:fs/promises';
 import { isAbsolute, join, relative, sep, dirname } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { MediaError, checkAbort, fail } from './errors.js';
@@ -34,6 +34,15 @@ async function removeOwned(entry) {
     if (error?.code === 'ENOENT') return true;
     throw error;
   }
+}
+
+// Host scheduling and request identities exclude another publisher of this name.
+// Preserve refusal of an existing target; this is not atomic no-replace against
+// an external process that writes between the check and rename.
+async function requireAbsent(path) {
+  try { await lstat(path); }
+  catch (error) { if (error?.code === 'ENOENT') return; throw error; }
+  fail('storage');
 }
 
 async function syncDirectory(path) {
@@ -253,9 +262,9 @@ export async function prepareImageStore({
         if (!sameFile(await lstat(receipt.path, { bigint: true }), identity)) fail('storage');
         const slot = staged.length + 1;
         const path = join(stagedDir, String(slot) + '.mp4');
-        await link(receipt.path, path);
+        await requireAbsent(path);
+        await rename(receipt.path, path);
         staged.push({ path, identity, contentDigest: { bytes: receipt.bytes, sha256: receipt.sha256 } });
-        if (!await removeOwned({ path: receipt.path, identity })) fail('storage');
         await syncDirectory(stagedDir);
         await guard();
         return join(dated, fileStem + '-' + slot + '.mp4');
@@ -291,12 +300,13 @@ export async function prepareImageStore({
         const expected = join(dated, fileStem + '-' + (i + 1) + '.'
           + staged[i].path.split('.').at(-1));
         if (target !== expected) fail('invalid_request');
-        // link fails on an existing target; unlike rename it never overwrites.
-        await link(staged[i].path, target);
+        await requireAbsent(target);
+        await rename(staged[i].path, target);
         published.push({ path: target, identity: staged[i].identity });
         await guard();
       }
-      // Publish image names durably before exposing the index that refers to them.
+      // Persist both the move out of staging and the published names before the index.
+      await syncDirectory(stagedDir);
       await syncDirectory(dated);
       await guard();
       const record = {
@@ -314,7 +324,8 @@ export async function prepareImageStore({
       await guard();
       if (await realpath(indexDir) !== indexDir) fail('storage');
       const finalIndex = join(indexDir, rid + '.json');
-      await link(index.path, finalIndex);
+      await requireAbsent(finalIndex);
+      await rename(index.path, finalIndex);
       indexPublished = { path: finalIndex, identity: index.identity };
       await syncDirectory(indexDir);
       const acceptedPolicy = await guard();

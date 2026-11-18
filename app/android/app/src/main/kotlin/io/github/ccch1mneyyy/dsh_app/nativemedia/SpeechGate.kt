@@ -14,7 +14,10 @@ import kotlin.math.sqrt
  * on a loud speaker without a working echo canceller the clip can still trip it (and stop itself),
  * and quiet speech over the clip can be missed. Nothing here keeps or sends audio.
  */
-class SpeechGate(private val echoCancelled: Boolean = true) {
+class SpeechGate(
+    private val echoCancelled: Boolean = true,
+    override var pause: TurnPause = TurnPause.NORMAL,
+) : TurnGate {
     enum class Edge { NONE, START, END }
 
     private var floor = Double.NaN
@@ -24,12 +27,20 @@ class SpeechGate(private val echoCancelled: Boolean = true) {
     private var playingSince = -1L
 
     /** The app is playing a clip (or stopped playing one) at [nowMs]. */
-    fun setPlaying(on: Boolean, nowMs: Long) {
+    override fun setPlaying(on: Boolean, nowMs: Long) {
         playingSince = if (on) (if (playingSince >= 0) playingSince else nowMs) else -1L
         if (!on) loud = 0
     }
 
     val isSpeaking get() = speaking
+
+    override fun consume(frame: ShortArray, levelDb: Double, nowMs: Long): Edge = consume(levelDb, nowMs)
+
+    override fun reset() {
+        loud = 0
+        quietMs = 0
+        speaking = false
+    }
 
     /** One frame's level in dBFS at [nowMs]; the edge it makes, if any. */
     fun consume(levelDb: Double, nowMs: Long): Edge {
@@ -57,7 +68,7 @@ class SpeechGate(private val echoCancelled: Boolean = true) {
         // Speaking: over when it stays below the start threshold less the hysteresis.
         if (levelDb < start - HYSTERESIS_DB) {
             quietMs += FRAME_MS
-            if (quietMs >= HANGOVER_MS) {
+            if (quietMs >= pause.hangoverMs) {
                 speaking = false
                 quietMs = 0
                 return Edge.END
@@ -81,7 +92,6 @@ class SpeechGate(private val echoCancelled: Boolean = true) {
         const val HYSTERESIS_DB = 6.0
         const val START_FRAMES = 6        // 120 ms
         const val PLAY_START_FRAMES = 10  // 200 ms
-        const val HANGOVER_MS = 700L
         const val SETTLE_MS = 400L
 
         /** RMS of PCM16 samples in dBFS (−100 for silence). */

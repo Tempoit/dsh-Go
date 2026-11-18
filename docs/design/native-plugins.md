@@ -4,6 +4,12 @@
 > 依据：`docs/design/plugin-seams.md`（下称「接缝规格」）、当时已有的插件接缝与 `ui.json` 代码、官方 slot 目录（从 DSH 客户端提取，方法见接缝规格附录 A）、15 个热门插件抽样（结论汇总在接缝规格 §1.3），以及本机 DSH 0.2.1-rc.2 安装包（只读）。rfw、genui、QuickJS 的现状在 2026-10-25 查过，来源见附录。
 > 本文只做评估和设计，没有改代码。
 
+## 当前接缝修订（2026-11-11）
+
+本文的表格、样本和工作量仍是 2026-10-25 的历史评估。§5 / §7.1 将浮层岛拿掉的决定已被本次网页接缝实现取代：`shell.overlay` 按包显式启用，按包 + cell 放行，只在 `HomeShell.chat` 内的 `ChatScreen` 聊天内容区显示，以 `ClipRect` 裁在原生顶栏和输入框之间，不覆盖原生 chrome、抽屉、右详情或模态；未决审批 / 未答问题时停止，键盘出现时视口随原生布局收缩。它不是跨 App 悬浮窗；本机偏好按主机保存，`ui.json` 的 `plugins.seats` 显式值优先。`sidebar.footer.action`、`settings.plugins.tab`、`plugins.detail.section` 从插件详情提供单包、单 cell 整页入口。
+
+浮层矩形命中不是像素透明；快速运动的命中区可能滞后。本文首岛约 200 MB 等性能值仅来自 Android 15 x86_64 debug 模拟器估测，真机未验证；旧普查比例也不是免改兼容承诺。音频仍需现有用户手势，本轮不新增原生 `pets` / `bubbles` / `actions` 协议。详见 [网页面板](../plugins/web-panels.md)。
+
 ## 0. 结论
 
 | 问题 | 结论 |
@@ -150,7 +156,7 @@
 |---|---|---|---|
 | 维护方与状态 | 我们自己；渲染器已有约 5.3k 行（`app/lib/ui/chat/dsh_ui/`），带 4 种自绘图表 | flutter.dev，3 天前发布 2.0.0（要求 Flutter 3.44 / Dart 3.12，我们是 3.47 / 3.13，满足）。近一年主要是 SDK 升级和零星补组件，兼容性官方写的是「尽力而为」 | labs.flutter.dev，0.x 版本，面向「LLM 生成界面」，协议还在变 |
 | 作者用什么写 | JS 对象 / TS 类型，Node 作者最熟，LLM 写起来也最稳 | `.rfwtxt`，一种类 Dart 的 DSL；生产环境官方建议发二进制；Node 侧没有校验工具，要我们把 Dart 解析器编成 JS 另发 | JSON 消息流：扁平组件表 + 数据模型 |
-| 数据绑定 / 局部状态 | 要自己做：第一期只做路径引用，第二期移植 DS Bot 的公式（dsh-ui 二期本来就要做） | 现成：`data.x`、`args`、`state`、`...for`、`switch`、事件 | 现成：数据模型 + 路径绑定 |
+| 数据绑定 / 局部状态 | 要自己做：第一期只做路径引用，第二期实现与 DS Bot 兼容的公式（dsh-ui 二期本来就要做） | 现成：`data.x`、`args`、`state`、`...for`、`switch`、事件 | 现成：数据模型 + 路径绑定 |
 | 观感约束 | 只开放高层组件，颜色只能用语义色调，天然统一 | 默认开放 core widgets（Container、Padding、颜色…），作者能拼出任意样式。要统一就只能暴露我们自己的组件库，这样它就只剩「另一种语法」 | 目录由 App 定，可约束 |
 | 能不能在网页版和 TUI 复用 | ✅ 桥接的浏览器半侧写一个 React 渲染器即可，同一份声明网页版也显示（第二期）；dsh-TUI 可画成文本块 | ❌ 只有 Flutter 能画 | 有 Web 渲染器，但又多一套协议 |
 | 和已有资产 | 与模型输出的 `dsh-ui` 卡、准备提给上游 `@dsh-std/ui` 的 Panel 块是同一套 | 平行的第二套 | 平行的第二套 |
@@ -231,7 +237,7 @@ output: {
 
 `presentationMeta` 是 DSH 工具的正式字段（`dsh-tools` 类型：`output.presentationMeta`，注释写的是「可重放的展示元数据，与模型内容分开」）。它的值持久化在 `tool/result.meta` 里，App 已经收到它（`ToolChatItem.meta`，现在用来读 diff 和子代理 id）。
 
-`scope` = `{ host, sessionId?, turnId?, messageId?, callId? }`。只有用户点按 `composer.actions` 时，才附带当前输入框文字和剪贴板，并且两样都要声明 `"wants": ["draft" | "clipboard"]`，安装或首次使用时提示一次。
+`scope` = `{ host, sessionId?, turnId?, messageId?, callId? }`。只有用户点按 `composer.actions` 或 `composer.tools` 时，才附带当前输入框文字和剪贴板，并且两样都要声明 `"wants": ["draft" | "clipboard"]`，安装或首次使用时提示一次。
 
 ### 3.3 插槽（surface）v1
 
@@ -259,7 +265,7 @@ output: {
   - `image`：只收桥接同源地址或 ≤ 64 KiB 的 `data:`。
 
   前 5 种和准备提给上游 `@dsh-std/ui` 的 Panel 块一致。
-- **第二期**：加输入控件 slider / number / choice / toggle 和 `form`，以及移植自 DS Bot `formula.js` 的公式。与 `interactive-ui.md` 的二期共用一份实现。
+- **第二期**：加输入控件 slider / number / choice / toggle 和 `form`，以及公式（与 DS Bot `formula.js` 行为兼容，来源见 THIRD_PARTY_NOTICES.md）。与 `interactive-ui.md` 的二期共用一份实现。
 - **绑定**：任何值位置都可以写 `{ "$": "data.a.b" }`，从这个视图的数据模型里取值；第二期再加 `{ "=": "公式" }`。取不到值就显示「—」，不报错。
 - **不开放**：任意颜色（只能用语义色调 good / warn / bad / info / muted）、字体、尺寸、绝对定位、动画参数、外部图片地址。观感由 App 决定，这是保证插件界面也像 Apple / Claude App 的唯一办法。
 - **容错**：沿用 `dsh-ui` 的宽松校验：
@@ -340,7 +346,7 @@ output: {
 
 接缝规格里没做的两项：
 - 聊天页面板岛（2–3 人日）：保留，给没有原生适配的网页插件用。排在第一期之后，避免同一行胶囊有两种实现。
-- 浮层岛（3–5 人日）：建议降级为「不做」。宠物走 `pets` 宠物包，其余浮层插件走「在网页版打开」。
+- 浮层岛（当时估 3–5 人日）：原建议降级为「不做」，已由 2026-11-11 的受限 App 内浮层方案取代，见开头修订；不是新增原生宠物协议。
 
 ## 6. 插件作者需要什么
 
@@ -387,5 +393,5 @@ output: {
 |---|---|
 | 1 | 不压缩：第 0 期 + 完整第一期（四个插槽 + 原生面板）一起做 |
 | 2 | `insert` 一律不自动发送，v1 不提供「直接发送」开关 |
-| 3 | 浮层岛从计划里拿掉 |
+| 3 | 当时决定浮层岛从计划里拿掉；2026-11-11 已被本文开头的受限 App 内浮层修订取代 |
 | 4 | 不发布到 npm。桥接随本机运行时安装；SDK 和示例插件放在仓库 `sdk/`、`examples/plugins/` 里；SSH 主机安装桥接放到第二期 |

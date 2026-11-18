@@ -9,8 +9,8 @@ PROOT="${3:?Linux build of pinned PRoot required}"
 OUT="${4:?evidence directory required}"
 PORT="${5:-39120}"
 mkdir -p "$OUT"
-ROOT="$(cd "$ROOT" && pwd -P)"
-OUT="$(cd "$OUT" && pwd -P)"
+ROOT="$(CDPATH= cd "$ROOT" && pwd -P)"
+OUT="$(CDPATH= cd "$OUT" && pwd -P)"
 command -v java >/dev/null || { echo 'java required' >&2; exit 1; }
 [[ -x "$PROOT" && -f "$ROOT/opt/dsh-go/direct/preload.mjs" ]] || { echo 'built direct rootfs and host PRoot required' >&2; exit 1; }
 

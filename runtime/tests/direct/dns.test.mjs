@@ -85,6 +85,21 @@ test('real c-ares A/AAAA, all/order, IP literal, hosts and IDNA', async (t) => {
   assert(udp.queries.some((query) => query.name === 'xn--fsqu00a.test'));
 });
 
+test('mutating a hosts result does not change later callback or Promise lookups', async (t) => {
+  const udp = await server(t); const adapter = fixture(t, udp.endpoint);
+  const callback = promisify(adapter.lookup);
+  const options = { all: true, order: 'ipv4first' };
+  const expected = [{ address: '127.0.0.1', family: 4 }, { address: '::1', family: 6 }];
+  const first = await callback('fixture.local', options);
+  first[0].address = '192.0.2.9';
+  first[1].family = 4;
+  const second = await adapter.promiseLookup('fixture.local', options);
+  assert.deepEqual(second, expected);
+  second[0].address = '192.0.2.10';
+  assert.deepEqual(await callback('fixture.local', options), expected);
+  assert.equal(udp.queries.length, 0);
+});
+
 test('IPv6 DNS transport uses the configured server', async (t) => {
   const udp = await server(t, true); const adapter = fixture(t, udp.endpoint);
   assert.equal((await adapter.promiseLookup('dual.test', 6)).address, '2001:db8::7');
@@ -155,6 +170,48 @@ test('in-flight families finish on their captured config across invalid and vali
   }
   assert.deepEqual((await pending).map((entry) => entry.address), ['192.0.2.7', '2001:db8::7']);
   assert.deepEqual([...types].sort(), [1, 28]);
+});
+
+test('a failed watched config read recovers on lookup without another file change', { timeout: 5000 }, async (t) => {
+  const first = await server(t, false, 7); const second = await server(t, false, 8);
+  const adapter = fixture(t, first.endpoint, true);
+  assert.equal((await adapter.promiseLookup('dual.test', 4)).address, '192.0.2.7');
+  const read = fs.readFileSync;
+  let observed;
+  const failedRead = new Promise(resolve => { observed = resolve; });
+  const injected = t.mock.method(fs, 'readFileSync', (file, ...args) => {
+    if (file === adapter.resolvConf) {
+      observed();
+      throw Object.assign(new Error('isolated config read failure'), { code: 'EMFILE', syscall: 'open' });
+    }
+    return read(file, ...args);
+  });
+  fs.writeFileSync(adapter.resolvConf + '.new', `nameserver ${second.endpoint}\n`);
+  fs.renameSync(adapter.resolvConf + '.new', adapter.resolvConf);
+  await failedRead;
+  await assert.rejects(adapter.promiseLookup('dual.test', 4), { code: 'EAI_AGAIN' });
+  const before = fs.statSync(adapter.resolvConf, { bigint: true });
+  injected.mock.restore();
+  assert.equal((await adapter.promiseLookup('dual.test', 4)).address, '192.0.2.8');
+  assert.equal((await promisify(adapter.lookup)('dual.test', 4)).address, '192.0.2.8');
+  const after = fs.statSync(adapter.resolvConf, { bigint: true });
+  assert.deepEqual([after.ino, after.size, after.mtimeNs], [before.ino, before.size, before.mtimeNs]);
+  assert.equal(first.queries.length, 1, 'the stale resolver is not used after its config read failed');
+  assert.equal(second.queries.length, 2);
+});
+
+test('a failed watcher stays failed even when the config remains readable', async (t) => {
+  const udp = await server(t);
+  const watch = fs.watch;
+  let watcher;
+  const capture = t.mock.method(fs, 'watch', (...args) => (watcher = watch(...args)));
+  const adapter = fixture(t, udp.endpoint, true);
+  capture.mock.restore();
+  // Node closes the native watcher before emitting its syscall="watch" error.
+  watcher.close();
+  watcher.emit('error', Object.assign(new Error('isolated watcher failure'), { code: 'ENOSPC', syscall: 'watch' }));
+  await assert.rejects(adapter.promiseLookup('dual.test', 4), { code: 'EAI_AGAIN' });
+  assert.equal(udp.queries.length, 0);
 });
 
 test('the live directory watcher observes atomic replacement and recovers after invalid DNS config', async (t) => {

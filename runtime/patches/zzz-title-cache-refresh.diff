@@ -1,16 +1,16 @@
-# DSH rc4: refresh changed cold projection records without cross-process write-back.
+# DSH 0.2.2-rc.1: refresh changed cold projection records without cross-process write-back.
 --- a/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js
-@@ -1898,6 +1898,8 @@
- var ApiSessionList = class {
+@@ -2680,6 +2680,8 @@
  	ctx;
  	workSliceMs;
+ 	listMetadata;
 +	// Read-only fallback summaries for the current cold set; persistence owns revisions.
 +	coldHints = new Map();
  	/**
  	* @param ctx - Host context carrying Session, query, persistence, and projection services.
  	* @param workSliceMs - Resolved positive integral list-work budget in milliseconds.
-@@ -1975,9 +1977,14 @@
+@@ -2768,9 +2770,14 @@
  				yieldDeadline = performance.now() + this.workSliceMs;
  			}
  		}
@@ -26,7 +26,7 @@
  			if (performance.now() >= yieldDeadline) {
  				await scheduler.yield();
  				signal?.throwIfAborted();
-@@ -1988,8 +1995,44 @@
+@@ -2781,8 +2788,44 @@
  		items.sort((left, right) => right.updatedAt - left.updatedAt);
  		return items;
  	}
@@ -88,7 +88,7 @@
  		const record = this.requireTable().get(meta.id);
 --- a/node_modules/@deepseek-ai/dsh-storage-domain/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-storage-domain/lib/index.js
-@@ -151,7 +151,7 @@
+@@ -154,7 +154,7 @@
  				this.emitChanged(change);
  			}
  		};
@@ -97,7 +97,7 @@
  		if (spec.global !== void 0) {
  			this.globalValue = globalValue;
  			this.globalHandle = {
-@@ -233,11 +233,31 @@
+@@ -246,11 +246,31 @@
  	host;
  	tableName;
  	records;
@@ -130,7 +130,7 @@
  	get(key) {
  		this.host.assertReadable();
  		return this.records.get(key);
-@@ -256,6 +276,7 @@
+@@ -269,6 +289,7 @@
  	}
  	put(key, value) {
  		return this.host.enqueue(async () => {
@@ -138,15 +138,27 @@
  			await this.host.unit.putRecord(this.tableName, key, value);
  			this.records.set(key, value);
  			this.emitPut(key, value);
-@@ -264,6 +285,7 @@
+@@ -277,6 +298,7 @@
  	delete(key) {
  		return this.host.enqueue(async () => {
  			if (!this.records.has(key)) return false;
 +			this.recordStamps.delete(key);
  			await this.host.unit.deleteRecord(this.tableName, key);
  			this.records.delete(key);
- 			this.host.emitChanged({
-@@ -279,6 +301,7 @@
+ 			this.emitDeleted(key);
+@@ -288,7 +310,10 @@
+ 			const present = [...new Set(keys)].filter((key) => this.records.has(key));
+ 			if (present.length === 0) return 0;
+ 			await this.host.unit.deleteRecords(this.tableName, present);
+-			for (const key of present) this.records.delete(key);
++			for (const key of present) {
++				this.recordStamps.delete(key);
++				this.records.delete(key);
++			}
+ 			for (const key of present) this.emitDeleted(key);
+ 			return present.length;
+ 		});
+@@ -297,6 +322,7 @@
  		return this.host.enqueue(async () => {
  			if (!this.records.has(key)) throw new DomainError("missing-key", `domain '${this.host.domainName}' table '${this.tableName}' has no record '${key}' to update`);
  			const next = fn(this.records.get(key));
@@ -162,10 +174,11 @@
  import z from "@deepseek-ai/schemastery";
  import { StorageError, UNIT_NAME_RE, storageBackendServiceKey } from "@deepseek-ai/dsh-storage";
  import { dirname, join } from "node:path";
-@@ -457,6 +457,24 @@
+@@ -472,6 +472,24 @@
+ 			tables,
  			global: state.global
  		};
- 	}
++	}
 +	/** File replacement and in-place edits both invalidate a remembered read. */
 +	async statRecord(table, key) {
 +		this.assertOpen();
@@ -183,7 +196,6 @@
 +		this.assertOpen();
 +		assertSafeKey(this.descriptor.name, key);
 +		return readRecord(join(this.tableDir(table), `${key}.json`), [this.descriptor.version, ...this.descriptor.compatibleVersions ?? []]);
-+	}
+ 	}
  	/** Durably replace one record: its own document, atomically. */
  	async putRecord(table, key, value) {
- 		this.assertOpen();

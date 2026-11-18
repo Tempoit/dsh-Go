@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
 
 import '../theme/motion.dart';
@@ -24,7 +25,8 @@ import '../theme/motion.dart';
 ///   competes in the gesture arena; a pointer that moves past the touch slop (a
 ///   scroll) cancels the press. `GlassSurface(onTap:)` has one inside already.
 ///
-/// Reduced motion keeps the scale at 1.
+/// Reduced motion keeps the scale at 1. The fluid tier ([AppMotion.fluid]) lets
+/// the release pass 1 by a hair on its way back.
 class Pressable extends StatefulWidget {
   const Pressable({
     super.key,
@@ -62,7 +64,8 @@ class Pressable extends StatefulWidget {
 }
 
 class _PressableState extends State<Pressable> with SingleTickerProviderStateMixin {
-  late final AnimationController _press = AnimationController(vsync: this);
+  // Unbounded: a fluid release passes the resting value.
+  late final AnimationController _press = AnimationController.unbounded(vsync: this);
 
   Offset? _downAt;
 
@@ -137,6 +140,19 @@ class _PressableState extends State<Pressable> with SingleTickerProviderStateMix
 
   void _settle(double target) {
     if (_press.value == target && !_press.isAnimating) return;
+    if (target == 0 && AppMotion.fluid(context)) {
+      _press.animateWith(
+        SpringSimulation(
+          AppMotion.releaseSpring,
+          _press.value,
+          0,
+          _press.velocity,
+          snapToEnd: true,
+          tolerance: const Tolerance(distance: 0.002, velocity: 0.02),
+        ),
+      );
+      return;
+    }
     _press.animateWith(AppMotion.settle(AppMotion.pressSpring, _press.value, target, _press.velocity));
   }
 

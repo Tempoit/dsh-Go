@@ -69,6 +69,15 @@ extension on ProviderContainer {
   }
 }
 
+/// Answers the first request, then the network is gone.
+class _RefusedThenOffline extends FakeUsageHttp {
+  @override
+  Future<int> post(Uri url, String json, {Duration timeout = const Duration(seconds: 10)}) {
+    offline = requests.isNotEmpty;
+    return super.post(url, json, timeout: timeout);
+  }
+}
+
 Future<Map<String, Object?>> stored() async {
   final prefs = await SharedPreferences.getInstance();
   return {for (final k in prefs.getKeys()) k: prefs.get(k)};
@@ -283,7 +292,10 @@ void main() {
 
   test('a body the host would refuse is never sent', () async {
     // No native side: no build number, no ABI.
-    final c = await start(prefs: noticed, phoneFacts: const UsageDevice(app: '0.9.9', sdk: 34, maker: 'vivo'));
+    final c = await start(
+      prefs: noticed,
+      phoneFacts: const UsageDevice(app: '0.9.9', sdk: 34, maker: 'vivo'),
+    );
     await c.count(UsageCount.turns);
     now = DateTime(2026, 10, 29, 9);
     await c.comeBack();
@@ -306,6 +318,80 @@ void main() {
       expect(usageProblem(body, now), isNull, reason: '$body');
       expect(body['iid'], matches(RegExp(r'^[A-Za-z0-9_-]{21}[AQgw]$')));
     }
+  });
+
+  const phone = UsageDevice(
+    app: '0.9.9',
+    build: 10301000,
+    sdk: 34,
+    abi: 'arm64-v8a',
+    maker: 'vivo',
+    model: 'v2405a',
+    rom: 'originos 5.0',
+  );
+
+  test(
+    'v3 with the model, system and its counts; a host that refuses it gets v2, then v1, for the rest of the run',
+    () async {
+      http = FakeUsageHttp()..replies.addAll([400, 400]);
+      final ledger = UsageLedger()
+        ..touch(DateTime(2026, 10, 26, 9))
+        ..touch(DateTime(2026, 10, 27, 9));
+      await start(prefs: {...noticed, UsageStatsController.daysKey: ledger.encode()}, phoneFacts: phone);
+      expect(
+        [for (final r in http.requests) '${r['day']} v${r['v']}'],
+        ['2026-10-26 v3', '2026-10-26 v2', '2026-10-26 v1', '2026-10-27 v1'],
+      );
+      expect(http.requests.first.keys.toSet(), usagePayloadKeysV2);
+      expect((http.requests.first['counts']! as Map).keys.toSet(), usageCountKeysV3);
+      expect([http.requests.first['model'], http.requests.first['rom']], ['v2405a', 'originos 5.0']);
+      expect((http.requests[1]['counts']! as Map).keys.toSet(), usageCountKeys);
+      expect(http.requests[2].keys.toSet(), usagePayloadKeys);
+      final left = UsageLedger.decode((await stored())[UsageStatsController.daysKey] as String?);
+      expect(left.days.keys, ['2026-10-28'], reason: 'both days went out');
+    },
+  );
+
+  test('a host from before v3 takes v2 for the rest of the run', () async {
+    http = FakeUsageHttp()..replies.add(400);
+    final ledger = UsageLedger()
+      ..touch(DateTime(2026, 10, 26, 9))
+      ..touch(DateTime(2026, 10, 27, 9));
+    await start(prefs: {...noticed, UsageStatsController.daysKey: ledger.encode()}, phoneFacts: phone);
+    expect(
+      [for (final r in http.requests) '${r['day']} v${r['v']}'],
+      ['2026-10-26 v3', '2026-10-26 v2', '2026-10-27 v2'],
+    );
+  });
+
+  test('no answer to the lower contract is a failed send, not a refusal', () async {
+    http = _RefusedThenOffline()..replies.add(400);
+    final ledger = UsageLedger()..touch(DateTime(2026, 10, 26, 9));
+    await start(prefs: {...noticed, UsageStatsController.daysKey: ledger.encode()}, phoneFacts: phone);
+    expect([for (final r in http.requests) '${r['day']} v${r['v']}'], ['2026-10-26 v3', '2026-10-26 v2']);
+    final left = UsageLedger.decode((await stored())[UsageStatsController.daysKey] as String?);
+    expect(left.days['2026-10-26']?.tries, 1, reason: 'kept for another try');
+  });
+
+  test('the tavern, the room, calls and tokens go out in v3', () async {
+    final c = await start(prefs: noticed, phoneFacts: phone);
+    await c.count(UsageCount.tavern, 3);
+    await c.count(UsageCount.room);
+    await c.count(UsageCount.call, 2);
+    c.usage
+      ..tokens(1500, 200)
+      ..tokens(500, 50);
+    await settle();
+    now = DateTime(2026, 10, 29, 9);
+    await c.comeBack();
+    final counts = http.requests.single['counts']! as Map<String, Object?>;
+    expect(http.requests.single['v'], 3);
+    expect(
+      {
+        for (final key in ['tavern', 'room', 'call', 'tok_in', 'tok_out']) key: counts[key],
+      },
+      {'tavern': 3, 'room': 1, 'call': 2, 'tok_in': 2000, 'tok_out': 250},
+    );
   });
 
   test('the request: the endpoint, and nothing but the contract\'s fields', () async {
@@ -354,7 +440,9 @@ void main() {
   test('phone control: each task counts once, when it starts', () async {
     final phone = FakePhone();
     final c = await start(prefs: noticed, phone: phone);
-    PhoneStatus task(bool active, int id) => PhoneStatus(task: PhoneTaskStatus(id: id, active: active));
+    PhoneStatus task(bool active, int id) => PhoneStatus(
+      task: PhoneTaskStatus(id: id, active: active),
+    );
     for (final s in [task(true, 1), task(true, 1), task(false, 1), task(true, 2), task(true, 3), task(false, 3)]) {
       phone.pushes.add(s);
       await settle();

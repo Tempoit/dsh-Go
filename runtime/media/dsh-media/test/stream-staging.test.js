@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
+import fs from 'node:fs/promises';
 import { mkdtemp, readFile, readdir, rm, stat, writeFile, rename, symlink } from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -18,6 +20,21 @@ test('real chunked GET owns 0600 file and hashes exact bytes, no auth or media c
  const parts=[Buffer.alloc(16384,1),Buffer.alloc(777,2),Buffer.from('tail')];
  const f=await setup(t,async(_req,res)=>{for(const chunk of parts){res.write(chunk);await new Promise(r=>setTimeout(r,2))}res.end()});
  const r=await f.stage(f.url,{directory:f.directory,maxBytes:20000});assert.equal(r.kind,'private-download');assert.deepEqual(await readFile(r.path),Buffer.concat(parts));assert.equal(r.bytes,17165);assert.equal(r.sha256,createHash('sha256').update(Buffer.concat(parts)).digest('hex'));assert.equal((await stat(r.path)).mode&0o777,0o600);assert.equal(r.mime,undefined);assert.equal(f.requests[0].authorization,undefined);assert.equal(f.requests[0].method,'GET');assert.equal(f.requests[0].acceptEncoding,'identity');
+});
+test('download file creation failure reports storage and permits a later retry',async t=>{
+ const f=await setup(t,(_q,r)=>r.end('saved'));
+ const original=fs.open;let failures=0;
+ const mocked=t.mock.method(fs,'open',async(path,...args)=>{
+  if(String(path).startsWith(join(f.directory,'.media-download-'))){failures++;throw Object.assign(new Error('synthetic disk full'),{code:'ENOSPC'})}
+  return original(path,...args);
+ });
+ syncBuiltinESMExports();
+ try {
+  await assert.rejects(f.stage(f.url,{directory:f.directory}),{code:'storage'});
+  assert.equal(failures,1);assert.equal(f.requests.length,0);assert.deepEqual(await readdir(f.directory),[]);
+ } finally {mocked.mock.restore();syncBuiltinESMExports()}
+ const receipt=await f.stage(f.url,{directory:f.directory});
+ assert.equal(await readFile(receipt.path,'utf8'),'saved');assert.equal(f.requests.length,1);
 });
 for(const [name,handler,code] of [
  ['declared oversized',(_q,r)=>{r.writeHead(200,{'content-length':'1000'});r.end('x')},'too_large'],

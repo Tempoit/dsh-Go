@@ -1,4 +1,6 @@
-// Portions derived from PiPilot (https://github.com/CikeSeven/pi_pilot), MIT, Copyright (c) 2026 CikeSeven. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 CikeSeven
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 
 import 'dart:async';
 
@@ -40,6 +42,21 @@ final Map<String, HtmlTag?> _htmlTags = {
   'summary': const HtmlTag.block(),
 };
 
+/// Inline patterns a part of the app lays over every [MarkdownBody] below it
+/// (the tavern colours its story's dialogue). Keep [patterns] one list per
+/// look: its identity is part of the parse cache's key.
+class MarkdownPatterns extends InheritedWidget {
+  const MarkdownPatterns({super.key, required this.patterns, required super.child});
+
+  final List<InlinePattern> patterns;
+
+  static List<InlinePattern>? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<MarkdownPatterns>()?.patterns;
+
+  @override
+  bool updateShouldNotify(MarkdownPatterns old) => !identical(old.patterns, patterns);
+}
+
 /// 助手正文的 Markdown 渲染。
 ///
 /// - 正文样式与用户气泡同源([AppType.chatBody]),流式与完成态不跳字号;
@@ -55,6 +72,7 @@ class MarkdownBody extends StatefulWidget {
     super.key,
     required this.text,
     this.streaming = false,
+    this.reveal = false,
     this.selectable = true,
     this.secondary = false,
     this.repairBareViews = false,
@@ -62,6 +80,13 @@ class MarkdownBody extends StatefulWidget {
 
   final String text;
   final bool streaming;
+
+  /// The fluid tier's streamed reply: gpt_markdown paces the text itself, fades in
+  /// the newest words, and only rebuilds the part that can still change, so an update
+  /// costs the same however long the reply is. No cursor and no tail repair: it holds
+  /// back half-written markup on its own. Keep it on after [streaming] ends, for the
+  /// life of this body: the tree stays and nothing moves when the reply finishes.
+  final bool reveal;
   final bool selectable;
 
   /// 次级排版(思考过程):小一号、次级文字色,标题也不抢眼。
@@ -211,6 +236,9 @@ class MarkdownBody extends StatefulWidget {
   }
 
   static final _streamingPatterns = [_cursorPattern];
+
+  /// The cursor with a [MarkdownPatterns] list, one list per list.
+  static final _streamingWith = Expando<List<InlinePattern>>('streamingWith');
 
   // Builders stay static. gpt_markdown 1.4.0's config.isSame ignores
   // onLinkTap identity; its cached spans may retain this context-only callback.
@@ -423,6 +451,14 @@ class MarkdownBody extends StatefulWidget {
   static String? workspaceLinkPath(String url, {String? baseDir}) => resolveWorkspaceLink(url, baseDir: baseDir);
 
   static Widget _codeBuilder(BuildContext context, String name, String code, bool closed) {
+    // A closed block won't change. Handing back the same widget lets Flutter skip it,
+    // or every block of the reply would rebuild on every update.
+    final reveal = closed ? context.getInheritedWidgetOfExactType<_RevealStreaming>() : null;
+    if (reveal != null) return reveal.blocks['$name\n$code'] ??= _buildCode(context, name, code, closed);
+    return _buildCode(context, name, code, closed);
+  }
+
+  static Widget _buildCode(BuildContext context, String name, String code, bool closed) {
     final info = name.trim();
     final language = info.isEmpty ? null : info.split(RegExp(r'\s+')).first;
     // A visual reply (dsh-ui): drawn as native cards. The cursor sentinel inside an open fence means it is still
@@ -430,7 +466,7 @@ class MarkdownBody extends StatefulWidget {
     if (language == 'dsh-ui') {
       return DshUiBlock(
         source: code.replaceAll(_cursorSentinel, ''),
-        streaming: !closed && code.contains(_cursorSentinel),
+        streaming: !closed && (code.contains(_cursorSentinel) || _RevealStreaming.of(context)),
         closed: closed,
       );
     }
@@ -453,8 +489,15 @@ class MarkdownBody extends StatefulWidget {
   }
 
   /// 标题是读屏里能逐个跳转的 header 节点。
-  static Widget _headingBuilder(BuildContext context, int level, Widget content, HeadingStyle style) =>
-      Semantics(header: true, container: true, child: content);
+  static Widget _headingBuilder(BuildContext context, int level, Widget content, HeadingStyle style) {
+    final theme = GptMarkdownTheme.of(context);
+    final heading = [theme.h1, theme.h2, theme.h3, theme.h4, theme.h5, theme.h6][level - 1];
+    final size = (heading ?? const TextStyle()).merge(style.textStyle).fontSize ?? MarkdownImageFont.of(context);
+    return MarkdownImageFont(
+      size: size,
+      child: Semantics(header: true, container: true, child: content),
+    );
+  }
 
   /// 任务清单 `- [ ]` / `- [x]`:只读的方框图标。包里默认用 Material 的
   /// [Checkbox],它要求祖先里有 Material,聊天列表里没有,会报错并溢出。
@@ -494,6 +537,23 @@ class MarkdownBody extends StatefulWidget {
   @visibleForTesting
   static String prepareSource(String text, {bool streaming = false, bool repairBareViews = false}) =>
       _prepareSource(text, streaming: streaming, repairBareViews: repairBareViews);
+
+  /// Characters a second when the model is slower than this; the reveal goes faster
+  /// by itself when it would fall behind. Near a comfortable reading pace, so the text
+  /// flows evenly instead of catching up in bursts.
+  static const _revealPace = 120.0;
+
+  /// How long the newest words take to fade in.
+  static const _revealFade = 0.24;
+
+  /// [text] for the reveal. Only ever appended to while streaming, as the reveal needs
+  /// (a rewrite far from the end would retype the message): a table's header is bolded
+  /// as its delimiter row arrives, right at the end and for good, so its columns don't
+  /// change when the reply finishes. Formulas are left to the library's own hold.
+  static String _prepareRevealed(String text, {required bool repairBareViews}) {
+    final repaired = repairBareViews ? fenceBareDshUiViews(text) : text;
+    return boldTableHeaders(blankLineBeforeTables(normalizeMath(repaired)));
+  }
 
   static String _prepareSource(
     String text, {
@@ -546,6 +606,9 @@ class _MarkdownBodyState extends State<MarkdownBody> {
   late String _source = _prepare();
 
   String _prepare() {
+    if (widget.reveal) {
+      return MarkdownBody._prepareRevealed(widget.text, repairBareViews: widget.repairBareViews);
+    }
     _repair = widget.streaming ? (_repair ?? StreamingMarkdownRepair()) : null;
     return MarkdownBody._prepareSource(
       widget.text,
@@ -562,6 +625,9 @@ class _MarkdownBodyState extends State<MarkdownBody> {
   /// didChangeDependencies 为止是安全的。
   bool _scoped = true;
 
+  /// Finished code blocks of a revealed reply: see [_RevealStreaming.blocks].
+  final _blocks = <String, Widget>{};
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -573,6 +639,7 @@ class _MarkdownBodyState extends State<MarkdownBody> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.text != widget.text ||
         oldWidget.streaming != widget.streaming ||
+        oldWidget.reveal != widget.reveal ||
         oldWidget.repairBareViews != widget.repairBareViews) {
       _source = _prepare();
     }
@@ -596,8 +663,17 @@ class _MarkdownBodyState extends State<MarkdownBody> {
       htmlTags: _htmlTags,
       // The tail is repaired here (and open formulas shown as source), so
       // the package must not complete open `\(` / `\[` on its own.
-      isStreaming: false,
-      inlinePatterns: widget.streaming ? MarkdownBody._streamingPatterns : null,
+      isStreaming: widget.reveal && widget.streaming,
+      animation: widget.reveal ? GptMarkdownAnimation.fade : GptMarkdownAnimation.none,
+      blockAnimation: widget.reveal ? GptMarkdownBlockAnimation.fadeIn : GptMarkdownBlockAnimation.none,
+      charactersPerSecond: MarkdownBody._revealPace,
+      revealFadeSeconds: MarkdownBody._revealFade,
+      inlinePatterns: switch ((widget.streaming && !widget.reveal, MarkdownPatterns.maybeOf(context))) {
+        (true, null) => MarkdownBody._streamingPatterns,
+        (false, null) => null,
+        (true, final extra?) => MarkdownBody._streamingWith[extra] ??= [...MarkdownBody._streamingPatterns, ...extra],
+        (false, final extra?) => extra,
+      },
       onLinkTap: (url, title) => MarkdownBody._onLinkTap(context, url, title),
       codeBuilder: MarkdownBody._codeBuilder,
       inlineCodeBuilder: MarkdownBody._inlineCodeBuilder,
@@ -610,10 +686,8 @@ class _MarkdownBodyState extends State<MarkdownBody> {
       unOrderedListBuilder: MarkdownLists.unordered,
     );
 
-    Widget withTint(TableTint tint) => GptMarkdownTheme(
-      gptThemeData: MarkdownBody._themeFor(theme, widget.secondary, l10n, tint),
-      child: text,
-    );
+    Widget withTint(TableTint tint) =>
+        GptMarkdownTheme(gptThemeData: MarkdownBody._themeFor(theme, widget.secondary, l10n, tint), child: text);
 
     // Golden 和几何测试不套 ProviderScope:那时按默认那一档画。
     Widget markdown = _scoped
@@ -621,8 +695,12 @@ class _MarkdownBodyState extends State<MarkdownBody> {
         : withTint(TableTint.follow);
     // 表格、成块公式横向放不下时,两端淡出提示还能横滑。
     markdown = ScrollConfiguration(behavior: const EdgeFadeScrollBehavior(), child: markdown);
+    if (widget.reveal) markdown = _RevealStreaming(streaming: widget.streaming, blocks: _blocks, child: markdown);
     if (widget.selectable) markdown = SelectionArea(child: markdown);
-    return markdown;
+    return MarkdownImageFont(
+      size: body.fontSize!,
+      child: MarkdownGalleryScope(child: markdown),
+    );
   }
 }
 
@@ -634,4 +712,21 @@ bool _hasProviderScope(BuildContext context) {
   } on StateError {
     return false;
   }
+}
+
+/// Whether the reveal's reply is still streaming, for the builders below it: with no
+/// cursor in the source, an open fence can't tell "still arriving" from "cut short".
+class _RevealStreaming extends InheritedWidget {
+  const _RevealStreaming({required this.streaming, required this.blocks, required super.child});
+
+  final bool streaming;
+
+  /// Finished code blocks by name and content.
+  final Map<String, Widget> blocks;
+
+  static bool of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_RevealStreaming>()?.streaming ?? false;
+
+  @override
+  bool updateShouldNotify(_RevealStreaming oldWidget) => streaming != oldWidget.streaming;
 }

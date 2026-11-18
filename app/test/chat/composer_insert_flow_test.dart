@@ -82,7 +82,8 @@ void main() {
     container
         .read(composerInsertProvider.notifier)
         .request(ComposerInsert.skill('一个名字很长很长很长很长的技能' * 4, sessionId: 's1'));
-    await pumpFrames(tester, 20);
+    // Measure after the composer settles, before the brief confirmation expires.
+    await pumpFrames(tester, 10);
 
     expect(tester.getRect(find.byType(Composer)).height, greaterThan(before), reason: 'the insert did add a line');
     final toast = tester.getRect(find.descendant(of: find.byType(SnackBar), matching: find.byType(Material)).first);

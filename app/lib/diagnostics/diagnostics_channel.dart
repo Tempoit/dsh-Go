@@ -1,8 +1,12 @@
 // The Android side of the diagnostics bundle
 // (`diagnostics/DiagnosticsPlugin.kt`).
 
+import 'dart:convert';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import 'system_ime_evidence.dart';
 
 /// A second content boundary for the native voice observation. Unexpected
 /// transcript/audio fields never enter an export, even from an older plugin.
@@ -43,6 +47,102 @@ Map<String, Object?> voiceDiagnosticsFacts(Object? raw) {
   };
 }
 
+const diagnosticVoiceStages = {
+  'preparing',
+  'listening',
+  'stopping',
+  'transcribing',
+  'completed',
+  'cancelled',
+  'error',
+  'call_started',
+  'capture_started',
+  'utterance_ready',
+  'recognizing',
+  'recognized',
+  'reply_received',
+  'synthesis_requested',
+  'playback_opening',
+  'playback_started',
+  'interrupted',
+  'call_ended',
+  'failed',
+};
+const diagnosticVoiceBackends = {'deepseek', 'cloud', 'system', 'local', 'unknown'};
+const diagnosticErrorTypes = {
+  'StateError',
+  'ArgumentError',
+  'RangeError',
+  'TypeError',
+  'FormatException',
+  'TimeoutException',
+  'PlatformException',
+  'MissingPluginException',
+  'FlutterError',
+  'AssertionError',
+  'SocketException',
+  'HttpException',
+  'FileSystemException',
+  'UnsupportedError',
+  'OtherError',
+};
+final _evidenceLocation = RegExp(r'^package:(?:dsh_app|flutter)/[A-Za-z0-9_/.-]{1,120}\.dart:[0-9]{1,7}:[0-9]{1,7}$');
+
+/// Never accept exception bodies, audio, traces or arbitrary native strings.
+Map<String, Object?> diagnosticEvidenceFacts(Object? raw) {
+  const kinds = ['appErrors', 'voiceStages', 'processExits'];
+  final input = raw is Map ? raw : const {};
+  final states = input['availability'];
+  final availability = <String, Object?>{
+    for (final kind in kinds)
+      kind: states is Map && const {'available', 'unavailable', 'unsupported'}.contains(states[kind])
+          ? states[kind]
+          : 'unavailable',
+  };
+  var remaining = 60 * 1024;
+  List<Map<String, Object?>> rows(String kind) {
+    final source = input[kind];
+    if (source is! List) return const [];
+    final result = <Map<String, Object?>>[];
+    final count = kind == 'processExits' ? 8 : 40;
+    for (final row in source.skip(source.length > count ? source.length - count : 0)) {
+      if (row is! Map || row['at'] is! int || (row['at'] as int) < 0) continue;
+      final fields = <String, Object?>{'at': row['at']};
+      if (kind == 'appErrors') {
+        if (!const {'flutter', 'platform', 'session'}.contains(row['source'])) continue;
+        fields['source'] = row['source'];
+        fields['errorType'] = diagnosticErrorTypes.contains(row['errorType']) ? row['errorType'] : 'OtherError';
+        final stack = row['stack'];
+        fields['stack'] = stack is String && stack.length <= 2048
+            ? stack.split('\n').where((s) => s.length <= 160 && _evidenceLocation.hasMatch(s)).take(6).join('\n')
+            : '';
+      } else if (kind == 'voiceStages') {
+        if (!diagnosticVoiceStages.contains(row['stage']) || !diagnosticVoiceBackends.contains(row['backend'])) {
+          continue;
+        }
+        fields['stage'] = row['stage'];
+        fields['backend'] = row['backend'];
+        if (row['code'] is int) fields['code'] = row['code'];
+      } else {
+        for (final key in const ['reason', 'status', 'importance', 'pssKb', 'rssKb']) {
+          if (row[key] is int) fields[key] = row[key];
+        }
+      }
+      final size = utf8.encode(jsonEncode(fields)).length + 1;
+      if (size > remaining) break;
+      remaining -= size;
+      result.add(fields);
+    }
+    return result;
+  }
+
+  return {
+    for (final kind in kinds) kind: rows(kind),
+    'availability': availability,
+    'limits': const {'maxEntries': 40, 'maxBytes': 64 * 1024},
+  };
+}
+
 /// App, device and bundled-runtime facts only Android knows.
 class NativeDiagnostics {
   const NativeDiagnostics({
@@ -50,6 +150,7 @@ class NativeDiagnostics {
     this.device = const {},
     this.manifest = const {},
     this.voice = const {},
+    this.evidence = const {},
   });
 
   factory NativeDiagnostics.fromMap(Map<Object?, Object?> map) {
@@ -60,6 +161,7 @@ class NativeDiagnostics {
       device: section(map['device']),
       manifest: section(map['manifest']),
       voice: voiceDiagnosticsFacts(map['voice']),
+      evidence: diagnosticEvidenceFacts(map['evidence']),
     );
   }
 
@@ -76,6 +178,9 @@ class NativeDiagnostics {
 
   /// Content-free recognition service facts and at most 20 failure observations.
   final Map<String, Object?> voice;
+
+  /// Bounded persisted failure metadata, with explicit per-source availability.
+  final Map<String, Object?> evidence;
 }
 
 /// MethodChannel `dsh/diagnostics`. Without the native side (tests, other
@@ -84,6 +189,46 @@ class DiagnosticsChannel {
   const DiagnosticsChannel([this.channel = const MethodChannel('dsh/diagnostics')]);
 
   final MethodChannel channel;
+
+  Future<void> recordVoiceStage(String stage, {String backend = 'unknown', int? code}) async {
+    if (!diagnosticVoiceStages.contains(stage) || !diagnosticVoiceBackends.contains(backend)) return;
+    await _record('recordVoiceStage', {'stage': stage, 'backend': backend, 'code': ?code});
+  }
+
+  Future<void> recordAppError({required String source, required String errorType, required String stack}) =>
+      _record('recordAppError', {'source': source, 'errorType': errorType, 'stack': stack});
+
+  Future<void> _record(String method, Map<String, Object?> fields) async {
+    try {
+      await channel.invokeMethod<void>(method, fields);
+    } on MissingPluginException {
+      // Older apps have no persistent evidence API.
+    } on PlatformException {
+      // Native availability reports a failed write; the original error/voice chain stays intact.
+    }
+  }
+
+  /// Every call requires fresh consent in the native guarded dialog.
+  Future<SystemImeEvidence> collectSystemIme() async {
+    try {
+      final raw = await channel.invokeMethod<Object?>('collectSystemIme');
+      return SystemImeEvidence.fromNative(raw, now: DateTime.now());
+    } on MissingPluginException {
+      return SystemImeEvidence.failure('unsupported', DateTime.now());
+    } on PlatformException {
+      return SystemImeEvidence.failure('failed', DateTime.now());
+    }
+  }
+
+  Future<void> cancelSystemIme() async {
+    try {
+      await channel.invokeMethod<void>('cancelSystemIme');
+    } on MissingPluginException {
+      // Older apps have no pending system capture.
+    } on PlatformException {
+      // The Dart generation is revoked even when native cancellation fails.
+    }
+  }
 
   Future<NativeDiagnostics> info() async {
     try {

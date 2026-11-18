@@ -3,7 +3,7 @@
 // the left mirrors the send key on the right. Taller (multi-line) input keeps
 // the keys at the bottom with the same bottom and side gaps. With voice, the
 // mic takes the send key's place on an empty draft, and while dictating the
-// ✕ takes the +'s: all four are the same 40 circle in the same two seats. A new
+// ✕ takes the +'s: all four are the same 36 circle in the same two seats. A new
 // line grows the capsule from its bottom edge, and a pinned list follows it.
 
 import 'package:dsh_app/state/chat_state.dart';
@@ -86,7 +86,7 @@ Rect _cancel(WidgetTester tester) =>
 void _expectEndCaps(WidgetTester tester, Rect left, Rect right) {
   final capsule = _capsule(tester);
   final side = left.left - capsule.left;
-  expect(left.size, const Size(40, 40));
+  expect(left.size, const Size(36, 36));
   expect(right.size, left.size);
   expect(capsule.right - right.right, moreOrLessEquals(side, epsilon: 0.5));
   for (final key in [left, right]) {
@@ -106,7 +106,7 @@ VoiceInputController _voice(TextEditingController input) {
 }
 
 void main() {
-  testWidgets('stopping keeps a symmetric 40dp key', (tester) async {
+  testWidgets('stopping keeps a symmetric 36dp key', (tester) async {
     final semantics = tester.ensureSemantics();
     await _pump(tester, running: true, stopping: true);
     final busy = find
@@ -266,7 +266,7 @@ void main() {
     expect(_capsule(tester), empty);
 
     final bars = tester.getRect(find.byType(VoiceWaveform));
-    expect(bars.height, 40);
+    expect(bars.height, 36);
     expect(bars.center.dy, moreOrLessEquals(stop.center.dy, epsilon: 0.5));
     expect(VoiceWaveform.maxHeight, lessThan(stop.height));
     // The bars sit next to the stop key like the context ring does.

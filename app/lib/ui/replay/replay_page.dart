@@ -24,6 +24,8 @@ import '../../state/attachments.dart' show sessionImageProvider;
 import '../../state/compose_inbox.dart';
 import '../../state/goal_dock_state.dart' show DockGoal;
 import '../../state/settings_state.dart';
+import '../../state/ui_mode_state.dart';
+import '../../state/web_target.dart';
 import '../chat/dock/dock_pill.dart' show DockSlot;
 import '../chat/dock/goal_bar.dart';
 import '../chat/dock/todo_bar.dart';
@@ -181,7 +183,12 @@ class _ReplayPageState extends ConsumerState<ReplayPage> with SingleTickerProvid
 
   void _continue() {
     final request = continueChatRequest(widget.share);
-    ref.read(composeInboxProvider.notifier).push(request);
+    if (ref.read(uiModeProvider).web) {
+      // The web home has no native composer: the page opens a new chat with it.
+      ref.read(webOpenProvider.notifier).request(const DshWebTarget(newSession: true), compose: request);
+    } else {
+      ref.read(composeInboxProvider.notifier).push(request);
+    }
     Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
@@ -197,7 +204,7 @@ class _ReplayPageState extends ConsumerState<ReplayPage> with SingleTickerProvid
       // The bubbles' pictures come from the file, not from an engine.
       overrides: [
         sessionImageProvider.overrideWith((ref, key) async {
-          final asset = assets[key.$2];
+          final asset = assets[key.$2.attachmentId];
           if (asset == null) throw StateError('not in the file');
           return asset.bytes;
         }),

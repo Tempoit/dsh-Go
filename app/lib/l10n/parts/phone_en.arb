@@ -38,6 +38,7 @@
   "phoneEngineReset": "Reset runtime",
   "phoneEngineResetHint": "Delete chats and files, then extract again",
   "phoneEngineResetTitle": "Reset the runtime?",
+  "phoneResetAlsoDeletes": "Anything else in the home folder (/root) goes too, including files in your workspaces, AGENTS.md and data that plugins store themselves, such as memories.",
   "phoneEngineKeepUiSkills": "Keep interface settings and skills",
   "phoneEngineKeepPluginsSettings": "Keep installed plugins and settings",
   "phoneEngineDeleteReset": "Delete and reset",
@@ -124,7 +125,7 @@
   "phoneDndKeepDebugging": "With Shizuku or Direct ADB, stay on Wi-Fi with Wireless debugging on.",
   "phoneReady": "Ready",
   "phoneDndDirectAdb": "Direct ADB",
-  "phoneDndChannels": "Channel",
+  "phoneDndChannels": "Connection",
   "phoneDndShizukuFor": "Phones with the Shizuku app",
   "phoneDndSuiFor": "Sui module on Magisk or KernelSU",
   "phoneDndRootFor": "Rooted phones",
@@ -144,18 +145,18 @@
   "phoneDndSuiMissing": "Sui wasn’t found. Install the Sui module in Magisk or KernelSU, restart the phone, then come back.",
   "phoneDndSuiRunning": "Sui interface available",
   "phoneDndSuiStopped": "The Sui interface isn’t available. Check that the Sui module is enabled, restart the phone and try again.",
-  "phoneDndSuiAllSet": "Sui is ready.",
+  "phoneDndSuiAllSet": "Sui is running and authorized. Connect the background screen next.",
   "phoneDndSuiPermissionFailed": "Couldn’t ask Sui for permission. Check that the Sui module is enabled and try again.",
   "phoneDndRootWaiting": "Waiting for root. Answer your root manager’s prompt.",
-  "phoneDndRootConnected": "Root is connected. If it drops, choose it here again; DSH Go asks for root on its own only with “Keep root channel” on above.",
+  "phoneDndRootConnected": "Root is connected. If it drops, choose it here again; DSH Go asks for root on its own only with “Keep root channel” enabled under More settings.",
   "phoneDndRootConnectedKept": "Root is connected. If it drops, DSH Go asks your root manager again on its own.",
   "phoneDndRootRetry": "Ask for root again",
-  "phoneDndInstallShizuku": "Install Shizuku first (free and open source). If you use tools like Ice Box or Brevent, you may already have it.",
+  "phoneDndInstallShizuku": "Install Shizuku first (free and open source).",
   "phoneDndOpenShizukuSite": "Open Shizuku website",
   "phoneDndStartShizuku": "Open Shizuku and follow “Start via Wireless debugging” (requires Wi-Fi). This page refreshes when you return.",
   "phoneDndGrantShizukuHint": "Shizuku is running. Allow DSH Go to use it next.",
   "phoneDndGrantShizuku": "Allow DSH Go",
-  "phoneDndShizukuAllSet": "Shizuku is ready.",
+  "phoneDndShizukuAllSet": "Shizuku is running and authorized. Connect the background screen next.",
   "phoneDndShizukuInstalled": "Shizuku installed",
   "phoneDndShizukuRunning": "Shizuku running",
   "phoneDndShizukuGranted": "DSH Go allowed",
@@ -201,7 +202,12 @@
   "phoneControlWorking": "Operating your phone",
   "phoneControlTaskNoConfirmHint": "Confirmation skipped for this task · Pause or stop from the floating bar",
   "phoneControlFloatingBarHint": "Pause or stop from the floating bar",
-  "phoneControlAdvanced": "Advanced",
+  "phoneControlAdvanced": "More settings",
+  "phoneDndMoreChannels": "More connections (Root / Sui)",
+  "phoneDndChangeChannel": "Change connection",
+  "phoneDndPairingHelp": "Pairing help / manual entry",
+  "phoneDndConnectHelp": "Cannot connect?",
+  "phoneDndPairNext": "Enable Wireless debugging in Developer options, then start pairing and enter the pairing code in the notification.",
   "phoneControlKeepAliveHint": "Prevent Android from turning off accessibility",
   "phoneControlReadingEllipsis": "Reading…",
   "phoneControlNotReady": "Not ready",
@@ -332,6 +338,8 @@
   "phoneSafeRestoreStart": "Restore and start",
   "phoneSafeRestoredStarting": "Restored the last working configuration. Starting…",
   "phoneSafeRestoreFailed": "Couldn’t restore",
+  "phoneSafeStopIncomplete": "Could not confirm that the engine has stopped. Configuration was not changed. Check the engine logs before trying again.",
+  "phoneSafeRestartIncomplete": "The configuration operation finished, but the engine has not stopped or restarted. Wait for it to stop before starting it again.",
   "phoneSafeRestoreIntro": "DSH will restore the last working configuration:",
   "phoneSafeRestoreSettings": "• Restore settings to that version (save current settings as a backup)",
   "phoneSafeRestoreNote": "No plugins will be uninstalled. No internet needed. You can re-enable disabled plugins later.",
@@ -423,6 +431,13 @@
   "phoneDirectSafeHint": "Safe mode uses compatible launch. This choice applies when you return to normal mode.",
   "phoneDirectNeedsRuntime": "This option needs a runtime with direct launch support.",
   "phoneDirectChangeFailed": "Could not change the launch method. Stop the local engine and try again.",
+  "phoneTawcEngine": "tawcroot fast launch",
+  "phoneTawcHint": "Experimental and off by default; applies on the next start. Only one of this and direct launch can be on. Runs the local engine with tawcroot instead of compatible launch: it starts about three times faster, and package installs and apt get faster too. If it can’t start, the app goes back to compatible launch on its own. The first start after you turn it off first turns the hard links it made into ordinary files, which can take a little longer.",
+  "phoneTawcFailedHint": "tawcroot didn’t start on this phone, so compatible launch is used. Stop the engine and turn this on to try again.",
+  "phoneTawcUnavailable": "This build doesn’t include tawcroot, or the phone runs a version older than Android 10.",
+  "phoneLaunchTawcroot": "tawcroot",
+  "phoneTawcLaunchFailed": "tawcroot failed to start",
+  "phoneTawcUnsupported": "This start’s settings aren’t supported by tawcroot yet, compatible launch for now",
   "phoneActualLaunchMode": "Current launch",
   "phoneLaunchNotObserved": "Not running",
   "phoneLastLaunchSelection": "Last launch",
@@ -446,5 +461,194 @@
   },
   "phoneDndManualConnect": "Connect by port",
   "phoneDndConnectPortLabel": "Connection port",
-  "phoneDndConnectPortHint": "On the main Wireless debugging settings page, find “IP address & port” and enter the port after the colon. Do not use the pairing-code dialog’s port."
+  "phoneDndConnectPortHint": "On the main Wireless debugging settings page, find “IP address & port” and enter the port after the colon. Do not use the pairing-code dialog’s port.",
+  "phonePreviewTitle": "Live background preview",
+  "phonePreviewDescription": "Frames are read only while the preview is visible and stay on this device. The preview is view-only.",
+  "phonePreviewOpen": "View background screen",
+  "phonePreviewTask": "Preview task {taskId}",
+  "@phonePreviewTask": {"placeholders": {"taskId": {"type": "String"}}},
+  "phonePreviewInUse": "Another task is being previewed",
+  "phonePreviewOff": "The task ended or preview is off",
+  "phonePreviewUnavailable": "Preview is unavailable or the screen is protected",
+  "phonePreviewWaiting": "Waiting for a new background frame",
+  "phoneViewportTitle": "Background viewport",
+  "phoneViewportDescription": "Applies when the next background screen is created. The current screen stays unchanged; recreating it after handoff uses the new setting. This does not force apps to rotate.",
+  "phoneViewportPortrait": "Portrait",
+  "phoneViewportLandscape": "Landscape",
+  "phoneResumeTask": "Allow phone control again",
+  "phoneResumeTaskHint": "Allow future phone actions in this conversation. Finished actions will not be replayed.",
+  "phoneResumeTaskFailed": "Could not resume. The previous action may still be finishing.",
+  "phoneStoppedTask": "Phone task {task} stopped",
+  "phoneTaskDrainingHint": "Waiting for the previous action and background screen cleanup to finish.",
+  "phoneTaskCleanupFailedHint": "Background screen cleanup could not be confirmed. Phone control remains blocked.",
+  "phoneFinishingTask": "Phone task {task} is finishing",
+  "phoneCleanupRetry": "Retry cleanup",
+  "phoneCleanupRetryFailed": "The previous background screen is still unconfirmed. Its screen access remains reserved.",
+  "phoneSelfCheckTitle": "Check phone control",
+  "phoneSelfCheckTechnicalDetails": "Technical details",
+  "phoneLocalOcrSummary": "On-device recognition; results may go to your model. The SDK collects usage statistics.",
+  "phoneLocalOcrPrivacyDetails": "Privacy details",
+  "phoneSelfCheckPartial": "Partial check — only observed items have results",
+  "phoneSelfCheckScope": "Uses the selected connected channel and a temporary presentation display. App launch, text input, screenshots, OCR and MAIN disturbance are not tested. Cleanup alone does not prove a display was created.",
+  "phoneSelfCheckStart": "Start check",
+  "phoneSelfCheckCancel": "Request cancellation",
+  "phoneSelfCheckRefresh": "Refresh status",
+  "phoneSelfCheckSave": "Save sanitized report",
+  "phoneSelfCheckSaving": "Saving…",
+  "phoneSelfCheckSaved": "Report saved to Downloads/DSH-Go.",
+  "phoneSelfCheckSaveFailed": "Could not save the report.",
+  "phoneSelfCheckReportHint": "Save only when you choose. The local report contains fixed results, with no screenshots, recognized text, logs, account data or run identifier.",
+  "phoneSelfCheckRunState": "{state, select, idle{Not started} running{Running partial check} cleaning{Cleaning up; cancellation does not undo sent input} done{Check ended; see Technical details for results} cancelled{Cancelled; observed actions remain recorded} other{Status unavailable}}",
+  "@phoneSelfCheckRunState": {
+    "placeholders": {
+      "state": {
+        "type": "String"
+      }
+    }
+  },
+  "phoneSelfCheckStepState": "{state, select, not_run{Not run / no observation} running{Running} pass{Observed pass} fail{Failed} skipped{Skipped} unknown{Unconfirmed} cancelled{Cancelled} other{Unconfirmed}}",
+  "@phoneSelfCheckStepState": {
+    "placeholders": {
+      "state": {
+        "type": "String"
+      }
+    }
+  },
+  "phoneSelfCheckStage": "{stage, select, device{Device preconditions} channel{Selected channel} display{Temporary background display} input_probe{Touch receiver} launch{App launch} tree{Accessibility tree} tap{App button tap} scroll{App scrolling} back{App back action} text_ascii{Fixed ASCII input} text_zh{Fixed Chinese input} capture{Local pattern capture} continuity{Limited controlled refresh} main{Limited MAIN observations} ocr{Local OCR} cleanup{Strict cleanup} other{Unknown item}}",
+  "@phoneSelfCheckStage": {
+    "placeholders": {
+      "stage": {
+        "type": "String"
+      }
+    }
+  },
+  "phoneSelfCheckReason": "{reason, select, busy{The phone or channel is busy.} unsupported{This device or peer does not support this check.} cancelled{This request was cancelled or retired.} disabled{Phone control is turned off.} locked{The device is locked.} identity{The original run or channel no longer matches.} invalid{The request or result could not be verified.} display{The temporary display could not be verified.} input{Input acceptance or delivery was not confirmed. Sent input is not retried.} cleanup{Resource cleanup is unconfirmed. Reconnect the channel, then check again.} denied{The system denied the operation.} timeout{The operation timed out; sent work may still complete.} unavailable{The local status or selected channel is unavailable.} target_unavailable{The fixed target could not be verified. Finish cleanup before starting again.} target_changed{The original target changed. Continue only with cleanup.} target_cleanup{Target cleanup is unconfirmed. Reconnect the channel, then check again.} target_main{The target was observed on MAIN. Further steps stopped; complete cleanup.} target_readback{The fixed target count or text did not match. Do not repeat the action; complete cleanup.} tree_cleanup{Tree connection cleanup is unconfirmed. Reconnect the channel, then check again.} target_launch{Target launch was denied or unconfirmed. Check the device and complete cleanup.} frame_unavailable{No usable local pattern frame was observed. Complete cleanup before a new check.} frame_mismatch{The actual frame did not match this target and phase. Complete cleanup.} continuity{The limited controlled refresh sequence was not confirmed. This is not a frame-rate result.} main_changed{MAIN samples changed; this may include user actions. Complete cleanup. This does not establish the cause.} main_unchanged{No change was seen at these finite sampling points. Disturbance between them remains unknown.} main_incomplete{MAIN samples are incomplete. They cannot establish absence of disturbance.} not_installed{This self-check does not include OCR. OCR was not tested.} other{An unrecognized result was received.}}",
+  "@phoneSelfCheckReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "phoneSelfCheckTargetScope": "Uses an ordinary temporary display and a fixed local target for launch, tree reading and one button tap. Text, scrolling, screenshots and OCR are not tested. MAIN can only record an observed failure, never a pass. Cleanup alone does not prove a display was created.",
+  "phoneSelfCheckProfileChoice": "Choose the next check (does not change the report below)",
+  "phoneSelfCheckProfile": "{profile, select, probe_b{Input receiver check (B)} target_c1{Fixed target check (C1)} target_c2{Fixed input and frames (C2)} other{Unknown profile}}",
+  "@phoneSelfCheckProfile": {
+    "placeholders": {
+      "profile": {
+        "type": "String"
+      }
+    }
+  },
+  "phoneSelfCheckReportProfile": "{profile, select, probe_b{Report profile: input receiver (B)} target_c1{Report profile: fixed target (C1)} target_c2{Report profile: fixed input and frames (C2)} other{Report profile: unconfirmed}}",
+  "@phoneSelfCheckReportProfile": {
+    "placeholders": {
+      "profile": {
+        "type": "String"
+      }
+    }
+  },
+  "phoneSelfCheckTargetC2Scope": "Uses a fixed local target for launch, tree reading, one button tap, ASCII and Chinese ACTION_SET_TEXT replacement/readback, local pattern capture and limited controlled refresh. This does not measure FPS or smoothness. Finite MAIN samples cannot prove there was no disturbance between samples. OCR, touch reception, scrolling and back are not tested. Cleanup alone does not prove a display was created.",
+  "phoneTaskWaiting": "Task {taskId} · Waiting for resources",
+  "phoneTaskWaitingApp": "Waiting for app {packageName} · {seconds} seconds elapsed.",
+  "phoneTaskWaitingUnknown": "Waiting for the interface (app identity unconfirmed) · {seconds} seconds elapsed.",
+  "phoneTaskWaitingScreen": "Waiting for {screen} · {seconds} seconds elapsed.",
+  "phoneTaskMainResource": "the main screen",
+  "phoneTaskBackgroundResource": "the background screen",
+  "@phoneTaskWaiting": {
+    "placeholders": {
+      "taskId": {
+        "type": "int"
+      }
+    }
+  },
+  "@phoneTaskWaitingApp": {
+    "placeholders": {
+      "packageName": {
+        "type": "String"
+      },
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "@phoneTaskWaitingUnknown": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "@phoneTaskWaitingScreen": {
+    "placeholders": {
+      "screen": {
+        "type": "String"
+      },
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "phoneInterruptionTitle": "Previous phone tasks did not confirm completion",
+  "phoneInterruptionLoading": "Reading interrupted task records…",
+  "phoneInterruptionStorageError": "Task completion records could not be saved or read. Retry; this does not mean background resources were released.",
+  "phoneInterruptionHint": "{count} tasks were interrupted or could not save completion. Actions may already have taken effect. Check first. Acknowledging only confirms you saw this notice; it does not resume actions or prove background resources were released.",
+  "phoneInterruptionAcknowledge": "I checked the interruption notice",
+  "phoneInterruptionRetry": "Retry saving or reading",
+  "phoneInterruptionActionFailed": "Task records are not confirmed yet. Please retry.",
+  "@phoneInterruptionHint": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "phoneLocalOcrTitle": "Text recognition",
+  "phoneLocalOcrUnknown": "This setting could not be read. Refresh and try again.",
+  "phoneLocalOcrDisclosure": "Recognition runs on this device. Screenshots and text are not sent to Google; Google’s SDK collects usage statistics such as device model, app version and processing time.",
+  "phoneLocalOcrDetails": "Enabled by default. While off, text recognition requests do not trigger SDK loading or initialization. Remote pairing initializes the shared SDK separately when its scanner opens; it does not enable text recognition. Screenshots and recognized text may be sent to your configured model. Turning this off prevents new local recognition; work already started may still finish. It does not uninstall the SDK or promise to clear or stop sending previously accumulated SDK statistics.",
+  "phoneBackgroundParallelTitle": "Background task limit",
+  "phoneBackgroundParallelStatus": "Configured: {configured} · Available limit: {effective} · Occupied: {held}",
+  "phoneBackgroundParallelDescription": "A lower limit keeps existing tasks. New tasks still wait for apps and the main screen to become available.",
+  "phoneBackgroundParallelChoice": "{limit} background task slots",
+  "phoneBackgroundParallelOff": "The background channel is off. Saving this preference does not turn it on.",
+  "phoneBackgroundParallelUnsupported": "Background operation is unavailable on this device.",
+  "phoneBackgroundParallelConnection": "A connection is required before a new background task can start.",
+  "phoneBackgroundParallelBusy": "The background channel is being prepared or maintained. New tasks cannot start yet.",
+  "phoneGateRetest": "Check this channel again",
+  "phoneBackgroundParallelSerial": "This connection supports one background slot. Your preference remains saved.",
+  "@phoneBackgroundParallelStatus": {
+    "placeholders": {
+      "configured": {
+        "type": "int"
+      },
+      "effective": {
+        "type": "int"
+      },
+      "held": {
+        "type": "int"
+      }
+    }
+  },
+  "@phoneBackgroundParallelChoice": {
+    "placeholders": {
+      "limit": {
+        "type": "int"
+      }
+    }
+  },
+  "phoneSkillBundlePublishedUnverified": "The files were published, but full verification has not succeeded. Do not save again.",
+  "phoneSkillBundleUnknown": "The save result is not confirmed. Files may already have been written. Do not save again.",
+  "phoneSkillBundleRevision": "Route revision: {revision}",
+  "@phoneSkillBundleRevision": {"placeholders": {"revision": {"type": "String"}}},
+  "phoneSkillReplayReview": "Review phone route",
+  "phoneSkillReplaySourceChanged": "The local session or connection changed. Select the route again from the current local conversation.",
+  "phoneSkillReplayUnavailable": "This route is not available for controlled execution on this phone. The ordinary skill template remains available.",
+  "phoneSkillReplayConfirm": "I have reviewed this route and the app selected for this use.",
+  "phoneSkillReplayToComposer": "Insert into this conversation",
+  "phoneSkillReplayStartText": "A phone route has been selected and reviewed locally. Call only mcp__phone__replay with {request}. If unavailable or refused, hand back to the user/model; do not replay it as ordinary actions.",
+  "@phoneSkillReplayStartText": {"placeholders": {"request": {"type": "String"}}},
+  "phoneSkillReplayQueue": "Send route (queue)",
+  "phoneSkillReplayQueued": "The route message was accepted or queued. This does not mean the route has executed successfully.",
+  "phoneSkillReplaySendUncertain": "Delivery of the route message was not confirmed. It has not been prepared or replayed again. Check the original conversation."
 }

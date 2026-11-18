@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -255,7 +256,7 @@ class RemoteConnectionController extends AsyncNotifier<HostConnection?> {
   Future<HostConnection?> build() async {
     final link = ref.watch(hostLinkProvider(host));
     if (link == null) return null;
-    final name = ref.watch(hostNameProvider(host));
+    var name = ref.read(hostNameProvider(host));
 
     HostConnection wrap(DshClient client) => HostConnection(
       client: client,
@@ -265,6 +266,14 @@ class RemoteConnectionController extends AsyncNotifier<HostConnection?> {
       hostId: host.id,
       workingDirectory: link is SshHostLink ? link.resolvedWorkingDirectory : null,
     );
+
+    ref.listen(hostNameProvider(host), (_, next) {
+      name = next;
+      // A label change keeps the current client; it must not revive a previous one.
+      if (!state.isLoading && !state.hasError) {
+        if (state.value case final connection?) state = AsyncData(wrap(connection.client));
+      }
+    });
 
     if (link is SshHostLink) {
       ref.listen(hostsProvider.select((s) => s.sshById(host.id)), (previous, next) {
@@ -311,16 +320,71 @@ class RemoteConnectionController extends AsyncNotifier<HostConnection?> {
 final remoteConnectionProvider = AsyncNotifierProvider.autoDispose
     .family<RemoteConnectionController, HostConnection?, HostRef>(RemoteConnectionController.new);
 
-/// Last observation of the active connection, for diagnostics only. Stores
-/// enum names, booleans and a timestamp; never clients, hosts, or raw errors.
-/// Reading it does not observe or rebuild any connection provider.
+/// Passive observations of the active connection. Exported values contain
+/// enum names, booleans and numbers, never host identifiers or raw errors.
+/// Reading a snapshot does not observe or rebuild any connection provider.
 class ConnectionDiagnostics {
   static const _unobserved = <String, Object?>{'host': 'not_observed', 'state': 'not_observed'};
+  static const _historyLimit = 40;
   Map<String, Object?> _value = _unobserved;
+  final _changes = StreamController<void>.broadcast();
+  final _history = Queue<Map<String, Object?>>();
+  final _historyClock = Stopwatch();
+  HostRef? _historyHost;
+  HostLink? _historyLink;
+  Object? _historyOwner;
+  Object? _lastEvent;
+  StreamSubscription<HostLinkStatus>? _linkSubscription;
+  ProviderSubscription<HostRef>? _hostSubscription;
+  Map<String, Object?>? _activeRemoteValue;
+  int _sequence = 0;
+  int _dropped = 0;
 
   Map<String, Object?> get snapshot => Map.unmodifiable(_value);
 
+  /// Passive notifications from connections already observed by their normal
+  /// callers. Subscribing never creates or retries a connection.
+  Stream<void> get changes => _changes.stream;
+
+  void _changed() {
+    if (!_changes.isClosed) _changes.add(null);
+  }
+
+  void dispose() {
+    _value = _unobserved;
+    _releaseHistory();
+    _hostSubscription?.close();
+    _hostSubscription = null;
+    unawaited(_changes.close());
+  }
+
+  void _releaseHistory() {
+    _historyOwner = null;
+    _historyHost = null;
+    _historyLink = null;
+    _activeRemoteValue = null;
+    final subscription = _linkSubscription;
+    _linkSubscription = null;
+    if (subscription != null) unawaited(subscription.cancel());
+    _history.clear();
+    _historyClock
+      ..stop()
+      ..reset();
+    _lastEvent = null;
+    _sequence = 0;
+    _dropped = 0;
+  }
+
   void _observe(Ref ref, HostRef host, AsyncValue<HostConnection?> connection) {
+    // Install only from a normal observation, after activeHost is already in
+    // use. Keep ownership changes visible across coalesced rebuilds and gaps;
+    // reading a diagnostics snapshot alone never installs this listener.
+    _hostSubscription ??= ref.container.listen(activeHostProvider, (previous, next) {
+      if (previous == next) return;
+      _releaseHistory();
+      _value = _unobserved;
+      _changed();
+    });
     final error = connection.error;
     final value = <String, Object?>{
       'host': host.kind.name,
@@ -330,43 +394,130 @@ class ConnectionDiagnostics {
         _ => 'connecting',
       },
       'observedAtEpochMs': DateTime.now().millisecondsSinceEpoch,
-      if (error is HostLinkError) ...{'errorKind': error.kind.name, 'retryable': error.retryable},
+      if (error is HostLinkError) ...{
+        'errorKind': error.kind.name,
+        'retryable': error.retryable,
+        if (error.diagnosticCode case final code?) 'reasonCode': code.name,
+      },
     };
     _value = value;
-    void clear() {
-      if (identical(_value, value)) _value = _unobserved;
+    _changed();
+    ref.onDispose(() {
+      if (!identical(_value, value)) return;
+      _value = _unobserved;
+      if (identical(_activeRemoteValue, value)) _activeRemoteValue = null;
+      _changed();
+    });
+    if (host.isLocal) {
+      _releaseHistory();
+      return;
     }
-
-    ref.onDispose(clear);
-    if (host.isLocal) return;
 
     // Called only by the normal active-connection flow, never by export.
-    final link = ref.read(hostLinkProvider(host));
-    if (link == null) return;
-    void record(HostLinkStatus status) {
-      if (!identical(_value, value)) return;
-      value['observedAtEpochMs'] = DateTime.now().millisecondsSinceEpoch;
-      value['link'] = Map<String, Object?>.unmodifiable({
-        'phase': status.phase.name,
-        if (status.step != null) 'step': status.step!.name,
-        'attempt': status.attempt,
-        if (status.path case final path?) 'transport': path.name,
-        if (status.network case final network?) ...{
-          if (network.connectDuration case final duration?) 'connectDurationMs': duration.inMilliseconds,
-          if (network.roundTripTime case final duration?) 'roundTripTimeMs': duration.inMilliseconds,
-          'fallbackReason': ?network.safeFallbackReason,
-        },
-        if (status.error case final error?) ...{'errorKind': error.kind.name, 'retryable': error.retryable},
-      });
+    // Follow link identity even when its connection stays AsyncLoading.
+    final link = ref.watch(hostLinkProvider(host));
+    if (link == null) {
+      _releaseHistory();
+      return;
     }
+    if (_historyHost != host || !identical(_historyLink, link)) {
+      _releaseHistory();
+      final owner = Object();
+      _historyOwner = owner;
+      _historyHost = host;
+      _historyLink = link;
+      _historyClock.start();
+      // Keep this already-open source's done notification across provider
+      // rebuilds. While unobserved, data is ignored and no history is exported.
+      _linkSubscription = link.statuses.listen(
+        (status) {
+          if (identical(_historyOwner, owner)) _record(status);
+        },
+        onDone: () {
+          if (!identical(_historyOwner, owner)) return;
+          _releaseHistory();
+          _value = _unobserved;
+          _changed();
+        },
+      );
+    }
+    _activeRemoteValue = value;
+    _record(link.status);
+  }
 
-    record(link.status);
-    final sub = link.statuses.listen(record, onDone: clear);
-    ref.onDispose(() => unawaited(sub.cancel()));
+  void _record(HostLinkStatus status) {
+    final value = _activeRemoteValue;
+    if (value == null || !identical(_value, value)) return;
+    final at = DateTime.now().millisecondsSinceEpoch;
+    value['observedAtEpochMs'] = at;
+    value['link'] = Map<String, Object?>.unmodifiable({
+      'phase': status.phase.name,
+      if (status.step != null) 'step': status.step!.name,
+      'attempt': status.attempt,
+      if (status.path case final path?) 'transport': path.name,
+      if (status.network case final network?) ...{
+        if (network.connectDuration case final duration?) 'connectDurationMs': duration.inMilliseconds,
+        if (network.roundTripTime case final duration?) 'roundTripTimeMs': duration.inMilliseconds,
+        'fallbackReason': ?network.safeFallbackReason,
+        if (network.localIpVersion case final version?) 'localIpVersion': version.name,
+        if (network.remoteIpVersion case final version?) 'remoteIpVersion': version.name,
+        if (network.iceProtocol case final protocol?) 'iceProtocol': protocol.name,
+      },
+      if (status.error case final error?) ...{
+        'errorKind': error.kind.name,
+        'retryable': error.retryable,
+        if (error.diagnosticCode case final code?) 'reasonCode': code.name,
+      },
+    });
+    // Measurements such as RTT can refresh the current snapshot without
+    // evicting the transition that explains the last failure.
+    final signature = (
+      status.phase,
+      status.step,
+      status.attempt,
+      status.path,
+      status.network?.safeFallbackReason,
+      status.error?.kind,
+      status.error?.retryable,
+      status.error?.diagnosticCode,
+    );
+    if (_lastEvent != signature) {
+      _lastEvent = signature;
+      if (_history.length == _historyLimit) {
+        _history.removeFirst();
+        _dropped++;
+      }
+      _history.add(
+        Map<String, Object?>.unmodifiable({
+          'sequence': ++_sequence,
+          'observedAtEpochMs': at,
+          'elapsedMs': _historyClock.elapsedMilliseconds,
+          'phase': status.phase.name,
+          if (status.step case final step?) 'step': step.name,
+          'attempt': status.attempt,
+          if (status.path case final path?) 'transport': path.name,
+          'fallbackReason': ?status.network?.safeFallbackReason,
+          if (status.error case final error?) ...{
+            'errorKind': error.kind.name,
+            'retryable': error.retryable,
+            if (error.diagnosticCode case final code?) 'reasonCode': code.name,
+          },
+        }),
+      );
+    }
+    value['history'] = Map<String, Object?>.unmodifiable({
+      'events': List<Map<String, Object?>>.unmodifiable(_history),
+      'dropped': _dropped,
+    });
+    _changed();
   }
 }
 
-final connectionDiagnosticsProvider = Provider((ref) => ConnectionDiagnostics());
+final connectionDiagnosticsProvider = Provider((ref) {
+  final diagnostics = ConnectionDiagnostics();
+  ref.onDispose(diagnostics.dispose);
+  return diagnostics;
+});
 
 /// The host the chat UI talks to: the one picked in the host switcher.
 ///
@@ -376,6 +527,7 @@ final activeConnectionProvider = Provider<AsyncValue<HostConnection?>>((ref) {
   final host = ref.watch(activeHostProvider);
   final connection = _connectionForHost(ref, host);
   ref.read(connectionDiagnosticsProvider)._observe(ref, host, connection);
+  // Rebuilds can retain the previous value after its client has been disposed.
   return connection;
 });
 

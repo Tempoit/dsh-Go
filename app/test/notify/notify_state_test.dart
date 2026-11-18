@@ -1,6 +1,8 @@
 // Where alerts go (system notification, banner, nothing), what gets cleared,
 // and how a tap opens the conversation (lib/state/notify_state.dart).
 
+import 'dart:async';
+
 import 'package:dsh_app/state/connection_state.dart';
 import 'package:dsh_app/state/hosts_state.dart';
 import 'package:dsh_app/state/notify_state.dart';
@@ -10,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../phone/support.dart' show FakePhoneNative, phoneStatus;
 import 'support.dart';
 
 class _Local extends LocalConnectionController {
@@ -23,10 +26,20 @@ class _Local extends LocalConnectionController {
 
 const _ssh = HostRef.ssh('lab');
 
+class _MutableConnection extends Notifier<HostConnection> {
+  _MutableConnection(this.initial);
+  final HostConnection initial;
+  @override
+  HostConnection build() => initial;
+  void set(HostConnection connection) => state = connection;
+}
+
 ChatAlert _alert(String session, AlertKind kind, {HostRef host = HostRef.local, String key = turnKey}) =>
     ChatAlert(host: host, sessionId: session, kind: kind, key: key, title: 't', text: 'x');
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('deliveryFor', () {
     const prefs = NotifyPrefs();
     final done = _alert('s1', AlertKind.done);
@@ -34,6 +47,23 @@ void main() {
     test('background → system, foreground → banner', () {
       expect(deliveryFor(done, prefs: prefs, foreground: false), AlertDelivery.system);
       expect(deliveryFor(done, prefs: prefs, foreground: true), AlertDelivery.banner);
+    });
+
+    test('background ignores a stale foreground conversation target', () {
+      final ask = _alert('s1', AlertKind.approval, host: _ssh, key: 'e1');
+      expect(
+        deliveryFor(ask, prefs: prefs, foreground: false, viewed: (host: _ssh, sessionId: 's1')),
+        AlertDelivery.system,
+      );
+      expect(
+        deliveryFor(
+          ask,
+          prefs: const NotifyPrefs(approval: false),
+          foreground: false,
+          viewed: (host: _ssh, sessionId: 's1'),
+        ),
+        AlertDelivery.none,
+      );
     });
 
     test('the conversation on screen is never interrupted', () {
@@ -279,6 +309,174 @@ void main() {
       expect(container.read(activeHostProvider), HostRef.local);
       expect(container.read(currentSessionProvider), 's1');
     });
+
+    for (final kind in [HostKind.ssh, HostKind.relay]) {
+      test('$kind current-chat requests become system reminders on background', () async {
+        final host = kind == HostKind.ssh ? _ssh : const HostRef.relay('lab');
+        make(
+          active: fakeHostConnection(local: false, kind: kind, hostId: 'lab'),
+        );
+        container.read(activeHostProvider.notifier).select(host);
+        container.read(currentSessionProvider.notifier).select('r1');
+        await settle();
+        expect(container.read(viewedChatProvider), (host: host, sessionId: 'r1'));
+        remote.emit(approval('e9', 'r1'));
+        remote.emit(question('q9', 'r1', ['Continue?']));
+        await settle();
+        expect(channel.shown, isEmpty);
+        expect(container.read(chatAlertsProvider), isNull, reason: 'current chat stays quiet');
+        await foreground(false);
+        expect(channel.shown.map((p) => p.key), unorderedEquals(['e9', 'q9']));
+        expect(channel.shown.every((p) => p.host == host && p.attention), isTrue);
+        await foreground(false);
+        expect(channel.shown, hasLength(2), reason: 'same lifecycle value does not reannounce');
+      });
+    }
+
+    test('a remote attention banner migrates only once, not again from pending', () async {
+      make(
+        active: fakeHostConnection(local: false, kind: HostKind.ssh, hostId: 'lab'),
+      );
+      await settle();
+      remote.emit(approval('e9', 'r1'));
+      await settle();
+      expect(container.read(chatAlertsProvider)?.key, 'e9');
+      await foreground(false);
+      expect(channel.shown.single.key, 'e9');
+      expect(container.read(chatAlertsProvider), isNull);
+    });
+
+    test('a withdrawn remote banner is not recovered on background', () async {
+      make(
+        active: fakeHostConnection(local: false, kind: HostKind.ssh, hostId: 'lab'),
+      );
+      await settle();
+      remote.emit(approval('e9', 'r1'));
+      await settle();
+      remote.emit(const HostRequestCancelledEvent('e9'));
+      await foreground(false);
+      expect(channel.shown, isEmpty);
+      expect(container.read(chatAlertsProvider), isNull);
+    });
+
+    test('a request announced across the foreground edge posts only once', () async {
+      make(
+        active: fakeHostConnection(local: false, kind: HostKind.ssh, hostId: 'lab'),
+      );
+      await settle();
+      remote.emit(question('q9', 'r1', ['Continue?']));
+      container.read(appForegroundProvider.notifier).set(false);
+      await settle();
+      expect(channel.shown.single.key, 'q9');
+    });
+
+    test('remote background recovery still respects per-kind notification settings', () async {
+      make(
+        active: fakeHostConnection(local: false, kind: HostKind.ssh, hostId: 'lab'),
+      );
+      await settle();
+      remote.emit(approval('e9', 'r1'));
+      remote.emit(question('q9', 'r1', ['Continue?']));
+      await settle();
+      await container.read(notifyPrefsProvider.notifier).setApproval(false);
+      await foreground(false);
+      expect(channel.shown.single.key, 'q9');
+    });
+
+    test('a terminal outcome seen in the current chat stays quiet after leaving', () async {
+      make();
+      container.read(currentSessionProvider.notifier).select('s1');
+      await settle();
+      local.outcomes['s1'] = outcome(8, 'completed');
+      local.emit(const SessionStatusEvent('s1', true));
+      local.emit(const SessionStatusEvent('s1', false));
+      await settle();
+      expect(channel.shown, isEmpty);
+      expect(container.read(chatAlertsProvider), isNull);
+      await foreground(false);
+      expect(channel.shown, isEmpty, reason: 'only pending requests are recovered');
+    });
+
+    test('background recovery keeps the local phone prompt ahead of system alerts', () async {
+      final reply = Completer<Map<String, Object?>>();
+      addTearDown(() {
+        if (!reply.isCompleted) reply.complete({'decision': 'stopped', 'presented': 'none'});
+      });
+      final native = FakePhoneNative(status: phoneStatus())
+        ..onPresentPrompt = ((_) => reply.future)
+        ..install();
+      make();
+      container.read(currentSessionProvider.notifier).select('s1');
+      await settle();
+      local.emit(approval('e1', 's1'));
+      await settle();
+      expect(native.callsOf('presentPrompt'), isEmpty);
+      expect(channel.shown, isEmpty);
+      await foreground(false);
+      expect(native.callsOf('presentPrompt'), hasLength(1));
+      expect(channel.shown, isEmpty, reason: 'no parallel system reminder for the local phone prompt');
+      reply.complete({'decision': 'stopped', 'presented': 'none'});
+      await settle();
+    });
+
+    test('C907 a same-client rename retains request history; a new client retires it', () async {
+      final old = fakeHostConnection(local: false, kind: HostKind.ssh, hostId: 'lab');
+      final selected = NotifierProvider<_MutableConnection, HostConnection>(() => _MutableConnection(old));
+      final request = question('q1', 'r1', ['继续吗？']);
+      remote.pending = [request];
+      var sources = 0;
+      container = ProviderContainer(
+        overrides: [
+          notifyChannelProvider.overrideWithValue(channel),
+          alertSourceFactoryProvider.overrideWithValue((_) {
+            sources++;
+            return remote;
+          }),
+          alertTimingProvider.overrideWithValue((announce: Duration.zero, reconcile: const Duration(milliseconds: 30))),
+          localConnectionProvider.overrideWith(() => _Local(null)),
+          activeConnectionProvider.overrideWith((ref) => AsyncData(ref.watch(selected))),
+        ],
+      );
+      addTearDown(container.dispose);
+      final banners = <ChatAlert>[];
+      container.listen(chatAlertsProvider, (_, alert) {
+        if (alert != null) banners.add(alert);
+      });
+      await settle();
+      expect(banners, hasLength(1));
+      final first = banners.single;
+      final controller = container.read(chatAlertsProvider.notifier);
+      controller.dismissBanner(first);
+      final renamed = HostConnection(
+        client: old.client,
+        isLocal: false,
+        kind: HostKind.ssh,
+        hostId: 'lab',
+        name: 'renamed',
+      );
+      container.read(selected.notifier).set(renamed);
+      await settle();
+      expect(sources, 1);
+      expect(banners, hasLength(1));
+      expect(container.read(chatAlertsProvider), isNull);
+      // No ready generation in this fake; reaching 'failed' instead of 'gone'
+      // demonstrates that the original pet request scope/token survived rename.
+      expect(
+        await controller.answerFromPet(_ssh, 'q1', sessionId: 'r1', token: first.petToken!),
+        NotifyActionResult.failed,
+      );
+
+      final replacement = fakeHostConnection(local: false, kind: HostKind.ssh, hostId: 'lab');
+      container.read(selected.notifier).set(replacement);
+      await settle();
+      expect(sources, 2);
+      expect(banners, hasLength(2));
+      expect(banners.last.petToken, isNot(first.petToken));
+      expect(
+        await controller.answerFromPet(_ssh, 'q1', sessionId: 'r1', token: first.petToken!),
+        NotifyActionResult.gone,
+      );
+    });
   });
 
   group('NotifyPrefs', () {
@@ -308,6 +506,21 @@ void main() {
       expect(c.read(viewedChatProvider), isNull);
       c.read(appForegroundProvider.notifier).set(true);
       c.read(chatOnScreenProvider.notifier).set(false);
+      expect(c.read(viewedChatProvider), isNull);
+    });
+
+    test('on a call, the call\'s conversation, though the chat is under the call page', () async {
+      SharedPreferences.setMockInitialValues({});
+      final c = ProviderContainer();
+      addTearDown(c.dispose);
+      c.read(currentSessionProvider.notifier).select('s1');
+      c.read(chatOnScreenProvider.notifier).set(false);
+      c.read(callChatProvider.notifier).set((host: HostRef.local, sessionId: 's2'));
+      expect(c.read(viewedChatProvider), (host: HostRef.local, sessionId: 's2'));
+      c.read(appForegroundProvider.notifier).set(false);
+      expect(c.read(viewedChatProvider), isNull);
+      c.read(appForegroundProvider.notifier).set(true);
+      c.read(callChatProvider.notifier).set(null);
       expect(c.read(viewedChatProvider), isNull);
     });
   });

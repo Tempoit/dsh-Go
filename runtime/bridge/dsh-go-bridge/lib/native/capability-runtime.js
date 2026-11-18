@@ -3,6 +3,7 @@
 // unless an app negotiated a feature and a plugin declared it. The bridge never touches a
 // microphone, never proxies a URL and never executes what a capability callback returns.
 import { randomBytes } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import { AUDIO_TYPES, CAP_EVENTS, CAP_LIMITS as L, KEY, TERMINAL_EVENTS, microModel } from './capabilities.js';
 import { ID, PKG } from './limits.js';
 import { call, deepEqual, normalizeScope, withTimeout } from './util.js';
@@ -26,9 +27,12 @@ export class CapabilityRuntime {
     const rec = this.core.plugin(e.pkg);
     return rec && this.core.stateOf(rec) === 'ok' && rec.uid === e.uid && rec.stamp === e.stamp;
   }
+  currentLease(e) {
+    return this.alive(e)
+      && (!e.media || this.core.registration(e.pkg, 'media', e.media)?.token === e.mediaToken);
+  }
   sweep() {
-    for (const e of [...this.leases.values()]) if (!this.alive(e)
-      || (e.media && this.core.registration(e.pkg, 'media', e.media)?.token !== e.mediaToken)) this.revoke(e);
+    for (const e of [...this.leases.values()]) if (!this.currentLease(e)) this.revoke(e);
     for (const f of [...this.feeds.values()]) if (!this.alive(f)
       || this.core.registration(f.pkg, 'micro', f.id)?.token !== f.token) f.stop(this.core.health.get(f.pkg)?.degraded ? 'degraded' : 'not-found');
   }
@@ -62,6 +66,8 @@ export class CapabilityRuntime {
       const reject = () => { issues.push({ path: '/runtime/effects', code: 'bad-effect', severity: 'warn', message: 'capability requires a live negotiated instance and resource budget' }); return false; };
       if (!conn?.helloed || conn.ws.closed || !this.alive({ pkg: rec.pkg, uid: rec.uid, stamp: rec.stamp })) return reject();
       let e = [...this.leases.values()].find(x => x.conn === conn && x.pkg === rec.pkg && x.instance === effect.instance);
+      // A registration hook may have retired this lease before its queued sweep.
+      if (e && !this.currentLease(e)) { this.revoke(e); e = undefined; }
       const start = isStart(effect);
       // Plan rotation once from the pre-batch state, independent of role order.
       if (!prepared.has(effect.instance)) {
@@ -96,7 +102,9 @@ export class CapabilityRuntime {
   }
   event(conn, msg) {
     const e = typeof msg.lease === 'string' ? this.leases.get(msg.lease) : undefined;
-    if (!e || e.conn !== conn || !this.alive(e) || !Number.isSafeInteger(msg.seq) || msg.seq <= e.seq) return;
+    if (!e || e.conn !== conn) return;
+    if (!this.currentLease(e)) { this.revoke(e); return; }
+    if (!Number.isSafeInteger(msg.seq) || msg.seq <= e.seq) return;
     const role = Object.hasOwn(CAP_EVENTS, msg.event) ? CAP_EVENTS[msg.event] : undefined;
     if (!role || !e.roles.has(role)) return;
     if (msg.reason !== undefined && (typeof msg.reason !== 'string' || [...msg.reason].length > 120)) return;
@@ -104,7 +112,7 @@ export class CapabilityRuntime {
     // Speech edges: at most 10 a second (burst 4). Terminal events are bounded by the roles a
     // lease holds (three at most), so they are never dropped for pacing: a lost one would leak it.
     if (!terminal) {
-      const now = Date.now();
+      const now = performance.now();
       e.tokens = Math.min(L.eventBurst, (e.tokens ?? L.eventBurst) + ((now - (e.tokenAt ?? now)) / 1000) * L.eventsPerSecond);
       e.tokenAt = now;
       if (e.tokens < 1) return;
@@ -131,6 +139,7 @@ export class CapabilityRuntime {
       || !e.roles.has('audio') || e.audioStopping || e.conn.ws.closed || !this.alive(e)) fail(404, 'not-found', 'no active media lease');
     const reg = this.core.registration(pkg, 'media', id);
     if (!reg || reg.token !== e.mediaToken) { this.revoke(e); fail(404, 'not-found', 'media was unloaded'); }
+    if (req.aborted || res.destroyed) fail(410, 'cancelled', 'media cancelled');
     if (this.mediaBusy.size >= L.mediaConcurrent || this.mediaBusy.has(pkg)) fail(429, 'rate-limited', 'media busy');
     this.mediaBusy.add(pkg);
     const controller = new AbortController();
@@ -148,7 +157,9 @@ export class CapabilityRuntime {
     });
     const transfer = async () => {
       const result = await call(reg.def, { ...e.scope }, { key, locale: e.locale, signal: controller.signal });
-      if (controller.signal.aborted || !this.alive(e) || !this.leases.has(e.lease)) fail(410, 'cancelled', 'media cancelled');
+      // Registration changes precede the deferred sweep; their old bytes must not be published.
+      if (controller.signal.aborted || !this.alive(e) || !this.leases.has(e.lease)
+        || this.core.registration(pkg, 'media', id)?.token !== reg.token) fail(410, 'cancelled', 'media cancelled');
       if (!result || !(result.body instanceof Uint8Array) || !AUDIO_TYPES.has(result.contentType)) fail(502, 'invalid-media', 'expected bounded audio bytes and supported MIME');
       if (result.body.byteLength === 0 || result.body.byteLength > L.mediaBytes) fail(413, 'too-large', 'audio must be 1..16 MiB');
       // Keep the slot and cancellation live until Node has finished the response.
@@ -199,7 +210,7 @@ export class CapabilityRuntime {
     if (!reg) { end('no-handler'); return true; }
     const key = JSON.stringify([msg.pkg, msg.id, scope.key, conn.locale]);
     let feed = this.feeds.get(key);
-    if (feed && feed.token !== reg.token) { feed.stop('not-found'); feed = undefined; }
+    if (feed && (!this.alive(feed) || feed.token !== reg.token)) { feed.stop('not-found'); feed = undefined; }
     if (!feed) {
       feed = new MicroFeed(this, key, rec, msg.id, scope.scope, conn.locale, reg);
       this.feeds.set(key, feed);
@@ -214,7 +225,7 @@ export class CapabilityRuntime {
 class MicroFeed {
   constructor(runtime, key, rec, id, scope, locale, reg) {
     Object.assign(this, { runtime, key, pkg: rec.pkg, uid: rec.uid, stamp: rec.stamp, id, scope, locale, reg, token: reg.token });
-    this.subs = new Set(); this.seq = 0; this.epoch = randomBytes(8).toString('hex'); this.last = 0;
+    this.subs = new Set(); this.seq = 0; this.epoch = randomBytes(8).toString('hex'); this.last = undefined;
   }
   attach(sub) {
     this.subs.add(sub);
@@ -222,24 +233,33 @@ class MicroFeed {
     if (this.started) return;
     this.started = true;
     call(this.reg.def.data, { ...this.scope }, value => this.emit(value), { protocol: 1, locale: this.locale }).then(cancel => {
-      if (typeof cancel === 'function') { if (this.closed) { try { cancel(); } catch {} } else this.cancel = cancel; }
+      if (typeof cancel === 'function') { if (this.closed) { try { Promise.resolve(cancel()).catch(() => {}); } catch {} } else this.cancel = cancel; }
     }, () => this.stop('error'));
   }
+  // Registration hooks defer their sweep; a producer may settle in an earlier microtask.
+  checkCurrent() {
+    if (this.closed) return false;
+    if (this.runtime.alive(this)
+      && this.runtime.core.registration(this.pkg, 'micro', this.id)?.token === this.token) return true;
+    this.stop(this.runtime.core.health.get(this.pkg)?.degraded ? 'degraded' : 'not-found');
+    return false;
+  }
   emit(value) {
-    if (this.closed) return;
+    if (!this.checkCurrent()) return;
     const data = microModel(value);
     if (!data) { this.runtime.core.violation(this.pkg, 'invalid-micro', 'micro data exceeds the small model budget'); return; }
     this.pending = data;
     if (this.timer) return;
-    const wait = Math.max(0, this.last + L.microMs - Date.now());
+    const wait = this.last === undefined ? 0
+      : Math.max(0, Math.ceil(this.last + L.microMs - performance.now()));
     if (wait === 0) this.flush();
     else { this.timer = setTimeout(() => { this.timer = undefined; this.flush(); }, wait); this.timer.unref?.(); }
   }
   flush() {
     const data = this.pending; this.pending = undefined;
-    if (this.closed || data === undefined || deepEqual(data, this.current)) return;
+    if (!this.checkCurrent() || data === undefined || deepEqual(data, this.current)) return;
     if (this.seq >= Number.MAX_SAFE_INTEGER) { this.stop('limit'); return; }
-    this.last = Date.now(); this.current = data; this.seq++;
+    this.last = performance.now(); this.current = data; this.seq++;
     for (const sub of this.subs) this.send(sub);
   }
   send(sub) { sub.conn.send({ t: 'micro.data', sub: sub.id, rev: `${this.epoch}.${this.seq}`, data: this.current }); }
@@ -247,7 +267,7 @@ class MicroFeed {
   stop(reason) {
     if (this.closed) return;
     this.closed = true; clearTimeout(this.timer);
-    try { this.cancel?.(); } catch {}
+    try { if (this.cancel) Promise.resolve(this.cancel()).catch(() => {}); } catch {}
     this.runtime.feeds.delete(this.key);
     for (const sub of this.subs) { sub.conn.microSubs?.delete(sub.id); if (reason) sub.conn.send({ t: 'micro.end', sub: sub.id, reason }); }
     this.subs.clear();

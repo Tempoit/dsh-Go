@@ -1,11 +1,13 @@
 package io.github.ccch1mneyyy.dsh_app.runtime
 
+import io.github.ccch1mneyyy.dsh_app.files.GuestFiles
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.StandardCopyOption
 
 /** A Flutter engine attachment, independent of Activity detach/reattach. */
@@ -91,7 +93,7 @@ internal class ManagedSkillRequest private constructor(
         const val MAX_FILES = 64
         const val MAX_FILE_BYTES = 512 * 1024
         const val MAX_BYTES = 1024 * 1024
-        private val names = setOf("dsh-go-ui", "dsh-go-plugin", "dsh-go-guide", "dsh-go-support")
+        private val names = setOf("dsh-go-ui", "dsh-go-plugin", "dsh-go-guide", "dsh-go-support", "companion-adapt")
         private val path = Regex("^[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$")
 
         /** Cheap bounded checks on the main thread; UTF-8 encoding happens on the runtime worker. */
@@ -173,8 +175,8 @@ internal object ManagedSkillInstaller {
                 }
             }
             val skill = File(dir, "SKILL.md")
-            val existed = skill.exists()
-            if (existed && readText(skill, ManagedSkillRequest.MAX_FILE_BYTES)?.let(::managed) != true) {
+            val existed = Files.exists(skill.toPath(), LinkOption.NOFOLLOW_LINKS)
+            if (existed && readText(root, skill, ManagedSkillRequest.MAX_FILE_BYTES)?.let(::managed) != true) {
                 return ManagedSkillOutcome("userOwned")
             }
             var changed = false
@@ -183,7 +185,7 @@ internal object ManagedSkillInstaller {
                 checkCurrent()
                 val file = File(dir, path)
                 val data = bytes.getValue(path)
-                if (readText(file, data.size + 3) == request.files.getValue(path)) continue
+                if (readText(root, file, data.size + 3) == request.files.getValue(path)) continue
                 checkCurrent()
                 val parent = file.parentFile!!
                 if (!parent.isDirectory && !parent.mkdirs() && !parent.isDirectory) {
@@ -211,8 +213,14 @@ internal object ManagedSkillInstaller {
     }
 
     /** Bounded, strict UTF-8, with the same leading-BOM behavior as Dart File.readAsString. */
-    private fun readText(file: File, limit: Int): String? = try {
-        file.inputStream().use { stream ->
+    private fun readText(root: File, file: File, limit: Int): String? = try {
+        // tawc hard links are unreadable to Android; resolve their bytes only.
+        // Writes still replace the original name, leaving a hard-link backup intact.
+        // /sdcard is also Android's primary-storage alias.
+        val source = file.takeIf { it.isFile } ?: GuestFiles.resolve(
+            root, "/${file.relativeTo(root).invariantSeparatorsPath}", phoneRoot = PhoneStorage.GUEST_PATH,
+        )
+        source?.inputStream()?.use { stream ->
             val out = ByteArrayOutputStream(minOf(limit, 8192))
             val buffer = ByteArray(8192)
             while (true) {

@@ -1,4 +1,4 @@
-// Real rc4 schemas, modeled editor/source services; HTTP Host evidence is separate.
+// Real installed schemas, modeled editor/source services; HTTP Host evidence is separate.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {writeFileSync} from 'node:fs';
@@ -22,6 +22,18 @@ function fixture(schema,raw={},extra={}){
 async function view(schema,raw){const f=fixture(schema,raw),r=await f.request();assert.equal(r.status,200);assert(!JSON.stringify(r.body).includes(SAMPLE));return r.body;}
 const facts=body=>Object.fromEntries(body.secrets.map(s=>[s.path.join('.'),s.configured]));
 
+test('Cordis effectiveConfig supplies defaults while raw input alone supplies secret facts',async()=>{
+ const schema=z.object({title:z.string().default('running default'),rows:z.array(z.object({secret:z.string().role('secret').default(SAMPLE)})).default([{}])});
+ const f=fixture(schema);f.entry.fiber.config={};
+ Object.defineProperty(f.entry.fiber,'effectiveConfig',{get:()=>schema({})});
+ const out=await f.request();assert.equal(out.status,200);assert.equal(out.body.value.title,'running default');
+ assert.deepEqual(facts(out.body),{'rows.0.secret':false});assert(!JSON.stringify(out.body).includes(SAMPLE));
+});
+test('present undefined effectiveConfig never falls back to raw config',async()=>{
+ const f=fixture(z.object({title:z.string()}),{title:'raw is not running'});
+ Object.defineProperty(f.entry.fiber,'effectiveConfig',{get:()=>undefined});
+ const out=await f.request();assert.equal(out.status,200);assert(!('title'in out.body.value));
+});
 test('labels use top-level bundle metadata, preserving localization and hiding diagnostics',async()=>{
  const f=fixture(z.object({count:z.number().default(1)}));f.source.bundle.meta={title:{en:'Own plugin',zh:'自造插件'},error:SAMPLE};f.source.bundle.rows[0].meta={title:'DO_NOT_PREFER_ROW_TITLE'};f.source.service.metaOf=()=>({title:'DO_NOT_PREFER_MODULE_TITLE'});
  assert.deepEqual((await f.request('GET',undefined,null)).body.entries[0].label,{en:'Own plugin',zh:'自造插件'});
@@ -72,29 +84,29 @@ for(const [name,field,input]of [
 });
 test('invalid config returns safe operation path and a display message',async()=>{
  const f=fixture(z.object({count:z.number().default(1)}));const before=await f.request();const out=await f.request('POST',{revision:before.body.revision,ops:[{op:'set',path:['count'],value:SAMPLE}]});
- assert.equal(out.status,422);assert.equal(out.body.code,'invalid-config');assert.deepEqual(out.body.path,['count']);assert.notEqual(out.body.message,out.body.code);assert(!JSON.stringify(out).includes(SAMPLE));
+ assert.equal(out.status,422);assert.equal(out.body.error.code,'invalid-config');assert.deepEqual(out.body.error.path,['count']);assert.notEqual(out.body.error.message,out.body.error.code);assert(!JSON.stringify(out).includes(SAMPLE));
 });
 test('invalid operation path is present only for bounded accepted string segments',async()=>{
  const f=fixture(z.object({secret:z.string().role('secret'),count:z.number().default(1)})),before=await f.request();
- const out=await f.request('POST',{revision:before.body.revision,ops:[{op:'set',path:['secret'],value:SAMPLE}]});assert.equal(out.status,400);assert.deepEqual(out.body.path,['secret']);assert(!JSON.stringify(out).includes(SAMPLE));
- const unsafe=await f.request('POST',{revision:before.body.revision,ops:[{op:'set',path:['__proto__'],value:1}]});assert.equal(unsafe.status,400);assert(!('path'in unsafe.body));
+ const out=await f.request('POST',{revision:before.body.revision,ops:[{op:'set',path:['secret'],value:SAMPLE}]});assert.equal(out.status,400);assert.deepEqual(out.body.error.path,['secret']);assert(!JSON.stringify(out).includes(SAMPLE));
+ const unsafe=await f.request('POST',{revision:before.body.revision,ops:[{op:'set',path:['__proto__'],value:1}]});assert.equal(unsafe.status,400);assert(!('path'in unsafe.body.error));
 });
 for(const errorPath of [[SAMPLE],[Symbol('private')],['count',SAMPLE]])test(`custom validation details are never forwarded: ${typeof errorPath[0]} ${errorPath.length}`,async()=>{
  const schema=z.object({count:z.transform(z.number(),x=>{if(x===2)throw new z.ValidationError(SAMPLE,{path:errorPath});return x;}).default(1)});
- const f=fixture(schema),before=await f.request(),out=await f.request('POST',{revision:before.body.revision,ops:[{op:'set',path:['count'],value:2}]});assert.equal(out.status,422);assert(!JSON.stringify(out).includes(SAMPLE));if(errorPath[0]==='count')assert.deepEqual(out.body.path,['count']);else assert(!('path'in out.body));
+ const f=fixture(schema),before=await f.request(),out=await f.request('POST',{revision:before.body.revision,ops:[{op:'set',path:['count'],value:2}]});assert.equal(out.status,422);assert(!JSON.stringify(out).includes(SAMPLE));if(errorPath[0]==='count')assert.deepEqual(out.body.error.path,['count']);else assert(!('path'in out.body.error));
 });
 test('missing or false canWrite is read-only and rejects before edits',async()=>{
  const f=fixture(z.object({count:z.number().default(1)}));f.setWritable(false);const before=await f.request();assert.equal(before.body.writable,false);assert.equal((await f.request('GET',undefined,null)).body.entries[0].writable,false);
- const out=await f.request('POST',{revision:before.body.revision,ops:[{op:'set',path:['count'],value:2}]});assert.equal(out.status,409);assert.equal(out.body.code,'overridden');assert.equal(f.edits(),0);
+ const out=await f.request('POST',{revision:before.body.revision,ops:[{op:'set',path:['count'],value:2}]});assert.equal(out.status,409);assert.equal(out.body.error.code,'overridden');assert.equal(f.edits(),0);
  delete f.editor.canWrite;assert.equal((await f.request()).body.writable,false);
 });
 for(const seam of ['configuration','edit'])test(`foreign ${seam} error cannot forge public code/status/path`,async()=>{
  const f=fixture(z.object({count:z.number().default(1)})),before=await f.request();
  f.editor[seam]=()=>{throw Object.assign(new Error(SAMPLE),{code:'invalid-config',status:422,path:[SAMPLE]});};
  const out=seam==='configuration'?await f.request():await f.request('POST',{revision:before.body.revision,ops:[{op:'set',path:['count'],value:2}]});
- assert.equal(out.status,seam==='configuration'?503:409);assert(!('path'in out.body));assert(!JSON.stringify(out).includes(SAMPLE));
+ assert.equal(out.status,seam==='configuration'?503:409);assert(!('path'in out.body.error));assert(!JSON.stringify(out).includes(SAMPLE));
 });
 test('405 is JSON-shaped and service-unavailable applies only to exact config prefix',async()=>{
- const f=fixture(z.object({}));for(const id of [null,'fixture']){const out=await f.request('DELETE',undefined,id);assert.equal(out.status,405);assert.equal(out.body.v,1);assert.equal(out.body.code,'invalid-operation');assert.notEqual(out.body.message,out.body.code);}
- assert.equal(pluginConfigUnavailable({url:BASE+'/fixture?x=1'}).code,'host-unavailable');assert.equal(pluginConfigUnavailable({url:BASE+'-other'}),undefined);
+ const f=fixture(z.object({}));for(const id of [null,'fixture']){const out=await f.request('DELETE',undefined,id);assert.equal(out.status,405);assert.equal(out.body.v,1);assert.equal(out.body.error.code,'invalid-operation');assert.notEqual(out.body.error.message,out.body.error.code);}
+ assert.equal(pluginConfigUnavailable({url:BASE+'/fixture?x=1'}).error.code,'host-unavailable');assert.equal(pluginConfigUnavailable({url:BASE+'-other'}),undefined);
 });

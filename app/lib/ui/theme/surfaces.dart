@@ -125,7 +125,7 @@ class DshSurfaces extends ThemeExtension<DshSurfaces> {
   /// 左下角光晕(已含透明度):配主色的邻近色,雾蓝配暮紫。
   final Color glowSecondary;
 
-  /// 用户气泡:比页面深一档的主色调(Claude 式"按进去"的软气泡)。
+  /// 用户气泡:比页面深一档的主色调("按进去"的软气泡)。
   final Color userBubble;
   final Color onUserBubble;
 

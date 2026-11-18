@@ -2,6 +2,9 @@
 import 'dart:convert';
 
 import 'package:dsh_app/l10n/l10n.dart';
+import 'package:dsh_app/pets/pet_overlay_actions.dart';
+import 'package:dsh_app/ui/shell/drawer/drawer_filter_bar.dart';
+import 'package:flutter/services.dart';
 import 'package:dsh_app/runtime/runtime_state.dart';
 import 'package:dsh_app/state/connection_state.dart';
 import 'package:dsh_app/state/drawer_view_state.dart';
@@ -11,6 +14,9 @@ import 'package:dsh_app/state/settings_state.dart';
 import 'package:dsh_app/state/workspaces_state.dart';
 import 'package:dsh_app/ui/shell/drawer/folder_header.dart';
 import 'package:dsh_app/ui/shell/home_shell.dart';
+import 'package:dsh_app/ui/chat/composer_toast.dart';
+import 'package:dsh_app/ui/common/brief_notice.dart';
+import 'package:dsh_app/ui/shell/drawer/drawer_actions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -98,6 +104,86 @@ Future<void> _openFolderActions(WidgetTester tester) async {
 }
 
 void main() {
+  for (final composer in [false, true]) {
+    testWidgets('${composer ? 'composer' : 'brief'} replacement lets queued folder deletion finish', (tester) async {
+      final (container, _) = await _start(tester, sameFolderId: false);
+      final element = tester.element(find.byType(HomeShell));
+      final messenger = ScaffoldMessenger.of(element);
+      messenger.showSnackBar(const SnackBar(content: Text('earlier notice')));
+      await tester.pumpAndSettle();
+      var completed = false;
+      final operation = folderActionsFlow(element, element as WidgetRef, _aView.folders.single).then((_) {
+        completed = true;
+      });
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('删除文件夹'));
+      await tester.idle();
+      expect(container.read(drawerViewProvider).folders, isEmpty);
+      expect(completed, isFalse);
+      if (composer) {
+        showComposerToast(element, 'replacement', composerHeight: 60);
+      } else {
+        messenger.showBriefNotice('replacement');
+      }
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+      expect(completed, isTrue);
+      await operation;
+    });
+  }
+
+  testWidgets('background pet host switch retires the open folder creation', (tester) async {
+    final (container, bView) = await _start(tester, sameFolderId: false);
+    await _switchB(tester, container, bView);
+    await tester.tap(find.byType(DrawerViewButton));
+    await _settle(tester);
+    await tester.tap(find.text('新建文件夹'));
+    await _settle(tester);
+    await tester.enterText(find.byType(TextField), 'B new folder');
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    // Android's floating pet is available after Home backgrounds the app.
+    // Use its real action handler; it changes Host without popping the sheet.
+    expect(
+      await container
+          .read(petOverlayActionsProvider)
+          .handle(MethodCall('switchHost', {'host': HostRef.local.encode()})),
+      isTrue,
+    );
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await _settle(tester);
+    expect(find.text('创建').hitTestable(), findsOneWidget);
+    await tester.tap(find.text('创建'));
+    await _settle(tester);
+    final prefs = await SharedPreferences.getInstance();
+    expect(jsonDecode(prefs.getString(DrawerViewController.keyFor(HostRef.local))!), _aView.toJson());
+    expect(jsonDecode(prefs.getString(DrawerViewController.keyFor(const HostRef.ssh('pc')))!), bView.toJson());
+    expect(container.read(drawerViewProvider).toJson(), _aView.toJson());
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('same Host folder creation still saves its name and returns to drawer', (tester) async {
+    final (container, bView) = await _start(tester, sameFolderId: false);
+    await tester.tap(find.byType(DrawerViewButton));
+    await _settle(tester);
+    await tester.tap(find.text('新建文件夹'));
+    await _settle(tester);
+    await tester.enterText(find.byType(TextField), 'new folder');
+    await tester.pump();
+    await tester.tap(find.text('创建'));
+    await _settle(tester);
+    final prefs = await SharedPreferences.getInstance();
+    final saved = DrawerView.fromJson(jsonDecode(prefs.getString(DrawerViewController.keyFor(HostRef.local))!));
+    expect(saved.folders.map((f) => f.name), ['new folder', 'A folder']);
+    expect(container.read(drawerViewProvider).toJson(), saved.toJson());
+    expect(jsonDecode(prefs.getString(DrawerViewController.keyFor(const HostRef.ssh('pc')))!), bView.toJson());
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('folder delete confirmation cannot delete the same folder ID on a new Host', (tester) async {
     final (container, bView) = await _start(tester, sameFolderId: true);
     await _openFolderActions(tester);

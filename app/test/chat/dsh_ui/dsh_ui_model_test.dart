@@ -1,4 +1,6 @@
-// Portions derived from DS Bot (https://github.com/Fei2411/DeepSeek-Bot), Apache-2.0, Copyright 2026 Fei2411 and the DS Bot contributors. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 Fei2411 and the DS Bot contributors
+// SPDX-License-Identifier: Apache-2.0
+// See THIRD_PARTY_NOTICES.md.
 // Modified: cases from `ds-bot/test/views.test.js` translated to Dart;
 // expectations follow the app's lenient rules (unknown properties ignored, a
 // broken child becomes a placeholder, limits truncate, only a broken root

@@ -7,6 +7,7 @@ import 'package:dsh_app/state/update_state.dart';
 import 'package:dsh_app/update/installer.dart';
 import 'package:dsh_app/update/release.dart';
 import 'package:dsh_app/update/update_config.dart';
+import 'package:dsh_app/update/update_http.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -156,6 +157,22 @@ void main() {
       expect(await controller.autoCheckIfDue(), isFalse);
       expect(http.requests, isEmpty);
       expect((await SharedPreferences.getInstance()).getBool('update_auto_check'), isFalse);
+    });
+
+    test('switched off while the check is in flight: no offer, but the result is kept', () async {
+      final answer = Completer<UpdateHttpResponse>();
+      http.routes[_manifest] = (_, _) => answer.future;
+      final c = container();
+      final controller = await ready(c);
+      final offered = controller.autoCheckIfDue();
+      await pumpEventQueue();
+      expect(http.urls, [_manifest]);
+      await controller.setAutoCheck(false);
+      answer.complete(textResponse(jsonEncode(_release())));
+      expect(await offered, isFalse);
+      final state = c.read(appUpdateProvider);
+      expect(state.autoCheck, isFalse);
+      expect(state.hasUpdate, isTrue, reason: 'a manual look still finds it');
     });
 
     test('a skipped version is not offered again, a newer one is; a manual check still shows it', () async {

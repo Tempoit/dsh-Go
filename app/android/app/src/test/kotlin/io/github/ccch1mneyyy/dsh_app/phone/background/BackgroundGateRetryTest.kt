@@ -69,11 +69,16 @@ class BackgroundGateRetryTest {
     }
 
     @Test fun aWindowFailureIsNotCalledAnInjectionFailure() {
-        val denied = SecurityException("denied")
-        val probe = InputProbe(11).also { it.fail(denied) }
-        assertSame(denied, assertThrows(SecurityException::class.java) {
-            verify(probe) { _, _ -> throw AssertionError("must not inject") }
-        })
+        for (cause in listOf(SecurityException("window denied"), IllegalStateException("window unavailable"))) {
+            val probe = InputProbe(11).also { it.fail(cause) }
+            var sends = 0
+            val failure = assertThrows(InputProbe.Failure::class.java) {
+                verify(probe) { _, _ -> sends++ }
+            }
+            assertEquals("inputWindowNotReady", failure.code)
+            assertSame(cause, failure.cause)
+            assertEquals(0, sends)
+        }
     }
 
     @Test fun theMainScreenWrongDisplayAndInvalidCoordinatesNeverReceiveATap() {

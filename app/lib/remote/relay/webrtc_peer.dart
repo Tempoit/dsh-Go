@@ -7,17 +7,41 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 /// [remote.RemotePeerConnector] over flutter_webrtc (libwebrtc): the
 /// DataChannel that carries DSH Remote's direct path (LAN / P2P / TURN).
-/// Data only — no microphone, camera or audio session is touched.
+/// Data only: no microphone or camera tracks. The native factory still creates
+/// an audio device module, configured below before its first initialization.
 Future<remote.RemotePeerConnection> flutterPeerConnector(
   List<remote.RemoteIceServer> iceServers,
   remote.RemotePeerHandlers handlers,
 ) async {
+  await (_webRtcInitialization ??= _initializeWebRtc());
   final pc = await createPeerConnection({
     'iceServers': [for (final server in iceServers) server.toJson()],
     'sdpSemantics': 'unified-plan',
     'iceTransportPolicy': handlers.iceTransportPolicy.name,
   });
   return _FlutterPeer(pc, handlers);
+}
+
+Future<void>? _webRtcInitialization;
+
+Future<void> _initializeWebRtc() async {
+  try {
+    // The factory keeps the first configuration for the process. Even a data-only
+    // peer can start its playout track; never classify it as a phone call. These
+    // attributes configure the device module, not AudioSwitch or audio focus.
+    await WebRTC.initialize(
+      options: {
+        'androidAudioConfiguration': AndroidAudioConfiguration(
+          androidAudioAttributesUsageType: AndroidAudioAttributesUsageType.media,
+          androidAudioAttributesContentType: AndroidAudioAttributesContentType.music,
+        ).toMap(),
+      },
+    );
+  } catch (_) {
+    // Share in-flight initialization, but let a later connection retry failures.
+    _webRtcInitialization = null;
+    rethrow;
+  }
 }
 
 class _FlutterPeer implements remote.RemotePeerConnection {
@@ -46,17 +70,29 @@ class _FlutterPeer implements remote.RemotePeerConnection {
   final remote.RemotePeerHandlers _handlers;
   RTCDataChannel? _channel;
   bool _closed = false;
+  Future<void>? _releasing;
 
   void _end(String reason) {
     if (_closed) return;
     _closed = true;
-    _handlers.onClosed(reason);
     unawaited(_release());
+    _handlers.onClosed(reason);
   }
 
   @override
   Future<String> createOffer(String channelLabel) async {
-    final channel = _channel = await _pc.createDataChannel(channelLabel, RTCDataChannelInit()..ordered = true);
+    _checkOpen();
+    final channel = await _pc.createDataChannel(channelLabel, RTCDataChannelInit()..ordered = true);
+    // Native creation can finish after dispose has already drained its channels.
+    if (_closed) {
+      try {
+        await channel.close();
+      } catch (_) {
+        // The peer may already be gone on the platform side.
+      }
+      _checkOpen();
+    }
+    _channel = channel;
     channel
       ..onDataChannelState = (state) {
         if (_closed) return;
@@ -66,9 +102,19 @@ class _FlutterPeer implements remote.RemotePeerConnection {
       ..onMessage = (message) {
         if (!_closed) _handlers.onMessage(message.isBinary ? message.binary : utf8.encode(message.text));
       };
-    final offer = await _pc.createOffer();
+    // flutter_webrtc otherwise offers to receive audio and video by default.
+    final offer = await _pc.createOffer({
+      'mandatory': {'OfferToReceiveAudio': false, 'OfferToReceiveVideo': false},
+      'optional': [],
+    });
+    _checkOpen();
     await _pc.setLocalDescription(offer);
+    _checkOpen();
     return offer.sdp!;
+  }
+
+  void _checkOpen() {
+    if (_closed) throw StateError('The WebRTC peer is closed.');
   }
 
   @override
@@ -93,15 +139,21 @@ class _FlutterPeer implements remote.RemotePeerConnection {
   ];
 
   @override
-  Future<void> close() async {
-    if (_closed) return;
+  Future<void> close() {
     _closed = true;
-    await _release();
+    return _release();
   }
 
-  Future<void> _release() async {
+  Future<void> _release() => _releasing ??= _disposePeer();
+
+  Future<void> _disposePeer() async {
+    _channel = null;
     try {
       await _pc.close();
+    } catch (_) {
+      // A failed close must not skip disposal of the native event subscriptions.
+    }
+    try {
       await _pc.dispose();
     } catch (_) {
       // Already gone on the platform side.

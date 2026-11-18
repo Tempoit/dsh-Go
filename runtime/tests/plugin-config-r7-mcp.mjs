@@ -1,8 +1,11 @@
 // Synthetic stdio MCP peer: initialization and empty discovery only, no tools.
 import {createInterface} from 'node:readline';
 import {appendFileSync,readFileSync} from 'node:fs';
-const fields=readFileSync(`/proc/${process.pid}/stat`,'utf8').split(') ').at(-1).split(' ');
-appendFileSync(process.env.R7_MCP_RECORD,JSON.stringify({pid:process.pid,ppid:process.ppid,startTicks:Number(fields[19])})+'\n');
+// /proc may belong to the outer PID namespace; record its own canonical identity.
+const stat=readFileSync('/proc/self/stat','utf8');
+const fields=stat.slice(stat.lastIndexOf(') ')+2).split(' ');
+const procPid=Number(stat.slice(0,stat.indexOf(' ')));
+appendFileSync(process.env.R7_MCP_RECORD,JSON.stringify({pid:procPid,ppid:Number(fields[1]),startTicks:Number(fields[19])})+'\n');
 const input=createInterface({input:process.stdin});input.on('close',()=>process.exit(0));
 input.on('line',line=>{
  const request=JSON.parse(line);if(request.id===undefined)return;

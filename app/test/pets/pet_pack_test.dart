@@ -4,6 +4,7 @@
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:dsh_app/pets/pet_pack.dart';
 import 'package:dsh_app/pets/pet_state.dart';
@@ -14,6 +15,22 @@ import 'support.dart';
 
 Map<String, Object?> _json(String id) =>
     jsonDecode(File('assets/pets/$id/pack.json').readAsStringSync()) as Map<String, Object?>;
+
+/// A [math.Random] whose draw is fixed, so a pick can be checked.
+class _Pick implements math.Random {
+  _Pick(this.index);
+
+  final int index;
+
+  @override
+  bool nextBool() => false;
+
+  @override
+  double nextDouble() => 0;
+
+  @override
+  int nextInt(int max) => index % max;
+}
 
 void main() {
   group('Deepy 小鲸鱼', () {
@@ -151,6 +168,141 @@ void main() {
         final cells = a.frames.map((f) => f.i).reduce((x, y) => x > y ? x : y) + 1;
         expect(a.cols, greaterThanOrEqualTo(cells), reason: a.name);
       }
+    });
+  });
+
+  group('reactions may list several animations (arrays and numbered keys)', () {
+    PetPack withReactions(Object? reactions) => PetPack.parse({..._json('whale-girl'), 'reactions': reactions});
+
+    test('a string is one animation, an array is a list', () {
+      final pack = withReactions({
+        'tapLeft': 'poke-left',
+        'tickle': ['tickle', 'poke-left'],
+      });
+      expect(pack.reactions['tapLeft'], ['poke-left']);
+      expect(pack.reactions['tickle'], ['tickle', 'poke-left']);
+    });
+
+    test('an empty array is no reaction, not an error', () {
+      final pack = withReactions({'tapLeft': [], 'tickle': 'tickle'});
+      expect(pack.reactions.containsKey('tapLeft'), isFalse);
+      expect(pack.reaction('tapLeft'), isNull);
+      expect(pack.reactions['tickle'], ['tickle']);
+    });
+
+    test('every name in an array must be an animation', () {
+      expect(() => withReactions({'tickle': ['tickle', 'nope']}), throwsFormatException);
+      expect(() => withReactions({'tickle': 42}), throwsFormatException, reason: 'neither a name nor an array');
+      expect(() => withReactions({'tickle': 'tickle', 'tickle2': 'nope'}), throwsFormatException);
+    });
+
+    test('numbered keys merge into the plain one, whatever their order', () {
+      final pack = withReactions({
+        'tickle2': 'poke-left',
+        'tickle': 'tickle',
+        'tickle3': 'drag',
+      });
+      // The base name stays first: it is the one older apps play.
+      expect(pack.reactions['tickle'], ['tickle', 'poke-left', 'drag']);
+      expect(pack.reactions.keys, ['tickle']);
+      expect(pack.reaction('tickle')!.name, 'tickle');
+      expect(pack.reactionOutOf('tickle', _Pick(2))!.name, 'drag');
+    });
+
+    test('a numbered key without its plain one is a reaction of its own', () {
+      final pack = withReactions({'tickle2': 'poke-left', 'tickle3': ['drag', 'tickle']});
+      expect(pack.reactions['tickle2'], ['poke-left']);
+      expect(pack.reactions['tickle3'], ['drag', 'tickle']);
+      expect(pack.reactions.containsKey('tickle'), isFalse);
+      // An empty base name is the same as no base name.
+      final noBase = withReactions({'tickle': [], 'tickle2': 'poke-left'});
+      expect(noBase.reactions, {
+        'tickle2': ['poke-left'],
+      });
+    });
+
+    test('arrays and numbered keys mix', () {
+      final pack = withReactions({
+        'tickle': ['tickle', 'poke-left'],
+        'tickle2': 'drag',
+      });
+      expect(pack.reactions['tickle'], ['tickle', 'poke-left', 'drag']);
+    });
+
+    test('reaction() is the first; reactionOutOf() picks one per play', () {
+      final pack = withReactions({
+        'tapLeft': 'poke-left',
+        'tickle': ['tickle', 'poke-left', 'drag'],
+      });
+      expect(pack.reaction('tickle')!.name, 'tickle');
+      expect(pack.reaction('tapLeft')!.name, 'poke-left');
+      // A lone animation: that one, whatever the dice say.
+      expect(pack.reactionOutOf('tapLeft', _Pick(1))!.name, 'poke-left');
+      // Several: the dice pick one of them; every entry is reachable.
+      expect(pack.reactionOutOf('tickle', _Pick(0))!.name, 'tickle');
+      expect(pack.reactionOutOf('tickle', _Pick(1))!.name, 'poke-left');
+      expect(pack.reactionOutOf('tickle', _Pick(2))!.name, 'drag');
+      expect(pack.reactionOutOf('nope', _Pick(0)), isNull);
+    });
+  });
+
+  group('a pack that only writes idle still works', () {
+    Map<String, Object?> animation(String sheet) => {
+      'sheet': sheet,
+      'frameW': 16,
+      'frameH': 16,
+      'cols': 1,
+      'box': {'x': 0, 'y': 0, 'w': 16, 'h': 16},
+      'frames': [
+        {'i': 0, 'ms': 100},
+      ],
+    };
+
+    Map<String, Object?> minimal({Map<String, Object?>? animations, Map<String, Object?>? states}) => {
+      'schema': 1,
+      'id': 'min',
+      'canvas': {'w': 16, 'h': 16},
+      'contentBox': {'x': 0, 'y': 0, 'w': 16, 'h': 16},
+      'animations': animations ?? {'idle': animation('idle.png')},
+      'states': states ?? {'idle': ['idle']},
+    };
+
+    test('states and tiers it does not name play idle', () {
+      final pack = PetPack.parse(minimal());
+      for (final state in PetStateName.values) {
+        expect(pack.animFor(state).name, 'idle', reason: state.name);
+      }
+      expect(pack.tiers, isEmpty);
+      expect(pack.animFor(PetStateName.working, tier: 3).name, 'idle', reason: 'no tiers: the one animation');
+      expect(pack.roam.name, 'idle');
+      expect(pack.bonusOf(PetStateName.attention), isNull);
+      // Missing boxes and timings fall back to the documented defaults.
+      expect(pack.hitBoxFor(pack.animations['idle']!), pack.contentBox);
+      expect(pack.playOf(pack.animations['idle']!), 100);
+      expect(pack.wakeDuration, 1500);
+    });
+
+    test('a reaction it does not write is simply absent', () {
+      final pack = PetPack.parse(minimal());
+      expect(pack.reactions, isEmpty);
+      for (final key in ['tapLeft', 'tapRight', 'tickle', 'annoyed', 'drag']) {
+        expect(pack.reaction(key), isNull, reason: key);
+        expect(pack.reactionOutOf(key, _Pick(0)), isNull, reason: key);
+      }
+    });
+
+    test('idle extras fall back to the idle state’s second animation', () {
+      final pack = PetPack.parse(
+        minimal(
+          animations: {'idle': animation('idle.png'), 'idle-look': animation('idle-look.png')},
+          states: {
+            'idle': ['idle', 'idle-look'],
+          },
+        ),
+      );
+      expect(pack.idlePool, isEmpty);
+      expect(pack.idles.map((e) => e.anim), ['idle-look']);
+      expect(pack.idles.single.ms, pack.animations['idle-look']!.durationMs * 2);
     });
   });
 

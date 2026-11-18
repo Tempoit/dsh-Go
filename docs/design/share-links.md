@@ -300,7 +300,7 @@ CLOUDFLARE_API_TOKEN="$(cat <token 文件>)" npx wrangler secret put ADMIN_KEY <
 |---|---|---|---|
 | `dshgo_downloads` | 点下载按钮：`GET /download/get?via=cn\|global\|github&v=<版本>`，记一次再 302 到这条线路的真实地址 | `blob1` 日期（UTC+8）、`blob2` 线路、`blob3` 版本、`blob4` 国家（`request.cf.country`，没有记 `XX`）、`blob5` 当天设备码；`double1` 1 | IP、UA、完整 URL |
 | `dshgo_checks` | 带通道令牌的 App 检查更新：`GET /beta/update.json` 答 200 | `blob1` 日期、`blob2` 当天设备码、`blob3` App 版本、`blob4` ABI（UA 写了才有，见下）、`blob5` 国家 | IP、UA、令牌 |
-| `dshgo_usage` | App 的匿名使用报告：`POST /api/usage/v1`（0.9.9 起，App 里可关） | `blob1` 报告的日期、`blob2` 安装编号的哈希、`blob3` 版本、`blob4` ABI、`blob5` 厂商（小写）、`blob6` 语言、`blob7` 运行方式；`double1` 构建号、`double2` 系统 API、`double3`–`double8` 对话轮次、语音、手机操控、分享、生成、插件 | IP、安装编号原文、对话、文件、账号 |
+| `dshgo_usage` | App 的匿名使用报告：`POST /api/usage/v1`（0.9.9 起，App 里可关） | `blob1` 报告的日期、`blob2` 安装编号的哈希、`blob3` 版本、`blob4` ABI、`blob5` 厂商（小写）、`blob6` 语言、`blob7` 运行方式、`blob8` 机型（小写，v2 起）、`blob9` 厂商系统及版本（小写，v2 起）；`double1` 构建号、`double2` 系统 API、`double3`–`double8` 对话轮次、语音输入、手机操控、分享、生成、插件，`double9` 报告版本（1–3），`double10`–`double14` 酒馆消息、伙伴小屋、语音通话、输入 token、输出 token（v3 起，之前记 0） | IP、安装编号原文、对话、角色卡、文件、账号、模型名 |
 
 **当天设备码**（下载和更新检查用来估「多少台设备」）：`HMAC(当天的盐, IP + "\n" + User-Agent)` 取 64 位。IPv6 按 /64（同 §5）。盐是 32 字节随机数，由 Durable Object `StatsSalt`（全站一个）在当天第一次用到时生成，存到当天结束，alarm 一到就删；Worker 在内存里记着当天的盐，日期变了就换。所以：
 - 同一天内同一 IP + 同一浏览器 / App 是同一个码，可以去重；
@@ -334,6 +334,29 @@ CLOUDFLARE_API_TOKEN="$(cat <token 文件>)" npx wrangler secret put ADMIN_KEY <
 | `engine` | `direct`、`proot`、`none` |
 | `counts` | 正好这六个键，非负整数，上限 `turns` 5000、`voice` 2000、`phone` 2000、`share` 1000、`gen` 1000、`plugins` 500 |
 
+**v2**（1.0.15 起，同一个地址）：`"v":2`，在 v1 的字段之外正好再多两个，同样 1–32 个 ASCII 字母、数字、空格、`. _ -`，存小写：
+
+| 字段 | 内容 |
+|---|---|
+| `model` | `Build.MODEL`，例：`v2405a`、`pjz110` |
+| `rom` | 厂商系统和版本，按系统属性依次认 HarmonyOS、HyperOS、MIUI、OriginOS / Funtouch、realme UI、ColorOS（一加的 OxygenOS 也报这个属性）、MagicOS、EMUI、One UI；都不是写 `android` |
+
+v1 照收，`blob8`、`blob9` 记空。App 先发 v2，答 `400` 就把同一天改发 v1，这次运行里后面都发 v1，所以 Worker 部署前后都不丢数。报表里机型和系统版本只列至少 20 个安装共用的值，其余算「其他」。
+
+**v3**（1.0.17 起，同一个地址）：`"v":3`，字段和 v2 一样（`model`、`rom` 必填），`counts` 在 v1 的六个键之外正好再多五个，都是当天的非负整数：
+
+| 键 | 口径 | 上限 |
+|---|---|---|
+| `tavern` | 在酒馆里发出的消息条数：打字发送、点快捷回复、群聊里点名各算一条。重新生成、续写、「帮我写」、`/sys` 和 `/send` 这类不调模型的命令不算；预览里的不算 | 5000 |
+| `room` | 打开伙伴小屋的次数（每进一次页面算一次） | 1000 |
+| `call` | 接通的语音通话次数：麦克风开始收音才算，没给权限、没接通的不算 | 500 |
+| `tok_in` | 当天模型回复里报告的输入 token 合计，含缓存命中和缓存写入的部分 | 2,000,000,000 |
+| `tok_out` | 当天模型回复里报告的输出 token 合计 | 200,000,000 |
+
+- **`voice` 和 `call` 是两回事**：`voice`（v1 起）是语音输入，把说的话识别成文字填进输入框一次算一次；`call` 是语音通话（对话页的通话按钮），一通算一次，通话里说的每句话照旧算进 `turns`。
+- **token 只用服务商自己报的数，不估算**：主对话取主机日志里每次模型调用（`assistant/message`）的 `usage`，只算 App 连着看到的新记录，重连时快照里的历史不再算，所以 App 没打开那段对话时跑完的调用会漏掉（偏低，不会重复）；酒馆取每条回复（含重新生成、续写、「帮我写」）的 `reportedUsage`，导演、脚本这类引擎内部的调用看不到；伙伴小屋轻量模式取 Anthropic 格式流里 `message_start`、`message_delta` 的 `usage`。没报用量的渠道和没跑完的回复都不计。只有数字，没有模型名。
+- App 先发 v3，答 `400` 就把同一天改发 v2，再答 `400` 改发 v1；降下来的版本这次运行里一直用。Worker 部署前发出的 v3 因此会落成 v2，新加的五个数丢掉，旧字段不丢。
+
 - 成功 `204`；格式不对 `400`；不是 JSON `415`；超过 2 KB `413`；同一客户端每分钟超过 20 次 `429`（`USAGE_LIMIT`，限速只在 Cloudflare 的分钟计数里用到 IP，不落盘）；没配 `USAGE_SECRET` 时 `404`。
 - `iid` 只以 `HMAC(USAGE_SECRET, "iid\n" + iid)` 的前 128 位存下：能按天数不同的安装、算留存，反推不出 `iid`。`USAGE_SECRET` 换了，新旧哈希对不上，留存从换的那天断开。
 - **同一安装同一天只算一次**：Worker 在内存里记着写过的（日期, 哈希），重复的不再写；跨 isolate 的重复由 `stats.sh` 按（日期, 安装）去重，功能计数取较大的一份。
@@ -344,7 +367,7 @@ CLOUDFLARE_API_TOKEN="$(cat <token 文件>)" npx wrangler secret put ADMIN_KEY <
 |---|---|
 | 下载 | 每天点击次数、人（当天设备码去重）、分线路、分版本；窗口内国家 / 地区占比 |
 | 近似日活 | 每天带令牌检查更新的设备码数、检查次数、按设备的版本分布 |
-| App 统计 | 每天日活（安装去重）和各功能日总量；7 日留存（D 天新出现、D+7 天仍上报；此前 21 天没出现过才算新，所以是粗略值）；版本、ABI、厂商、运行方式、语言、系统 API 分布 |
+| App 统计 | 每天日活（安装去重）和各功能日总量；7 日留存（D 天新出现、D+7 天仍上报；此前 21 天没出现过才算新，所以是粗略值）；版本、ABI、厂商、运行方式、语言、系统 API 分布；机型、厂商系统版本分布（v2 起，少于 20 个安装的值归入「其他」）；v3 起每天用过酒馆、伙伴小屋、语音通话的安装数和次数，token 输入 / 输出合计和人均（人均 = 合计 ÷ 当天有 token 记录的安装数） |
 
 - 点击次数不等于下载完成次数：直链、断点续传、App 内更新都不经过按钮。HEAD、旧版本的按钮、刷量（同一客户端每分钟超过 120 次）不计，但照常跳转。
 - AE 数据量大时会采样，计数用 `SUM(_sample_interval)` 还原；去重的设备数在采样时会偏低。AE 只保留约 3 个月，要长期留存就定期把 `stats.sh` 的输出存档。
@@ -352,6 +375,6 @@ CLOUDFLARE_API_TOKEN="$(cat <token 文件>)" npx wrangler secret put ADMIN_KEY <
 
 **页面上的说明**（下载页页脚，`src/download-page.ts`）：
 
-> 隐私：我们只统计下载和更新检查的次数（含线路、版本、国家/地区），设备数用每天更换、无法还原的哈希估算。App 的匿名使用统计只含版本、系统、厂商、语言、运行方式和各功能使用次数，以随机安装编号区分设备，可在 App 里关闭。不存 IP，不收集账号、对话和文件。
+> 隐私：我们只统计下载和更新检查的次数（含线路、版本、国家/地区），设备数用每天更换、无法还原的哈希估算。App 的匿名使用统计只含版本、系统及厂商系统版本、厂商和机型、语言、运行方式、各功能使用次数和模型回复报告的 token 数，以随机安装编号区分设备，可在 App 里关闭。不存 IP，不收集账号、对话和文件。
 
-> Privacy: we count downloads and update checks (with route, version and country) and estimate device numbers with a one-way hash that changes daily. The app's anonymous usage stats hold only its version, Android version, maker, language, engine mode and feature counts, tell devices apart by a random install ID, and can be turned off in the app. These records hold no IP addresses, and we never collect accounts, chats or files.
+> Privacy: we count downloads and update checks (with route, version and country) and estimate device numbers with a one-way hash that changes daily. The app's anonymous usage stats hold only its version, Android version, maker, model, the maker's system version, language, engine mode, feature counts and the token counts model replies report, tell devices apart by a random install ID, and can be turned off in the app. These records hold no IP addresses, and we never collect accounts, chats or files.

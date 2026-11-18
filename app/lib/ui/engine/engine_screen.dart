@@ -10,6 +10,7 @@ import '../../runtime/local_footprint.dart';
 import '../../state/engine_control.dart';
 import '../../state/safe_mode_state.dart';
 import '../../state/settings_state.dart';
+import '../common/app_dialog.dart';
 import '../common/page_hero.dart';
 import '../onboarding/local_install.dart';
 import '../safe_mode/engine_failure_card.dart';
@@ -25,6 +26,7 @@ import '../web/local_web_screen.dart';
 import 'engine_status.dart';
 import 'local_uninstall.dart';
 import 'log_view.dart';
+import 'workspace_recovery_settings.dart';
 
 /// `rN-dsh…-HASH` → `rN · HASH8`; anything else is shown as is.
 String shortRuntimeVersion(String? v) {
@@ -45,12 +47,19 @@ String engineDetail(RuntimeStatus status) => switch (status.phase) {
         : status.tidyingFiles
         ? appL10n.phoneEngineTidyingFilesEllipsis
         : appL10n.phoneEngineStartingEllipsis,
-  RuntimePhase.stopping => appL10n.phoneEngineStoppingEllipsis,
+  RuntimePhase.stopping =>
+    isLocalStartupFailure(status)
+        ? appL10n.phoneStartupFailureStoppingDetail(
+            humanizeRuntimeError(status.error) ?? appL10n.phoneEngineErrorSeeLogs,
+          )
+        : appL10n.phoneEngineStoppingEllipsis,
   RuntimePhase.installed => status.inSafeMode ? appL10n.phoneEngineStoppedNextSafe : appL10n.commonStopped,
   RuntimePhase.installing => appL10n.phoneEngineInstallingRuntime,
   RuntimePhase.notInstalled => appL10n.phoneEngineRuntimeNotInstalled,
   RuntimePhase.error =>
-    status.failure != null
+    isLocalStartupFailure(status)
+        ? humanizeRuntimeError(status.error) ?? appL10n.phoneEngineErrorSeeLogs
+        : status.failure != null
         ? failureOneLiner(status.failure!)
         : humanizeRuntimeError(status.error) ?? appL10n.phoneEngineErrorSeeLogs,
 };
@@ -134,7 +143,11 @@ class EngineScreen extends ConsumerWidget {
             if (!missing)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                child: TerminalCard(title: l10n.phoneEngineLogs, lines: ref.watch(localRuntimeLogsProvider), height: logHeight),
+                child: TerminalCard(
+                  title: l10n.phoneEngineLogs,
+                  lines: ref.watch(localRuntimeLogsProvider),
+                  height: logHeight,
+                ),
               ),
             // Their home is 设置; the way in from here keeps the name.
             SettingsSection(
@@ -163,6 +176,8 @@ class EngineScreen extends ConsumerWidget {
                 InfoRow(label: l10n.phoneEngineArchitecture, value: status.abi ?? '—', mono: true),
               ],
             ),
+            // A way around a broken index, next to the other ways out of trouble.
+            if (!missing) const WorkspaceRecoverySettings(),
             if (!missing)
               SettingsSection(
                 children: [
@@ -189,7 +204,7 @@ class EngineActions extends ConsumerWidget {
   static const gap = 10.0;
 
   Future<void> _confirmStop(BuildContext context, WidgetRef ref) async {
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
       context: context,
       builder: (dialog) => AlertDialog(
         title: Text(context.l10n.phoneEngineStopTitle),
@@ -299,7 +314,7 @@ class _Capsule extends StatelessWidget {
             decoration: ShapeDecoration(color: bg, shape: const StadiumBorder()),
             child: InkWell(
               onTap: onTap,
-              splashFactory: NoSplash.splashFactory,
+              splashFactory: rowSplash(context),
               highlightColor: fg.withValues(alpha: 0.08),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -344,7 +359,7 @@ class _ResetRow extends ConsumerWidget {
 
   Future<void> _reset(BuildContext context, WidgetRef ref) async {
     final l10n = context.l10n;
-    final keep = await showDialog<ResetKeep>(context: context, builder: (_) => const _ResetDialog());
+    final keep = await showAppDialog<ResetKeep>(context: context, builder: (_) => const _ResetDialog());
     if (keep == null || !context.mounted) return;
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.maybeOf(context);
@@ -410,6 +425,8 @@ class _ResetDialogState extends State<_ResetDialog> {
             (false, true) => l10n.phoneResetBodyWithUi,
             (false, false) => l10n.phoneResetBodyEverything,
           }),
+          const SizedBox(height: 8),
+          Text(l10n.phoneResetAlsoDeletes),
           const SizedBox(height: 12),
           _KeepOption(
             label: l10n.phoneEngineKeepUiSkills,

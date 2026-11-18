@@ -1,10 +1,18 @@
-// Portions derived from PiPilot (https://github.com/CikeSeven/pi_pilot), MIT, Copyright (c) 2026 CikeSeven. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 CikeSeven
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
+
+import 'dart:async';
 
 import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../l10n/l10n.dart';
+import '../../../speech/read_aloud.dart';
+import '../../speech/speech_ui.dart';
 import '../../common/expand_reveal.dart';
+import '../../common/fluid_bits.dart';
 import '../../common/typing_indicator.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/theme.dart';
@@ -16,7 +24,7 @@ import 'message_actions.dart';
 import 'stream_row.dart';
 import 'thinking_pill.dart';
 
-/// 三个点交给下一块内容:旧的线性淡出,新的淡入并上移一点(Grok 公开的数值)。
+/// 三个点交给下一块内容:旧的线性淡出,新的淡入并上移一点。
 const _handOffOut = Duration(milliseconds: 90);
 const _handOffIn = AppMotion.quick;
 const _handOffCurve = Cubic(0.23, 1, 0.32, 1);
@@ -25,7 +33,7 @@ const _handOffRise = 3.0;
 /// 思考之后的第一段正文淡入。
 const _firstTextIn = Duration(milliseconds: 200);
 
-/// 助手消息:**无框裸排的全宽正文**(Claude 式),没有头像也没有署名。
+/// 助手消息:**无框裸排的全宽正文**,没有头像也没有署名。
 ///
 /// ```
 /// (思考过程 ⌄)
@@ -37,7 +45,7 @@ const _firstTextIn = Duration(milliseconds: 200);
 ///
 /// ⇪ 和菜单里的「分享」打开同一个分享面板。长按或 ⋯:同一个消息菜单(复制 /
 /// 选择文字 / 引用 / 分享 / 重新回答 / 从这里分叉)。正文因此不再直接长按选字,选字走菜单里的
-/// "选择文字",选中一段还能「引用」(Claude 式)。
+/// "选择文字",选中一段还能「引用」。
 class AssistantMessage extends StatefulWidget {
   const AssistantMessage({
     super.key,
@@ -82,6 +90,7 @@ class _AssistantMessageState extends State<AssistantMessage> {
   Widget? _body;
   String? _bodyText;
   bool? _bodyStreaming;
+  bool? _bodyReveal;
 
   /// 这条回复在这里等过(画过三个点)。只有它才包交接动画:打开会话时已有的、
   /// 翻回去重建的回复都不多这一层。
@@ -93,10 +102,19 @@ class _AssistantMessageState extends State<AssistantMessage> {
   static bool _waiting(AssistantChatItem item) =>
       item.streaming && item.text.trimRight().isEmpty && item.reasoning.trim().isEmpty;
 
+  /// This reply started empty here, so all of it can be revealed as it arrives. One
+  /// mounted halfway (the chat opened mid-stream, scrolled back to) shows what is there.
+  bool _startedEmpty = false;
+
+  /// The fluid tier's reveal, once it started it stays for this reply: see
+  /// [MarkdownBody.reveal].
+  bool _reveal = false;
+
   @override
   void initState() {
     super.initState();
     _waited = _waiting(widget.item);
+    _startedEmpty = widget.item.text.trimRight().isEmpty;
   }
 
   @override
@@ -116,15 +134,30 @@ class _AssistantMessageState extends State<AssistantMessage> {
   /// 同一段文字只建一次 Markdown 子树:列表每 32ms 重建一次时,
   /// 没变的消息直接复用同一个 widget 实例,Flutter 不会再往下走。
   Widget _markdown(String text, bool streaming) {
-    if (_body == null || _bodyText != text || _bodyStreaming != streaming) {
+    final reveal = _reveal = _reveal || (streaming && _startedEmpty && AppMotion.fluid(context));
+    if (_body == null || _bodyText != text || _bodyStreaming != streaming || _bodyReveal != reveal) {
       // Long-press opens the menu; selecting text is one of its entries.
       // repairBareViews: a model that forgets the ```dsh-ui fence still gets
       // its view drawn instead of a wall of JSON.
-      _body = MarkdownBody(text: text, streaming: streaming, selectable: false, repairBareViews: true);
+      _body = MarkdownBody(text: text, streaming: streaming, reveal: reveal, selectable: false, repairBareViews: true);
       _bodyText = text;
       _bodyStreaming = streaming;
+      _bodyReveal = reveal;
     }
-    return _body!;
+    if (!reveal) return _body!;
+    // The reveal has no cursor: a long pause gets a quiet dot under the text instead.
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        _body!,
+        if (streaming)
+          PositionedDirectional(
+            start: 1,
+            bottom: -_StallDot.size - 6,
+            child: _StallDot(text: text),
+          ),
+      ],
+    );
   }
 
   @override
@@ -151,7 +184,7 @@ class _AssistantMessageState extends State<AssistantMessage> {
     }
 
     final actions = widget.showActions && !streaming && text.isNotEmpty;
-    final reply = GestureDetector(
+    final reply = HoldLift(
       behavior: HitTestBehavior.opaque,
       onLongPress: streaming || text.isEmpty ? null : () => _menu(text),
       child: Column(
@@ -176,17 +209,21 @@ class _AssistantMessageState extends State<AssistantMessage> {
             duration: AppMotion.standard,
             curve: AppMotion.std,
             child: actions
-                ? ReplyActionRow(
-                    // Copy / share carry a one-line summary of each visual
-                    // reply, never its raw JSON.
-                    text: dshUiPlainText(text),
-                    onBranch: widget.onBranch,
-                    branching: widget.branching,
-                    onShare: () => shareReply(context, widget.item),
-                    onRegenerate: widget.onRegenerate,
-                    regenerating: widget.regenerating,
-                    onMore: () => _menu(text),
-                    trailing: widget.footnote,
+                ? Consumer(
+                    builder: (context, ref, _) => ReplyActionRow(
+                      // Copy / share carry a one-line summary of each visual
+                      // reply, never its raw JSON.
+                      text: () => dshUiPlainText(text),
+                      onBranch: widget.onBranch,
+                      branching: widget.branching,
+                      onShare: () => shareReply(context, widget.item),
+                      onReadAloud: () => readAloudReply(context, widget.item.key, dshUiPlainText(text)),
+                      reading: ref.watch(readAloudProvider.select((s) => s.phaseOf(widget.item.key))),
+                      onRegenerate: widget.onRegenerate,
+                      regenerating: widget.regenerating,
+                      onMore: () => _menu(text),
+                      trailing: widget.footnote,
+                    ),
                   )
                 : const SizedBox.shrink(),
           ),
@@ -213,6 +250,7 @@ class _AssistantMessageState extends State<AssistantMessage> {
         MessageAction.selectText,
         if (onQuote != null) MessageAction.quote,
         MessageAction.share,
+        MessageAction.readAloud,
         if (onRegenerate != null && !widget.regenerating) MessageAction.regenerate,
         if (onBranch != null && !widget.branching) MessageAction.branch,
       ],
@@ -227,6 +265,8 @@ class _AssistantMessageState extends State<AssistantMessage> {
         onQuote?.call(text);
       case MessageAction.share:
         await shareReply(context, widget.item);
+      case MessageAction.readAloud:
+        readAloudReply(context, widget.item.key, text);
       case MessageAction.regenerate:
         onRegenerate?.call();
       case MessageAction.branch:
@@ -341,6 +381,83 @@ class _InterruptedMark extends StatelessWidget {
             style: Theme.of(context).textTheme.bodySmall?.copyWith(color: danger, height: 1.3),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// A reply that has gone quiet but isn't over: after a moment with no new text, one
+/// small dot breathes where the next line would start. New text puts it away.
+class _StallDot extends StatefulWidget {
+  const _StallDot({required this.text});
+
+  /// What has arrived so far: a change is the stream moving.
+  final String text;
+
+  static const size = 5.0;
+  static const _after = Duration(milliseconds: 900);
+
+  @override
+  State<_StallDot> createState() => _StallDotState();
+}
+
+class _StallDotState extends State<_StallDot> with SingleTickerProviderStateMixin {
+  late final AnimationController _breath = AnimationController(vsync: this, duration: AppMotion.breath ~/ 2);
+  late final Animation<double> _level = Tween(
+    begin: 0.25,
+    end: 1.0,
+  ).animate(CurvedAnimation(parent: _breath, curve: Curves.easeInOut));
+  Timer? _wait;
+  bool _shown = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _arm();
+  }
+
+  void _arm() {
+    _wait?.cancel();
+    _wait = Timer(_StallDot._after, () {
+      if (!mounted) return;
+      setState(() => _shown = true);
+      unawaited(_breath.repeat(reverse: true));
+    });
+  }
+
+  @override
+  void didUpdateWidget(_StallDot old) {
+    super.didUpdateWidget(old);
+    if (old.text == widget.text) return;
+    _breath.stop();
+    if (_shown) setState(() => _shown = false);
+    _arm();
+  }
+
+  @override
+  void dispose() {
+    _wait?.cancel();
+    _breath.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = DshColors.of(context).textTertiary;
+    return IgnorePointer(
+      child: AnimatedOpacity(
+        opacity: _shown ? 1 : 0,
+        duration: AppMotion.of(context, AppMotion.standard),
+        child: RepaintBoundary(
+          child: FadeTransition(
+            opacity: _level,
+            child: Container(
+              width: _StallDot.size,
+              height: _StallDot.size,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+          ),
+        ),
       ),
     );
   }

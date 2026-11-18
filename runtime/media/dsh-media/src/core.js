@@ -111,7 +111,7 @@ function decodeBase64(value, limit) {
   return bytes;
 }
 
-function containsSecret(value, secret) {
+export function containsSecret(value, secret) {
   if (typeof value === 'string') return value.includes(secret);
   if (Array.isArray(value)) return value.some(item => containsSecret(item, secret));
   if (value && typeof value === 'object') {

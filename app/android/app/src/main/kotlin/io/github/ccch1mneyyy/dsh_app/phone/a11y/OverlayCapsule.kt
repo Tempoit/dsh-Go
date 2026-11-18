@@ -6,6 +6,7 @@ import android.animation.ValueAnimator
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Canvas
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Outline
 import android.graphics.Paint
@@ -20,7 +21,9 @@ import android.text.TextUtils
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.VelocityTracker
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.view.accessibility.AccessibilityNodeInfo
@@ -29,8 +32,12 @@ import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ImageView
+import android.widget.ScrollView
 import android.widget.TextView
+import io.github.ccch1mneyyy.dsh_app.R
 import io.github.ccch1mneyyy.dsh_app.pet.Side
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /** What the capsule and its card show; ControlOverlay builds it from the task and the line. */
@@ -57,7 +64,9 @@ internal data class CapsuleState(
  * the default, the line and 暂停 / 停止 — or the card that grows out of it, and shrinks to a circle
  * when it folds into the ball. The surface is one view drawing one rounded rect that the morphs
  * animate ([OverlaySurface]); the rows inside never re-flow during a fold, they are cut by the
- * outline and fade. The header row is the same in both forms, so 停止 stays at the right end.
+ * outline and fade. The header row is the same in both forms, so 停止 stays at the right end. The
+ * capsule sits on its [anchor]'s side of the card and grows from it. The header can be dragged
+ * (anywhere but 暂停 / 停止, which stay taps); the owner moves the window.
  *
  * Main thread only. The owner ([ControlOverlay]) adds and removes the window, decides the form and
  * runs the ball; this class draws, lays out and morphs.
@@ -76,11 +85,22 @@ internal class OverlayCapsule(
         val steerHint: String, val send: String,
         val unlocksDescription: String, val review: String,
         val foldRow: String, val holdHint: String,
+        val moveLeft: String, val moveCentre: String, val moveRight: String,
     )
 
     interface Actions {
         /** Any finger came down on the window. */
         fun touched()
+
+        /** The header is being dragged (past the touch slop, not from 暂停 / 停止): it follows the finger by ([dx], [dy]) px. */
+        fun dragStart()
+        fun dragMove(dx: Float, dy: Float)
+
+        /** Let go, at [velocityX] px/s across (0 when the gesture was taken away). */
+        fun dragEnd(velocityX: Float)
+
+        /** The screen reader's 移到左侧 / 居中 / 右侧. */
+        fun place(anchor: CapsuleAnchor)
         fun mark()
         fun line()
         fun pause()
@@ -144,15 +164,30 @@ internal class OverlayCapsule(
         addView(text, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         addView(chevron, LinearLayout.LayoutParams(ctx.dp(CapsuleMetrics.CHEVRON_DP), ctx.dp(CapsuleMetrics.CHEVRON_DP)).apply { marginStart = ctx.dp(CapsuleMetrics.CHEVRON_GAP_DP) })
         setOnClickListener { actions.line() }
+        // A screen reader can't drag: the line moves the capsule to an anchor or folds it, as actions.
         accessibilityDelegate = object : View.AccessibilityDelegate() {
             override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfo) {
                 super.onInitializeAccessibilityNodeInfo(host, info)
                 info.className = android.widget.Button::class.java.name
                 info.addAction(AccessibilityNodeInfo.AccessibilityAction(AccessibilityNodeInfo.ACTION_CLICK,
                     if (shape == Shape.CARD) strings.collapse else strings.expand))
+                for ((a, id, label) in placeActions) if (a != anchor) info.addAction(AccessibilityNodeInfo.AccessibilityAction(id, label))
+                if (mark.isClickable) info.addAction(AccessibilityNodeInfo.AccessibilityAction(R.id.overlay_action_fold, strings.fold))
+            }
+
+            override fun performAccessibilityAction(host: View, action: Int, args: android.os.Bundle?): Boolean {
+                placeActions.firstOrNull { it.second == action }?.let { actions.place(it.first); return true }
+                if (action == R.id.overlay_action_fold && mark.isClickable) { actions.mark(); return true }
+                return super.performAccessibilityAction(host, action, args)
             }
         }
     }
+
+    private val placeActions = listOf(
+        Triple(CapsuleAnchor.LEFT, R.id.overlay_action_left, strings.moveLeft),
+        Triple(CapsuleAnchor.CENTRE, R.id.overlay_action_centre, strings.moveCentre),
+        Triple(CapsuleAnchor.RIGHT, R.id.overlay_action_right, strings.moveRight),
+    )
 
     val pause = RoundKey(ctx, CapsuleMetrics.DISC_DP, 18).apply {
         disc = c.tonal
@@ -195,7 +230,7 @@ internal class OverlayCapsule(
         setTextColor(c.faint)
         maxLines = 1
         ellipsize = TextUtils.TruncateAt.END
-        setPadding(column, 0, ctx.dp(16), ctx.dp(4))
+        setPadding(column, ctx.dp(4), ctx.dp(16), 0)
     }
 
     private val stepRows = List(StepHistory.CAPACITY) { StepRow() }
@@ -309,26 +344,65 @@ internal class OverlayCapsule(
         setOnClickListener { actions.mark() }
     }
 
+    private val previewImage = ImageView(ctx).apply {
+        scaleType = ImageView.ScaleType.FIT_CENTER
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+    }
+    private val previewLabel = TextView(ctx).apply {
+        gravity = Gravity.CENTER
+        textSize = 12f
+        setTextColor(c.muted)
+        setPadding(ctx.dp(12), ctx.dp(8), ctx.dp(12), ctx.dp(8))
+    }
+    private val previewFrame = FrameLayout(ctx).apply {
+        visibility = View.GONE
+        setBackgroundColor(c.field)
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        addView(previewImage, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        addView(previewLabel, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+    }
+
+    /** Read-only fixed-size viewport. A new frame never changes the card's dimensions. */
+    fun showPreview(bitmap: Bitmap?, label: String?) {
+        previewImage.setImageBitmap(bitmap)
+        previewImage.visibility = if (bitmap == null) View.GONE else View.VISIBLE
+        previewLabel.text = label.orEmpty()
+        previewLabel.visibility = if (bitmap == null) View.VISIBLE else View.GONE
+        previewFrame.contentDescription = label
+        previewFrame.visibility = if (label == null) View.GONE else View.VISIBLE
+        // Previously displayed bitmaps belong to Android's renderer until its display lists retire;
+        // dropping the drawable reference lets GC reclaim them without recycling a still-drawn image.
+    }
+
+    /**
+     * The card's second layer, above the header (the card grows up from the capsule): nearest the
+     * line its meta, then the steps (newest lowest), the preview, the lifted limits, 插话 and 收成小球
+     * at the top — the order of the old downward card, mirrored, so what belongs to the line stays
+     * next to it.
+     */
     private val body = object : LinearLayout(ctx) {
         private val rule = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = c.faint; alpha = 0x40; strokeWidth = ctx.dpf(1f) }
 
-        /** The timeline: from under the mark down to the last step's dot. */
+        /** The timeline: from above the mark up to the oldest step's dot. */
         override fun dispatchDraw(canvas: Canvas) {
-            val last = stepRows.lastOrNull { it.visibility == View.VISIBLE && it.parent === this }
-            if (last != null) canvas.drawLine(gutter, ctx.dpf(2f), gutter, last.top + last.height / 2f, rule)
+            var first: View? = null
+            for (row in stepRows) if (row.visibility == View.VISIBLE && row.parent === this && (first == null || row.top < first.top)) first = row
+            if (first != null) canvas.drawLine(gutter, height - ctx.dpf(2f), gutter, first.top + first.height / 2f, rule)
             super.dispatchDraw(canvas)
         }
     }.apply {
         orientation = LinearLayout.VERTICAL
         setWillNotDraw(false)
-        setPadding(0, 0, 0, ctx.dp(8))
-        visibility = View.GONE
-        addView(meta)
-        stepRows.forEach { addView(it) }
+        setPadding(0, ctx.dp(8), 0, 0)
         val m = ctx.dp(BODY_INSET_DP)
-        addView(unlocks, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(m, ctx.dp(8), m, 0) })
-        addView(steer, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(m, ctx.dp(10), m, 0) })
-        addView(footer, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = ctx.dp(4) })
+        addView(footer, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = ctx.dp(4) })
+        addView(steer, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(m, 0, m, ctx.dp(10)) })
+        addView(unlocks, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(m, 0, m, ctx.dp(8)) })
+        stepRows.asReversed().forEach { addView(it) }
+        addView(previewFrame, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, ctx.dp(144)).apply {
+            setMargins(ctx.dp(BODY_INSET_DP), ctx.dp(8), ctx.dp(BODY_INSET_DP), ctx.dp(8))
+        })
+        addView(meta)
     }
 
     /** One past step: a dot on the timeline in the mark's column, the step level with the line. */
@@ -352,9 +426,36 @@ internal class OverlayCapsule(
         }
     }
 
+    /**
+     * The second layer as the surface holds it: the body, scrolling when the room above the header
+     * ([maxCardHeight]) is less than it needs — a short screen with the keyboard up — so 插话 stays
+     * reachable and the header stays put. A focused field scrolls itself into view.
+     */
+    private val layer = ScrollView(ctx).apply {
+        isVerticalScrollBarEnabled = false
+        overScrollMode = View.OVER_SCROLL_NEVER
+        visibility = View.GONE
+        addView(body)
+    }
+
     // ---- window ---------------------------------------------------------------------------------------
 
-    val surface = OverlaySurface(ctx, c, header, body)
+    val surface = OverlaySurface(ctx, c, header, layer)
+
+    /** The tallest the card may be (header included): from the header's bottom up to under the status bar. */
+    var maxCardHeight: Int = Int.MAX_VALUE
+        set(value) {
+            if (field == value) return
+            field = value
+            surface.maxCardH = value
+            if (shape == Shape.CARD && morph == null) refitCard(OverlayMotion.on())
+        }
+
+    /**
+     * The whole capsule's opacity: the 闲置时不透明度 when idle, full otherwise. On [surface], so the
+     * window's own alpha stays free for the unfold's swap.
+     */
+    fun setIdle(alpha: Float, animated: Boolean, durationMs: Long) = OverlayMotion.fadeIdle(surface, alpha, animated, durationMs)
 
     /**
      * The whole capsule's opacity: the 闲置时不透明度 when idle, full otherwise. On [surface], so the
@@ -367,12 +468,93 @@ internal class OverlayCapsule(
             if (ev.actionMasked == MotionEvent.ACTION_DOWN) actions.touched()
             return super.dispatchTouchEvent(ev)
         }
+
+        override fun onInterceptTouchEvent(ev: MotionEvent): Boolean = watchDrag(ev)
+
+        override fun onTouchEvent(ev: MotionEvent): Boolean {
+            if (ev.actionMasked == MotionEvent.ACTION_OUTSIDE) {
+                if (editing) actions.inputDone()
+                return false
+            }
+            watchDrag(ev)
+            return dragging || (ev.actionMasked == MotionEvent.ACTION_DOWN && dragFrom)
+        }
     }.apply {
         setPadding(padX, padTop, padX, padBottom)
         clipToPadding = false
         clipChildren = false
         addView(surface, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.CENTER_HORIZONTAL))
-        setOnTouchListener { _, e -> if (e.actionMasked == MotionEvent.ACTION_OUTSIDE && editing) actions.inputDone(); false }
+    }
+
+    // ---- dragging ---------------------------------------------------------------------------------
+
+    private val slop = ViewConfiguration.get(ctx).scaledTouchSlop
+    private var downX = 0f
+    private var downY = 0f
+
+    /** The finger came down on the header, not on 暂停 / 停止 (they are always taps), and nobody is typing. */
+    private var dragFrom = false
+    private var tracker: VelocityTracker? = null
+
+    /** Past the touch slop: the header follows the finger, and the keys under it got a cancel, never a click. */
+    var dragging = false
+        private set
+
+    /** Watches every event on the window; true once it is a drag (the root takes the gesture over). */
+    private fun watchDrag(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                downX = e.rawX
+                downY = e.rawY
+                dragging = false
+                dragFrom = !editing && on(header, e) && !on(pause, e) && !on(stop, e)
+                tracker?.recycle()
+                tracker = if (dragFrom) VelocityTracker.obtain().also { track(it, e) } else null
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (!dragFrom) return false
+                tracker?.let { track(it, e) }
+                val dx = e.rawX - downX
+                val dy = e.rawY - downY
+                if (!dragging && (abs(dx) > slop || abs(dy) > slop)) {
+                    dragging = true
+                    actions.dragStart()
+                }
+                if (dragging) actions.dragMove(dx, dy)
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (dragging) {
+                    val t = tracker
+                    var vx = 0f
+                    if (t != null && e.actionMasked == MotionEvent.ACTION_UP) {
+                        track(t, e)
+                        t.computeCurrentVelocity(1000)
+                        vx = t.xVelocity
+                    }
+                    dragging = false
+                    actions.dragEnd(vx)
+                }
+                dragFrom = false
+                tracker?.recycle()
+                tracker = null
+            }
+        }
+        return dragging
+    }
+
+    private fun on(v: View, e: MotionEvent): Boolean {
+        if (!v.isShown) return false
+        val at = IntArray(2)
+        v.getLocationOnScreen(at)
+        return e.rawX >= at[0] && e.rawX < at[0] + v.width && e.rawY >= at[1] && e.rawY < at[1] + v.height
+    }
+
+    /** Raw coordinates: the window moves under the finger, so view coordinates stand still. */
+    private fun track(t: VelocityTracker, e: MotionEvent) {
+        val copy = MotionEvent.obtain(e)
+        copy.setLocation(e.rawX, e.rawY)
+        t.addMovement(copy)
+        copy.recycle()
     }
 
     lateinit var params: android.view.WindowManager.LayoutParams
@@ -393,7 +575,27 @@ internal class OverlayCapsule(
 
     val morphing: Boolean get() = morph != null
 
+    /** The side the capsule rests against: it sits on that side of the card and grows from it. */
+    var anchor = CapsuleAnchor.CENTRE
+        set(value) {
+            if (field == value) return
+            field = value
+            if (morph == null && extentSet) settle(shape)
+        }
+
+    private val extentSet: Boolean get() = surface.extentW > 0
+
+    /** The steady capsule's width now (the card's until a line has been measured). */
+    val capsuleWidth: Int get() = width.width.takeIf { it > 0 } ?: cardW
+
+    /** The steady capsule's left in the surface as it is now (the card's, or a resize's room): where the owner lines the window up. */
+    fun steadyLeft(): Int = CapsulePlacement.leftIn(anchor, surface.extentW, capsuleWidth)
+
+    /** The open card's height with nothing capping it, header included: what it needs above the header's bottom. */
+    fun naturalCardHeight(): Int = surface.naturalCardHeight()
+
     /** A new screen size (first placement, rotation): widths again, at once. */
+    /** [screenW] is the width there is room for ([CapsulePlacement.roomW]), not the whole display's. */
     fun place(screenW: Int, screenH: Int) {
         this.screenW = screenW
         screenHdp = screenH / ctx.resources.displayMetrics.density
@@ -512,18 +714,18 @@ internal class OverlayCapsule(
         val capW = width.width.takeIf { it > 0 } ?: cardW
         when (to) {
             Shape.CAPSULE -> {
-                body.visibility = View.GONE
-                body.alpha = 0f
-                body.translationY = 0f
-                chevron.turn = 0f
+                layer.visibility = View.GONE
+                layer.alpha = 0f
+                layer.translationY = 0f
+                chevron.turn = CAPSULE_TURN
                 surface.setExtent(capW, headerH)
                 surface.setRect(0f, 0f, capW.toFloat(), headerH.toFloat())
             }
             Shape.CARD -> {
-                body.visibility = View.VISIBLE
-                body.alpha = 1f
-                body.translationY = 0f
-                chevron.turn = 180f
+                layer.visibility = View.VISIBLE
+                layer.alpha = 1f
+                layer.translationY = 0f
+                chevron.turn = CARD_TURN
                 val h = surface.cardHeight()
                 surface.setExtent(cardW, h)
                 surface.setRect(0f, 0f, cardW.toFloat(), h.toFloat())
@@ -540,55 +742,60 @@ internal class OverlayCapsule(
         settle(shape)
     }
 
-    /** The capsule grows into the card: down and out, the body fading in behind. */
+    /**
+     * The capsule grows into the card: up and out, its bottom edge (and the header on it) staying
+     * put, the body fading in behind and rising 6 dp.
+     */
     fun expand(animated: Boolean, then: () -> Unit = {}) {
-        val from = steadyRectInCard()
         morph?.let { it.cancel(); morph = null }
         // From a collapse cut short, carry on from where the body and the chevron are.
-        val wasOpen = body.visibility == View.VISIBLE
-        val startAlpha = if (wasOpen) body.alpha else 0f
-        val startTurn = if (wasOpen) chevron.turn else 0f
+        val wasOpen = layer.visibility == View.VISIBLE
+        val startAlpha = if (wasOpen) layer.alpha else 0f
+        val startTurn = if (wasOpen) chevron.turn else CAPSULE_TURN
+        val carryOn = wasOpen && surface.extentW == cardW
         shape = Shape.CARD
-        body.alpha = startAlpha
-        body.visibility = View.VISIBLE
+        layer.alpha = startAlpha
+        layer.visibility = View.VISIBLE
         val h = surface.cardHeight()
-        val start = if (wasOpen && surface.extentW == cardW) RectF(surface.rect) else from
+        // The extent keeps the rect's bottom where it is when it grows (OverlaySurface.setExtent).
         surface.setExtent(cardW, h)
-        surface.setRect(start)
+        surface.setRect(if (carryOn) RectF(surface.rect) else steadyRectInCard())
         fitWindow()
-        val shift = ctx.dpf(-6f)
+        val shift = ctx.dpf(6f)
         animate(RectF(0f, 0f, cardW.toFloat(), h.toFloat()), OverlayMotion.MORPH_MS, OverlayMotion.emphasized, animated, frame = { t ->
             val k = ((t - 0.3f) / 0.7f).coerceIn(0f, 1f)
-            body.alpha = startAlpha + (1f - startAlpha) * k
-            body.translationY = shift * (1f - k) * (1f - startAlpha)
-            chevron.turn = startTurn + (180f - startTurn) * t
+            layer.alpha = startAlpha + (1f - startAlpha) * k
+            layer.translationY = shift * (1f - k) * (1f - startAlpha)
+            chevron.turn = startTurn + (CARD_TURN - startTurn) * t
         }) { settle(Shape.CARD); then() }
     }
 
-    /** The card shrinks back into the capsule, the body fading first. */
+    /** The card shrinks back down into the capsule, the body fading first. */
     fun collapse(animated: Boolean, then: () -> Unit = {}) {
         if (shape != Shape.CARD) { then(); return }
         morph?.let { it.cancel(); morph = null }
-        val capW = width.width.takeIf { it > 0 } ?: cardW
-        val left = (surface.extentW - capW) / 2f
-        val startAlpha = body.alpha
-        animate(RectF(left, 0f, left + capW, headerH.toFloat()), OverlayMotion.MORPH_MS, OverlayMotion.emphasized, animated, frame = { t ->
-            body.alpha = startAlpha * (1f - t / 0.4f).coerceIn(0f, 1f)
-            chevron.turn = 180f * (1f - t)
+        val capW = capsuleWidth
+        val left = steadyLeft().toFloat()
+        val bottom = surface.extentH.toFloat()
+        val startAlpha = layer.alpha
+        val startTurn = chevron.turn
+        animate(RectF(left, bottom - headerH, left + capW, bottom), OverlayMotion.MORPH_MS, OverlayMotion.emphasized, animated, frame = { t ->
+            layer.alpha = startAlpha * (1f - t / 0.4f).coerceIn(0f, 1f)
+            chevron.turn = startTurn + (CAPSULE_TURN - startTurn) * t
         }) { settle(Shape.CAPSULE); then() }
     }
 
-    /** The capsule follows a new width, centred, its keys travelling with its end. */
+    /** The capsule follows a new width, growing from its anchor's side, its keys travelling with its end. */
     private fun resize(animated: Boolean) {
         val to = width.width
         val from = surface.rect.width().roundToInt()
         if (to == from || to <= 0) return
         val extent = maxOf(to, from)
-        val start = (extent - from) / 2f
+        val start = CapsulePlacement.leftIn(anchor, extent, from).toFloat()
         surface.setExtent(extent, headerH)
         surface.setRect(start, 0f, start + from, headerH.toFloat())
         fitWindow()
-        val left = (extent - to) / 2f
+        val left = CapsulePlacement.leftIn(anchor, extent, to).toFloat()
         animate(RectF(left, 0f, left + to, headerH.toFloat()), OverlayMotion.RESIZE_MS, OverlayMotion.glide, animated) { settle(Shape.CAPSULE) }
     }
 
@@ -596,39 +803,41 @@ internal class OverlayCapsule(
     private fun refitCard(animated: Boolean) {
         val h = surface.cardHeight()
         if (h == surface.rect.height().roundToInt() && surface.extentW == cardW) return
-        val from = RectF(surface.rect)
-        surface.setExtent(cardW, maxOf(h, from.bottom.roundToInt()))
+        // Room for the old height and the new while it eases; the bottom stays put.
+        surface.setExtent(cardW, maxOf(h, surface.rect.height().roundToInt()))
         fitWindow()
-        animate(RectF(0f, 0f, cardW.toFloat(), h.toFloat()), OverlayMotion.RESIZE_MS, OverlayMotion.glide, animated) { settle(Shape.CARD) }
+        val bottom = surface.extentH.toFloat()
+        animate(RectF(0f, bottom - h, cardW.toFloat(), bottom), OverlayMotion.RESIZE_MS, OverlayMotion.glide, animated) { settle(Shape.CARD) }
     }
 
-    /** The end circle on [side] of the surface now, in the surface's own coordinates (left, top). */
+    /** The header's end circle on [side] of the surface now, in the surface's own coordinates (left, top). */
     fun endCircle(side: Side): Pair<Int, Int> {
         val r = surface.rect
-        return BallGeometry.circleLeft(r.left.roundToInt(), r.right.roundToInt(), ball, side) to r.top.roundToInt()
+        return BallGeometry.circleLeft(r.left.roundToInt(), r.right.roundToInt(), ball, side) to (r.bottom.roundToInt() - headerH)
     }
 
     /** The end circle a steady capsule would have on [side] (left, top in the surface). */
     fun capsuleEndCircle(side: Side): Pair<Int, Int> {
-        val capW = width.width.takeIf { it > 0 } ?: cardW
-        val left = (surface.extentW - capW) / 2
-        return BallGeometry.circleLeft(left, left + capW, ball, side) to 0
+        val capW = capsuleWidth
+        val left = steadyLeft()
+        return BallGeometry.circleLeft(left, left + capW, ball, side) to (surface.extentH - headerH)
     }
 
     /**
-     * Folding: the surface narrows (and, from the card, shortens) to the circle at its end on
-     * [side], the rows pinned where they were, fading in the first 40 %. [then] when it is the
-     * ball's size and place.
+     * Folding: the surface narrows (and, from the card, shortens down) to the circle at the
+     * header's end on [side], the rows pinned where they were, fading in the first 40 %. [then]
+     * when it is the ball's size and place.
      */
     fun foldTo(side: Side, animated: Boolean, then: () -> Unit) {
         morph?.let { it.cancel(); morph = null }
         val r = RectF(surface.rect)
-        surface.pin(RectF(r.left, r.top, r.right, r.top + headerH))
+        val top = r.bottom - headerH
+        surface.pin(RectF(r.left, top, r.right, r.bottom))
         val left = BallGeometry.circleLeft(r.left.roundToInt(), r.right.roundToInt(), ball, side).toFloat()
-        val bodyAlpha = body.alpha
-        animate(RectF(left, r.top, left + ball, r.top + headerH), OverlayMotion.MORPH_MS, OverlayMotion.emphasized, animated, frame = { t ->
+        val bodyAlpha = layer.alpha
+        animate(RectF(left, top, left + ball, r.bottom), OverlayMotion.MORPH_MS, OverlayMotion.emphasized, animated, frame = { t ->
             header.alpha = (1f - t / 0.4f).coerceIn(0f, 1f)
-            body.alpha = bodyAlpha * (1f - t / 0.3f).coerceIn(0f, 1f)
+            layer.alpha = bodyAlpha * (1f - t / 0.3f).coerceIn(0f, 1f)
         }) { then() }
     }
 
@@ -657,10 +866,12 @@ internal class OverlayCapsule(
         }) { settle(Shape.CAPSULE); then() }
     }
 
+    /** The steady capsule at the bottom of the card's extent, on its anchor's side. */
     private fun steadyRectInCard(): RectF {
-        val capW = width.width.takeIf { it > 0 } ?: cardW
-        val left = (cardW - capW) / 2f
-        return RectF(left, 0f, left + capW, headerH.toFloat())
+        val capW = capsuleWidth
+        val left = CapsulePlacement.leftIn(anchor, cardW, capW).toFloat()
+        val bottom = surface.extentH.toFloat()
+        return RectF(left, bottom - headerH, left + capW, bottom)
     }
 
     private fun animate(to: RectF, ms: Long, curve: Interpolator, animated: Boolean, frame: ((Float) -> Unit)? = null, then: () -> Unit) {
@@ -718,21 +929,26 @@ internal class OverlayCapsule(
         /** Rows inside the card sit this far in; their corners are the card's less that (24 − 12). */
         const val BODY_INSET_DP = 12
         const val INNER_RADIUS_DP = 12f
+
+        /** The line's chevron: ⌃ on the capsule (the card opens upward), ⌄ on the card (it closes down). */
+        const val CAPSULE_TURN = 180f
+        const val CARD_TURN = 360f
     }
 }
 
 /**
  * One rounded rect of solid surface ([rect], radius 24 dp) that the morphs animate, with the
  * header and the card body inside, cut to its outline. The view itself is [extentW] × [extentH]
- * (the window's content); the rect moves inside it. The header follows the rect's width, or stays
- * where [pin] put it while a fold cuts it; the body is laid out once at the card's width.
+ * (the window's content, hanging from the window's bottom); the rect moves inside it. The header
+ * sits on the rect's bottom edge and follows its width, or stays where [pin] put it while a fold
+ * cuts it; the body is laid out once at the card's width, above the header.
  */
 internal class OverlaySurface(context: Context, private val c: OverlayPalette, private val header: View, private val body: View) : ViewGroup(context) {
     private val painter = SurfacePainter(context)
     private val radius = context.dpf(CapsuleMetrics.RADIUS_DP.toFloat())
     private val headerH = context.dp(CapsuleMetrics.HEIGHT_DP)
 
-    /** The body starts this far up into the header's lower margin: its first line reads as the line's second. */
+    /** The body ends this far down into the header's upper margin: its last line reads as the line's own. */
     private val overlap = context.dp(6)
 
     val rect = RectF()
@@ -760,8 +976,19 @@ internal class OverlaySurface(context: Context, private val c: OverlayPalette, p
         addView(body)
     }
 
+    /**
+     * The view's size. The window hangs from its bottom edge, so a taller extent moves everything
+     * in it down by as much: the rect (and a pinned header) keep their place on screen.
+     */
     fun setExtent(w: Int, h: Int) {
         if (w == extentW && h == extentH) return
+        val dy = (h - extentH).toFloat()
+        if (extentH != 0 && dy != 0f) {
+            rect.offset(0f, dy)
+            pinned?.offset(0f, dy)
+            layoutHeader()
+            invalidateOutline()
+        }
         extentW = w
         extentH = h
         requestLayout()
@@ -790,10 +1017,21 @@ internal class OverlaySurface(context: Context, private val c: OverlayPalette, p
         layoutHeader()
     }
 
-    /** The card's height for the body as it is now. */
-    fun cardHeight(): Int {
+    /** The tallest the card may be (header included); the body scrolls in what is left. */
+    var maxCardH = Int.MAX_VALUE
+
+    /** The card's height for the body as it is now, within [maxCardH]. */
+    fun cardHeight(): Int = headerH - overlap + bodyHeight()
+
+    /** The card's height with the body at its natural height, whatever [maxCardH] says. */
+    fun naturalCardHeight(): Int = headerH - overlap + naturalBody()
+
+    /** The body's natural height, capped to the room [maxCardH] leaves above the header. */
+    private fun bodyHeight(): Int = CapsulePlacement.bodyHeight(naturalBody(), maxCardH, headerH - overlap)
+
+    private fun naturalBody(): Int {
         body.measure(MeasureSpec.makeMeasureSpec(cardW, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
-        return headerH - overlap + body.measuredHeight
+        return body.measuredHeight
     }
 
     private fun headerRect(): RectF = pinned ?: rect
@@ -806,14 +1044,15 @@ internal class OverlaySurface(context: Context, private val c: OverlayPalette, p
     private fun layoutHeader() {
         val r = headerRect()
         val l = r.left.roundToInt()
-        val t = r.top.roundToInt()
+        val t = r.bottom.roundToInt() - headerH
         header.layout(l, t, l + header.measuredWidth, t + headerH)
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         measureHeader()
         if (body.visibility != View.GONE) {
-            body.measure(MeasureSpec.makeMeasureSpec(cardW, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
+            val h = bodyHeight()
+            body.measure(MeasureSpec.makeMeasureSpec(cardW, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY))
         }
         setMeasuredDimension(extentW, extentH)
     }
@@ -822,8 +1061,8 @@ internal class OverlaySurface(context: Context, private val c: OverlayPalette, p
         layoutHeader()
         if (body.visibility != View.GONE) {
             val left = (extentW - cardW) / 2
-            val top = headerH - overlap
-            body.layout(left, top, left + body.measuredWidth, top + body.measuredHeight)
+            val bottom = extentH - headerH + overlap
+            body.layout(left, bottom - body.measuredHeight, left + body.measuredWidth, bottom)
         }
     }
 

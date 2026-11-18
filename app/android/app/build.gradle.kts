@@ -12,8 +12,17 @@ val keyProps = Properties().apply {
     rootProject.file("key.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
 }
 
+// Debug builds use the release key only when it is all there; they are never the build
+// that should stop over a half-filled key.properties.
+// A password may be nothing but spaces; a path or an alias may not.
+val hasWholeReleaseKey = listOf("storeFile", "keyAlias").all { !keyProps.getProperty(it).isNullOrBlank() } &&
+    listOf("storePassword", "keyPassword").all { !keyProps.getProperty(it).isNullOrEmpty() } &&
+    file(keyProps.getProperty("storeFile")).exists()
+
 // Per-ABI runtime bundles produced by runtime/build-runtime.sh.
 val runtimeOut = rootProject.file("../../runtime/out")
+// libtawcroot.so for the opt-in tawcroot launch method (runtime/tawcroot/build.py; missing = unavailable).
+val tawcrootOut = rootProject.file("../../runtime/out-tawcroot")
 
 // versionCode is the build minute, same encoding as tooling/build_number.py:
 // (year - 2026) * 10^8 + MMDDhhmm at UTC+8. tooling/build-apk.sh passes it as
@@ -33,6 +42,10 @@ val appIdSuffix = System.getenv("DSH_APP_ID_SUFFIX")?.trim().orEmpty()
 android {
     namespace = "io.github.ccch1mneyyy.dsh_app"
     compileSdk = flutter.compileSdkVersion
+    // The device tests under src/androidTest are AndroidTestCase tests; these platform libraries
+    // carry that API (no longer in android.jar). Device-test classpath only.
+    useLibrary("android.test.base")
+    useLibrary("android.test.runner")
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -65,6 +78,9 @@ android {
     }
 
     sourceSets {
+        getByName("main") {
+            jniLibs.srcDir(File(tawcrootOut, "jniLibs"))
+        }
         getByName("arm64") {
             assets.srcDir(File(runtimeOut, "arm64-v8a/assets"))
             jniLibs.srcDir(File(runtimeOut, "arm64-v8a/jniLibs"))
@@ -80,8 +96,11 @@ android {
         // nativeLibraryDir so they can be executed.
         jniLibs {
             useLegacyPackaging = true
+            // sherpa_onnx_android_* 1.13.4 and ORT Android 1.27.0 each ship an ORT 1.27.0
+            // (sherpa's own build): either serves both, with the same exports.
+            pickFirsts += "**/libonnxruntime.so"
             // Keep the Termux binaries byte-identical to runtime/out (their hashes are in the manifest).
-            keepDebugSymbols += listOf("**/libproot.so", "**/libproot-loader.so", "**/libtalloc.so", "**/libandroid-shmem.so")
+            keepDebugSymbols += listOf("**/libproot.so", "**/libproot-loader.so", "**/libtalloc.so", "**/libandroid-shmem.so", "**/libtawcroot.so")
         }
     }
 
@@ -111,6 +130,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            // tooling/dev-run.sh installs debug over the release build on a phone, data
+            // kept: Android only allows that with the same key.
+            if (hasWholeReleaseKey) signingConfig = signingConfigs.getByName("release")
+        }
         release {
             // Use the release key when configured; local builds without key.properties fall back to debug.
             signingConfig = signingConfigs.getByName(if (keyProps.isEmpty) "debug" else "release")
@@ -131,8 +155,21 @@ flutter {
     source = "../.."
 }
 
+// Local JVM tests need the desktop JNI library, not Android's classes.jar.
+configurations.matching { it.name.endsWith("UnitTestRuntimeClasspath") }.configureEach {
+    exclude(group = "com.microsoft.onnxruntime", module = "onnxruntime-android")
+}
+
 dependencies {
+    // MIT. 1.27.0 exactly: sherpa-onnx 1.13.4 (pubspec.yaml) links ORT 1.27.0's symbols.
+    // 1.23.2 crashed on Snapdragon 8 Elite with Android 16 (SME, onnxruntime#27884).
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.27.0")
+    testImplementation("com.microsoft.onnxruntime:onnxruntime:1.27.0")
+    // Bundled Chinese OCR. SDK statistics disclosed separately; initialization is opt-in per use.
+    implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
     testImplementation("junit:junit:4.13.2")
+    // Android stubs do not implement JSONObject in local JVM upgrade tests.
+    testImplementation("org.json:json:20240303")
 
     // .tar.xz support for the rootfs bundle.
     implementation("org.tukaani:xz:1.10")

@@ -153,6 +153,7 @@ class RuntimeStatus {
     this.managedSkillGeneration,
     this.error,
     this.mode = EngineMode.normal,
+    this.workspaceRecovery = false,
     this.safeState = SafeModeState.off,
     this.safeReason,
     this.strikes = 0,
@@ -166,6 +167,9 @@ class RuntimeStatus {
     this.directEngineAvailable = false,
     this.directEngineActive = false,
     this.directEngineFallbackReason,
+    this.tawcEngineEnabled = false,
+    this.tawcEngineAvailable = false,
+    this.tawcEngineActive = false,
     this.currentExecutionMode,
     this.launchSelectedMode,
     this.launchSpawned = false,
@@ -192,6 +196,10 @@ class RuntimeStatus {
 
   /// Mode of the running process, or the mode the next start will use.
   final EngineMode mode;
+
+  /// Uses the persistent independent workspace index on this local runtime.
+  /// This is a launch setting, not evidence that workspace services are ready.
+  final bool workspaceRecovery;
   final SafeModeState safeState;
 
   /// Why safe mode is on: `manual`, `auto` (two failures in a row) or `probation` (normal mode failed again).
@@ -224,6 +232,11 @@ class RuntimeStatus {
   final bool directEngineActive;
   final String? directEngineFallbackReason;
 
+  /// The opt-in tawcroot launch (native `TawcrootLaunch`); one of it and Direct is on at most.
+  final bool tawcEngineEnabled;
+  final bool tawcEngineAvailable;
+  final bool tawcEngineActive;
+
   /// Native process observation, never inferred from the saved direct preference.
   final String? currentExecutionMode;
 
@@ -241,6 +254,9 @@ class RuntimeStatus {
     'directEngineAvailable': directEngineAvailable,
     'directEngineActive': directEngineActive,
     'directEngineFallbackReason': directEngineFallbackReason,
+    'tawcEngineEnabled': tawcEngineEnabled,
+    'tawcEngineAvailable': tawcEngineAvailable,
+    'tawcEngineActive': tawcEngineActive,
     'currentExecutionMode': currentExecutionMode,
     'launchSelectedMode': launchSelectedMode,
     'launchSpawned': launchSpawned,
@@ -274,6 +290,7 @@ class RuntimeStatus {
     },
     error: map['error'] as String?,
     mode: EngineMode.parse(map['mode']),
+    workspaceRecovery: map['workspaceRecovery'] == true,
     safeState: SafeModeState.parse(map['safeState']),
     safeReason: map['safeReason'] as String?,
     strikes: (map['strikes'] as num?)?.toInt() ?? 0,
@@ -293,6 +310,9 @@ class RuntimeStatus {
     directEngineAvailable: map['directEngineAvailable'] == true,
     directEngineActive: map['directEngineActive'] == true,
     directEngineFallbackReason: map['directEngineFallbackReason'] as String?,
+    tawcEngineEnabled: map['tawcEngineEnabled'] == true,
+    tawcEngineAvailable: map['tawcEngineAvailable'] == true,
+    tawcEngineActive: map['tawcEngineActive'] == true,
     currentExecutionMode: map['currentExecutionMode'] as String?,
     launchSelectedMode: map['launchSelectedMode'] as String?,
     launchSpawned: map['launchSpawned'] == true,
@@ -534,8 +554,7 @@ class RuntimeBridge {
       .receiveBroadcastStream()
       .map((raw) => _parse(raw as Map<Object?, Object?>))
       .where((e) => e != null)
-      .cast<RuntimeEvent>()
-      .asBroadcastStream();
+      .cast<RuntimeEvent>();
 
   Future<RuntimeStatus> status() async {
     final map = await _methods.invokeMapMethod<Object?, Object?>('getStatus');
@@ -629,8 +648,14 @@ class RuntimeBridge {
 
   Future<void> setAutoSafe(bool enabled) => _methods.invokeMethod<void>('setAutoSafe', {'enabled': enabled});
 
+  /// Selects the local workspace index for subsequent starts. Native code
+  /// verifies the engine is stopped; this call does not start or stop it.
+  Future<void> setWorkspaceRecovery(bool enabled) =>
+      _methods.invokeMethod<void>('setWorkspaceRecovery', {'enabled': enabled});
+
   /// Takes effect on the next start; native code rejects changes while active.
   Future<void> setDirectEngine(bool enabled) => _methods.invokeMethod<void>('setDirectEngine', {'enabled': enabled});
+  Future<void> setTawcEngine(bool enabled) => _methods.invokeMethod<void>('setTawcEngine', {'enabled': enabled});
 
   /// Output around the last failure, tokens masked.
   Future<List<String>> failureLog() async => (await _methods.invokeListMethod<String>('failureLog')) ?? const [];

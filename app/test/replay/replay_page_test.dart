@@ -9,6 +9,7 @@ import 'dart:convert';
 import 'package:dsh_app/share_code/conversation_share.dart';
 import 'package:dsh_app/state/compose_inbox.dart';
 import 'package:dsh_app/state/settings_state.dart';
+import 'package:dsh_app/state/ui_mode_state.dart';
 import 'package:dsh_app/ui/replay/continue_chat.dart';
 import 'package:dsh_app/ui/replay/replay_page.dart';
 import 'package:dsh_app/ui/shell/page_frame.dart' show GlassIconButton;
@@ -21,13 +22,22 @@ import 'package:flutter_test/flutter_test.dart';
 import '../chat/support/harness.dart';
 import 'support/rich_conversation.dart';
 
-List<Override> _overrides() => [settingsProvider.overrideWith(() => TestSettings())];
+List<Override> _overrides({bool web = false}) => [
+  settingsProvider.overrideWith(() => TestSettings()),
+  if (web) uiModeProvider.overrideWith(_WebMode.new),
+];
+
+class _WebMode extends UiModeController {
+  @override
+  UiModeState build() => const UiModeState(mode: UiMode.web, loaded: true);
+}
 
 Future<ProviderContainer> _open(
   WidgetTester tester, {
   Brightness brightness = Brightness.light,
   bool autoplay = false,
   bool preview = false,
+  bool web = false,
   ConversationShare? share,
 }) async {
   await tester.runAsync(loadTestFonts);
@@ -59,7 +69,7 @@ Future<ProviderContainer> _open(
         },
       ),
       brightness: brightness,
-      overrides: _overrides(),
+      overrides: _overrides(web: web),
     ),
   );
   await tester.tap(find.text('open'));
@@ -199,6 +209,18 @@ void main() {
     expect(md, contains('登录按钮连点会重复提交'));
     expect(md, contains('- 运行 `flutter test test/auth`'));
     expect(md, isNot(contains('用户说登录会重复提交')));
+  });
+
+  testWidgets('接着聊 in web mode: the page opens a new chat with it, not the native composer', (tester) async {
+    final container = await _open(tester, web: true);
+    await tester.tap(find.byKey(const ValueKey('replay-continue')));
+    await tester.pumpAndSettle();
+    expect(find.byType(ReplayPage), findsNothing);
+    final open = container.read(webOpenProvider)!;
+    expect(open.target.newSession, isTrue);
+    expect(open.compose!.text, continueChatPrompt);
+    expect(open.compose!.attachments.single.name, '修复登录重复提交.md');
+    expect(container.read(composeInboxProvider), isEmpty);
   });
 
   testWidgets('the preview has no 接着聊', (tester) async {

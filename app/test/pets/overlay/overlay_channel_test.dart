@@ -65,6 +65,13 @@ void main() {
       channel.setActionHandler(null);
     });
 
+    test('a brought pet whose files changed: the overlay is told to read it again', () async {
+      final native = FakeOverlayNative()..install();
+      await PetOverlayChannel().reloadPack('user-cat');
+      expect(native.methods, ['reloadPack']);
+      expect(native.calls.single.arguments, {'id': 'user-cat'});
+    });
+
     test('reads the status map', () async {
       FakeOverlayNative(permission: 'blocked', enabled: true, alwaysShow: true, snoozed: true, sdk: 34).install();
       final s = await PetOverlayChannel().status();
@@ -82,10 +89,37 @@ void main() {
       expect(PetOverlayPermission.fromName('nonsense'), PetOverlayPermission.denied);
     });
 
+    test('companion setup and clear require a native acknowledgement', () async {
+      final native = FakeOverlayNative(permission: 'granted')..install();
+      final channel = PetOverlayChannel();
+      final page = Uri.parse('http://127.0.0.1:4321/${List.filled(32, 'a').join()}/app/index.html?mode=float');
+      expect((await channel.configureCompanion(page: page, notice: '她没能出来')).native, isTrue);
+      expect(native.calls.last.arguments, {'url': page.toString(), 'notice': '她没能出来'});
+      await channel.configureCompanion();
+      expect(native.calls.last.arguments, {'url': null, 'notice': null});
+      removeOverlayNative();
+      await expectLater(channel.configureCompanion(page: page, notice: '她没能出来'),
+          throwsA(isA<MissingPluginException>()));
+    });
+
+    test('old status defaults to pixel and renderer problems survive controller copies', () {
+      final old = PetOverlayStatus.fromMap({});
+      expect(old.companionRendering, isFalse);
+      expect(old.companionFallback, isFalse);
+      expect(old.companionProblem, isNull);
+      final fallback = PetOverlayStatus.fromMap({'companionFallback': true,
+        'companionRendering': false, 'companionProblem': 'companion_context_lost'});
+      final copied = fallback.copyWith(refused: true);
+      expect(copied.companionFallback, isTrue);
+      expect(copied.companionProblem, 'companion_context_lost');
+      expect(copied, isNot(old));
+    });
+
     test('without the native side nothing throws and nothing is offered', () async {
       removeOverlayNative();
       final channel = PetOverlayChannel();
       await channel.push(const PetState());
+      await channel.reloadPack('user-cat');
       expect((await channel.status()).native, isFalse);
       expect((await channel.setEnabled(true)).native, isFalse);
       expect(await channel.requestPermission(), isFalse);

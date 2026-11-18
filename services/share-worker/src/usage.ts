@@ -5,6 +5,18 @@
 //    "build":10301000,"sdk":34,"abi":"arm64-v8a","maker":"vivo","lang":"zh",
 //    "engine":"direct|proot|none",
 //    "counts":{"turns":0,"voice":0,"phone":0,"share":0,"gen":0,"plugins":0}}
+//
+//   v2 (1.0.15 on) is the same with "v":2 and two more fields: "model"
+//   (Build.MODEL, "v2405a") and "rom" (the maker's system and its version,
+//   "originos 5.0"). Both are taken on this same path; a phone whose v2 is
+//   refused with a 400 sends its v1 body again.
+//
+//   v3 (1.0.17 on) is v2 with "v":3 and five more keys in "counts": "tavern"
+//   (messages sent in the tavern), "room" (times the companion room was
+//   opened), "call" (voice calls started), "tok_in" and "tok_out" (input and
+//   output tokens that model replies reported that day; a channel that
+//   reports none adds nothing, nothing is estimated). A phone whose v3 is
+//   refused with a 400 sends v2, and if that is refused too, v1.
 //   → 204; 400 {error, field} for anything else; 413, 415, 429.
 //
 // Nothing about the sender is kept: no IP (it only keys the per-minute limit,
@@ -25,12 +37,22 @@ export const MAX_BODY = 2048;
 
 /** Per-day ceilings: anything above is a bug or a forgery. */
 export const COUNT_LIMITS = { turns: 5000, voice: 2000, phone: 2000, share: 1000, gen: 1000, plugins: 500 } as const;
-const COUNT_KEYS = Object.keys(COUNT_LIMITS) as (keyof typeof COUNT_LIMITS)[];
+/** v3's further counts. Tokens run high: a long chat sends its whole context with every call. */
+export const COUNT_LIMITS_V3 = { tavern: 5000, room: 1000, call: 500, tok_in: 2_000_000_000, tok_out: 200_000_000 } as const;
+const ALL_LIMITS = { ...COUNT_LIMITS, ...COUNT_LIMITS_V3 };
+type CountKey = keyof typeof ALL_LIMITS;
+const COUNT_KEYS = Object.keys(COUNT_LIMITS) as CountKey[];
+const COUNT_KEYS_V3 = [...COUNT_KEYS, ...(Object.keys(COUNT_LIMITS_V3) as CountKey[])];
 const FIELDS = ['v', 'iid', 'day', 'app', 'build', 'sdk', 'abi', 'maker', 'lang', 'engine', 'counts'] as const;
+const FIELDS_V2 = [...FIELDS, 'model', 'rom'] as const;
+/** maker, model and rom: what usageMaker() on the phone leaves. */
+const DEVICE_TEXT = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,31}$/;
 const ABIS = ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86'];
 const ENGINES = ['direct', 'proot', 'none'];
 
 export interface UsageReport {
+  /** The contract: 1, 2 or 3. */
+  v: number;
   iid: string;
   day: string;
   app: string;
@@ -38,9 +60,13 @@ export interface UsageReport {
   sdk: number;
   abi: string;
   maker: string;
+  /** v2 on; empty for a v1 report. */
+  model: string;
+  rom: string;
   lang: string;
   engine: string;
-  counts: Record<keyof typeof COUNT_LIMITS, number>;
+  /** v3's counts are 0 in an older report. */
+  counts: Record<CountKey, number>;
 }
 
 class Invalid extends Error {
@@ -69,8 +95,9 @@ function str(v: unknown, field: string, pattern: RegExp): string {
 /** The report, or an Invalid naming the first field that's wrong. */
 export function validateReport(body: unknown, now = Date.now()): UsageReport {
   if (!isObject(body)) throw new Invalid('invalid', 'body');
-  only(body, FIELDS, '');
-  if (body.v !== 1) throw new Invalid('invalid', 'v');
+  if (body.v !== 1 && body.v !== 2 && body.v !== 3) throw new Invalid('invalid', 'v');
+  const v = body.v;
+  only(body, v === 1 ? FIELDS : FIELDS_V2, '');
   // 16 random bytes in base64url: 22 characters (the last one carries 2 bits);
   // a padded "==" form is taken too and stored the same.
   const iid = str(body.iid, 'iid', /^[A-Za-z0-9_-]{21}[AQgw](?:==)?$/).slice(0, 22);
@@ -85,15 +112,18 @@ export function validateReport(body: unknown, now = Date.now()): UsageReport {
   const sdk = int(body.sdk, 'sdk', 26, 60);
   const abi = str(body.abi, 'abi', /^[a-z0-9_-]{1,16}$/);
   if (!ABIS.includes(abi)) throw new Invalid('invalid', 'abi');
-  const maker = str(body.maker, 'maker', /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,31}$/).trim().toLowerCase();
+  const maker = str(body.maker, 'maker', DEVICE_TEXT).trim().toLowerCase();
+  const model = v === 1 ? '' : str(body.model, 'model', DEVICE_TEXT).trim().toLowerCase();
+  const rom = v === 1 ? '' : str(body.rom, 'rom', DEVICE_TEXT).trim().toLowerCase();
   const lang = str(body.lang, 'lang', /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})?$/);
   const engine = str(body.engine, 'engine', /^[a-z]{1,8}$/);
   if (!ENGINES.includes(engine)) throw new Invalid('invalid', 'engine');
   if (!isObject(body.counts)) throw new Invalid('invalid', 'counts');
-  only(body.counts, COUNT_KEYS, 'counts.');
-  const counts = {} as UsageReport['counts'];
-  for (const k of COUNT_KEYS) counts[k] = int(body.counts[k], `counts.${k}`, 0, COUNT_LIMITS[k]);
-  return { iid, day, app, build, sdk, abi, maker, lang, engine, counts };
+  const keys = v === 3 ? COUNT_KEYS_V3 : COUNT_KEYS;
+  only(body.counts, keys, 'counts.');
+  const counts = Object.fromEntries(COUNT_KEYS_V3.map((k) => [k, 0])) as UsageReport['counts'];
+  for (const k of keys) counts[k] = int(body.counts[k], `counts.${k}`, 0, ALL_LIMITS[k]);
+  return { v, iid, day, app, build, sdk, abi, maker, model, rom, lang, engine, counts };
 }
 
 // Repeats this isolate has already written: (day, hashed iid). Bounded.
@@ -131,11 +161,16 @@ export async function usage(request: Request, env: Env, now = Date.now()): Promi
   seen.add(key);
   const c = report.counts;
   // dshgo_usage: blob1 day, blob2 device, blob3 app, blob4 abi, blob5 maker,
-  // blob6 lang, blob7 engine; double1 build, double2 sdk, double3..8 counts.
+  // blob6 lang, blob7 engine, blob8 model, blob9 rom (empty before v2);
+  // double1 build, double2 sdk, double3..8 counts, double9 the contract
+  // (1–3), double10..14 v3's counts (0 before v3).
   writeStat(env.USAGE, {
     indexes: [device],
-    blobs: [report.day, device, report.app, report.abi, report.maker, report.lang, report.engine],
-    doubles: [report.build, report.sdk, c.turns, c.voice, c.phone, c.share, c.gen, c.plugins],
+    blobs: [report.day, device, report.app, report.abi, report.maker, report.lang, report.engine, report.model, report.rom],
+    doubles: [
+      report.build, report.sdk, c.turns, c.voice, c.phone, c.share, c.gen, c.plugins,
+      report.v, c.tavern, c.room, c.call, c.tok_in, c.tok_out,
+    ],
   });
   return noContent();
 }

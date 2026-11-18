@@ -1,6 +1,9 @@
 # Changelog
 
-## 0.3.0 — 2026-11-01
+## 0.3.0 — unreleased (updated 2026-11-07)
+
+- Support the exact DSH `0.2.1-rc.4` and `0.2.2-rc.1` versions, with the matching Cordis/Schemastery versions. Preserve upstream job ownership and storage cleanup fixes.
+- Verify both versions using their existing pinned runtime locks, the real host compatibility evaluator, and headless image/video sessions. Wait for actual video settlement rather than a fixed post-download delay. Preserve the explicit native executor selection for rc.1; only rc.4 uses the legacy tools mode.
 
 - Publish eight provider presets in `data/models.json` (`presets[]`), carried to the App through the existing services catalog metadata: Ark, Alibaba Model Studio, SiliconFlow, OpenAI and Gemini image/video templates with their profile, API root, response format, model list and shared `keyGroup`.
 - Add per-kind defaults `imageServiceId`, `imageModelId`, `videoServiceId` and `videoModelId`. `generate_video` uses the video pair, other tools use the image pair; an unresolvable kind default falls back to the legacy `serviceId`/`modelId` and then to the first supported candidate. Legacy-only configurations behave exactly as before.

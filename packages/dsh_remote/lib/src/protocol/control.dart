@@ -1,6 +1,8 @@
-// Portions derived from ds-harness-remote (https://github.com/liguobao/ds-harness-remote), MIT, Copyright (c) 2026 DSH Remote contributors. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 DSH Remote contributors
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 // Control-channel frames of ds-harness-remote protocol v1. Conformance:
-// test/fixtures/protocol-v1 (copied from upstream fixtures).
+// test/fixtures/protocol-v1.
 library;
 
 import 'dart:convert';

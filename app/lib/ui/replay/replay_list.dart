@@ -10,6 +10,7 @@ import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../state/app_notes.dart';
 import '../../state/settings_state.dart';
 import '../chat/chat_rows.dart';
 import '../chat/dsh_ui/dsh_ui.dart';
@@ -199,7 +200,7 @@ class _ReplayListState extends ConsumerState<ReplayList> {
     return switch (row) {
       UserRow(:final item) when dshUiReplyChip(item.text) != null => DshUiReplyChip(label: dshUiReplyChip(item.text)!),
       UserRow(:final item) => UserBubble(
-        text: item.text,
+        text: withoutAppNotes(item.text),
         attachments: item.images.isEmpty && item.files.isEmpty
             ? null
             : SentAttachments.echoed(sessionId: replaySessionId, images: item.images, files: item.files),

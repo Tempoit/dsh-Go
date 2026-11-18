@@ -2,15 +2,18 @@ package io.github.ccch1mneyyy.dsh_app.phone.a11y
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** The 悬浮条 settings: defaults and the 30–100 % range (the overlay applies whatever this gives). */
 class OverlayPrefsTest {
-    @Test fun defaultsKeepThePillOpenAt70Percent() {
+    @Test fun defaultsFoldAnIdleCapsuleAndFadeTheBallTo70Percent() {
+        // 闲置时自动收起 is on unless the person turned it off: the capsule gets out of the way by itself.
         val p = OverlayPrefs()
         assertEquals(0.7f, p.idleOpacity)
-        assertFalse(p.autoFold)
-        assertEquals(mapOf("idleOpacity" to 0.7f.toDouble(), "autoCollapse" to false), p.toMap())
+        assertTrue(p.autoFold)
+        assertEquals(mapOf("idleOpacity" to 0.7f.toDouble(), "autoCollapse" to true), p.toMap())
+        assertFalse(p.copy(autoFold = false).toMap()["autoCollapse"] as Boolean)
     }
 
     @Test fun opacityStaysWithin30And100Percent() {

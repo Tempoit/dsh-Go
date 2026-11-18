@@ -38,6 +38,35 @@ void main() {
       expect(tunnel.ownUri('http://127.0.0.1:9999/a.png'), isNull);
     });
 
+    test('a phone proxy accepts only its API paths and explicit authorities', () {
+      final proxy = DshConnection(Uri.parse('http://100.64.0.2:4080'), hostHeader: '127.0.0.1:3080');
+      for (final url in [
+        '/api/dsh-emoji/assets/a.png?part=a&part=b',
+        'http://100.64.0.2:4080/api/dsh-emoji/assets/a.png?part=a&part=b',
+        'http://127.0.0.1:3080/api/dsh-emoji/assets/a.png?part=a&part=b',
+      ]) {
+        expect(proxy.ownUri(url), Uri.parse('http://100.64.0.2:4080/api/dsh-emoji/assets/a.png?part=a&part=b'));
+      }
+      for (final url in [
+        '//evil.example/api/a.png',
+        '/root/a.png',
+        'a.png',
+        '/apix/a.png',
+        '/api/../root/a.png',
+        'http://100.64.0.2:4081/api/a.png',
+        'http://127.0.0.1:3081/api/a.png',
+      ]) {
+        expect(proxy.ownUri(url), isNull, reason: url);
+      }
+    });
+
+    test('relative API paths stay inside the configured mount', () {
+      final mounted = DshConnection(Uri.parse('http://100.64.0.2:4080/dsh'));
+      expect(mounted.ownUri('/dsh/api/a.png'), Uri.parse('http://100.64.0.2:4080/dsh/api/a.png'));
+      expect(mounted.ownUri('/api/a.png'), isNull);
+      expect(mounted.ownUri('/dsh/../api/a.png'), isNull);
+    });
+
     test('stays inside the mount path', () {
       final mounted = DshConnection(Uri.parse('http://127.0.0.1:3080/dsh'));
       expect(mounted.ownUri('http://127.0.0.1:3080/dsh/a.png'), Uri.parse('http://127.0.0.1:3080/dsh/a.png'));
@@ -52,17 +81,20 @@ void main() {
     late Uri base;
     final cookies = <String?>[];
     final paths = <String>[];
+    final hosts = <String?>[];
     final png = Uint8List.fromList([137, 80, 78, 71]);
 
     setUp(() async {
       cookies.clear();
       paths.clear();
+      hosts.clear();
       server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       base = Uri.parse('http://127.0.0.1:${server.port}');
       server.listen((request) async {
         final cookie = request.headers.value(HttpHeaders.cookieHeader);
         cookies.add(cookie);
         paths.add(request.uri.path);
+        hosts.add(request.headers.value(HttpHeaders.hostHeader));
         final response = request.response;
         if (request.uri.path == '/moved') {
           response.statusCode = HttpStatus.found;
@@ -90,6 +122,36 @@ void main() {
       expect(client.isEngineUrl(url), isTrue);
       expect(await client.readEngineUrl(url, maxBytes: 1024), png);
       expect(cookies, ['dsh=v1']);
+    });
+
+    test('a root-relative plugin image carries the session cookie', () async {
+      const url = '/api/dsh-emoji/a.png?part=a&part=b';
+      expect(client.isEngineUrl(url), isTrue);
+      expect(await client.readEngineUrl(url, maxBytes: 1024), png);
+      expect(cookies, ['dsh=v1']);
+      expect(paths, ['/api/dsh-emoji/a.png']);
+    });
+
+    test('a proxy dials its connection while preserving the configured engine Host', () async {
+      final proxy = DshClient.withCarrier(
+        DshHttpCarrier(
+          DshConnection(
+            base,
+            hostHeader: '127.0.0.1:3080',
+            cookie: const DshCookie(name: 'dsh', value: 'v1', authority: '127.0.0.1:3080'),
+          ),
+        ),
+      );
+      addTearDown(proxy.close);
+      for (final url in [
+        '/api/dsh-emoji/a.png',
+        'http://127.0.0.1:3080/api/dsh-emoji/a.png',
+        base.resolve('/api/dsh-emoji/a.png').toString(),
+      ]) {
+        expect(await proxy.readEngineUrl(url, maxBytes: 1024), png);
+      }
+      expect(cookies, ['dsh=v1', 'dsh=v1', 'dsh=v1']);
+      expect(hosts, ['127.0.0.1:3080', '127.0.0.1:3080', '127.0.0.1:3080']);
     });
 
     test('an answer other than 200 is an error, not an image', () async {

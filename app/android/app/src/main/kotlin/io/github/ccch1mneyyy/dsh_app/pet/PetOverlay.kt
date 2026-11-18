@@ -45,6 +45,7 @@ import android.view.WindowInsets
 import android.view.WindowManager
 import android.view.animation.PathInterpolator
 import android.view.inputmethod.InputMethodManager
+import android.widget.Toast
 import io.github.ccch1mneyyy.dsh_app.MainActivity
 import io.github.ccch1mneyyy.dsh_app.R
 import io.github.ccch1mneyyy.dsh_app.nativemedia.MicArbiter
@@ -59,6 +60,7 @@ import java.util.IdentityHashMap
 import java.util.concurrent.Executors
 import kotlin.math.max
 import kotlin.math.roundToInt
+import kotlin.random.Random
 
 /**
  * The out-of-app pet (docs/design/pets.md): a window the size of the pack's wide hit
@@ -89,6 +91,8 @@ internal object PetOverlay {
     private const val K_ENABLED = "enabled"
     private const val K_ALWAYS = "alwaysShow"
     private const val K_SNOOZE = "snoozedUntil"
+    private const val K_TAP_HINTS = "tapHints"
+    private const val TAP_HINTS = 3
     private const val K_SIDE = "dockSide"
     private const val K_Y = "dockY"
     private const val EDGE_DP = 8f
@@ -151,9 +155,17 @@ internal object PetOverlay {
     private var petView: PetView? = null
     private var petParams: WindowManager.LayoutParams? = null
     private var systemShown = true
+    private var companionEndpoint: CompanionFloatEndpoint? = null
+    private var companionView: CompanionFloatView? = null
+    private var companionEpoch = 0L
+    private val companionRecovery = CompanionFloatRecovery()
+    private var companionProblem: String? = null
+    private var companionNotice: String? = null
     private var bubbleView: BubbleView? = null
     private var bubbleId: String? = null
     private var menuView: PetMenuView? = null
+    private var closingMenu: PetMenuView? = null
+    private val capture = PetCaptureState()
     private var target: DismissTargetView? = null
     private var targetCenter: WindowPos? = null
     private var dock = Dock.DEFAULT
@@ -198,6 +210,7 @@ internal object PetOverlay {
             addAction(Intent.ACTION_SCREEN_OFF)
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_USER_PRESENT)
+            addAction(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
         }
         if (Build.VERSION.SDK_INT >= 33) app.registerReceiver(screen, filter, Context.RECEIVER_NOT_EXPORTED) else app.registerReceiver(screen, filter)
         lastConfig = Configuration(app.resources.configuration)
@@ -226,6 +239,7 @@ internal object PetOverlay {
     }
 
     private fun resetProducer() {
+        capture.invalidate()
         loadRequest++
         loadingKey = null
         pendingSettings = false
@@ -235,6 +249,10 @@ internal object PetOverlay {
         answerState.reset()
         askDraftState.resetProducer()
         machine.resetProducer()
+        companionEndpoint = null
+        companionRecovery.select(null)
+        companionProblem = null
+        companionNotice = null
         removeWindows()
         evaluate()
     }
@@ -251,7 +269,46 @@ internal object PetOverlay {
         evaluate()
     }
 
+    /**
+     * A brought pet's files changed (imported again, removed): what was read of [id] is stale even
+     * though its id and size are not. Read it again if it is the one out. If it isn't (不显示,
+     * another pet), what is kept or still loading of it goes, so choosing it again reads it fresh.
+     */
+    fun reloadPack(id: String) {
+        if (!initialized) return
+        failedIds -= id
+        val out = machine.last?.takeIf { it.packId == id }
+        if (out != null) return ensurePack(id, out.size, reload = true)
+        if (loadingKey?.startsWith("$id@") == true) {
+            loadRequest++
+            loadingKey = null
+        }
+        if (loadedKey?.startsWith("$id@") != true) return
+        loaded?.release()
+        loaded = null
+        loadedKey = null
+        stateKey = null
+        if (petView != null) removeWindows()
+        evaluate()
+    }
+
+    /** The Dart server has already checked the local pack. Null returns to the original renderer. */
+    fun configureCompanion(url: String?, notice: String?): Boolean {
+        val endpoint = if (url == null) null else CompanionFloatEndpoint.parse(url) ?: return false
+        val message = PetPush.clean(notice, 200)
+        if (endpoint != null && message == null) return false
+        companionNotice = message
+        if (endpoint?.page == companionEndpoint?.page) return true
+        companionEndpoint = endpoint
+        companionRecovery.select(endpoint?.page)
+        companionProblem = null
+        removeWindows()
+        evaluate()
+        return true
+    }
+
     fun setEnabled(on: Boolean): Map<String, Any?> {
+        if (!on) capture.invalidate()
         machine.enabled = on
         prefs.edit().putBoolean(K_ENABLED, on).apply()
         if (on) {
@@ -294,14 +351,19 @@ internal object PetOverlay {
             "canDraw" to canDraw,
             "accessibility" to a11y,
             "snoozed" to machine.snoozed(now()),
-            "showing" to (petView?.isAttachedToWindow == true),
+            "showing" to (petView?.isAttachedToWindow == true && !capture.inFlight),
             "sdk" to Build.VERSION.SDK_INT,
             "manufacturer" to Build.MANUFACTURER,
+        ) + if (companionEndpoint == null) emptyMap() else mapOf(
+            "companionRendering" to (companionView != null),
+            "companionFallback" to companionRecovery.fallback,
+            "companionProblem" to companionProblem,
         )
     }
 
     /** 「今天不再显示」: hidden until local midnight. */
     fun snoozeToday() {
+        capture.invalidate()
         val c = Calendar.getInstance().apply {
             add(Calendar.DAY_OF_YEAR, 1)
             set(Calendar.HOUR_OF_DAY, 0)
@@ -323,13 +385,23 @@ internal object PetOverlay {
     fun evaluate() {
         if (!initialized) return
         main.removeCallbacks(evaluateRunnable)
+        if (capture.inFlight) {
+            // Keep the invisible PET ticket for openIntent's authenticated generation, but never
+            // let polling, an incoming Dart push or window-cleanup callbacks re-show captured UI.
+            stopLoop()
+            stopCompanion()
+            petView?.visibility = View.INVISIBLE
+            speaksForResults = false
+            publishStatus()
+            return
+        }
         refreshCanDraw()
         machine.canHost = overlayHost() != OverlayHost.NONE
         machine.hasPet = loaded != null && loadedKey == packKey(machine.last)
         machine.phoneTask = PhoneControl.peek()?.foregroundLine() != null
         machine.dshService = DshService.isRunning
         machine.interactive = interactive()
-        machine.holding = askView != null || answerState.bubbleId != null || returnAsk
+        machine.holding = askView != null || menuView != null || answerState.bubbleId != null || returnAsk
         val t = now()
         val d = machine.decide(t)
         if (d.visibility != lastVisibility || d.why != lastWhy) {
@@ -343,7 +415,9 @@ internal object PetOverlay {
                 removeWindows()
             }
             Visibility.PAUSED -> {
+                petView?.cancelInteraction()
                 stopLoop()
+                stopCompanion()
                 dismissMenu()
                 removeAsk()
             }
@@ -353,9 +427,12 @@ internal object PetOverlay {
                     // With the permission now known not to work, decide again; else retry at the next poll.
                     if (lastAdd != before) main.post(evaluateRunnable)
                 } else {
-                    retarget()
+                    petView?.visibility = View.VISIBLE
                     if (!dragging) setDimmed(d.dimmed)
-                    if (dimmed || !systemShown) stopLoop() else startLoop()
+                    if (companionAllowed()) startCompanion() else stopCompanion()
+                    retarget()
+                    companionView?.freeze(dimmed)
+                    if (dimmed || !systemShown || companionView != null) stopLoop() else startLoop()
                     showBubble(d.bubble)
                     if (returnAsk) {
                         returnAsk = false
@@ -383,6 +460,119 @@ internal object PetOverlay {
             lastStatus = s
             listener?.onStatus(s)
         }
+    }
+
+    // ---- companion renderer ---------------------------------------------------------------------
+
+    private fun companionAllowed() = companionCanRender(
+        selected = companionEndpoint != null, fallback = companionRecovery.fallback,
+        shown = lastVisibility == Visibility.SHOWN, interactive = machine.interactive,
+        systemShown = systemShown, capturing = capture.inFlight,
+        powerSave = companionEndpoint != null && app.getSystemService(PowerManager::class.java)?.isPowerSaveMode == true,
+    )
+
+    private fun startCompanion() {
+        if (companionView != null) return
+        val endpoint = companionEndpoint ?: return
+        val v = petView ?: return
+        val p = petParams ?: return
+        val ticket = petTicket
+        if (!alive(ticket)) return
+        stopLoop()
+        slideAnim?.cancel()
+        val area = safeArea()
+        // Full-body default, within both the readback cap and the existing dock margins.
+        val geometry = CompanionFloatGeometry.fit(
+            v.context.dp(PetSize.dpOf(machine.last?.size) * 4),
+            area, edge(v.context),
+        ) ?: return
+        val epoch = ++companionEpoch
+        fun current() = epoch == companionEpoch && petView === v && alive(ticket)
+        try {
+            val renderer = CompanionFloatView(app, endpoint, geometry, object : CompanionFloatView.Listener {
+                override fun bounds(box: FramePx?) {
+                    if (!current()) return
+                    val before = v.companionBounds
+                    val next = box ?: FramePx(geometry.width / 2, geometry.height / 2,
+                        geometry.width / 2 + 1, geometry.height / 2 + 1)
+                    val previous = WindowPos(p.x, p.y)
+                    val wanted = CompanionFloatGeometry.move(previous, before, next)
+                    val pos = if (dragging) EdgeSnap.clampDrag(wanted.x, wanted.y, next.width, next.height, safeArea()) else wanted
+                    val dx = pos.x - previous.x
+                    val dy = pos.y - previous.y
+                    dragStart = dragStart?.let { WindowPos(it.x + dx, it.y + dy) }
+                    dropAt = dropAt?.let { WindowPos(it.x + dx, it.y + dy) }
+                    v.setCompanionBounds(next)
+                    p.x = pos.x; p.y = pos.y
+                    p.width = next.width; p.height = next.height
+                    p.alpha = if (box == null) 0f else 1f
+                    p.flags = if (box == null) p.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                        else p.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+                    update(v, p)
+                    if (dragging) updateTargetArmed(v)
+                    followBubble(force = true)
+                    menuView?.let { menu -> menuParams?.let { params ->
+                        if (placeMenu(menu, params)) update(menu, params) else dismissMenu()
+                    } }
+                }
+                override fun failed(code: String) { if (current()) companionFailed(code) }
+                override fun resumeNeeded() {
+                    if (!current()) return
+                    stopCompanion()
+                    if (companionAllowed()) startCompanion()
+                }
+            })
+            companionView = renderer
+            v.setCompanion(renderer.view, geometry)
+            p.width = geometry.width; p.height = geometry.height
+            // The page must render at a stable viewport size, but has no touch
+            // surface until actual alpha arrives. Alpha=0 also avoids Android
+            // 12+ treating this invisible application overlay as an occluder.
+            p.alpha = 0f
+            p.flags = p.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            placeRest(v, p, EdgeSnap.position(dock, v.reach, area, edge(v.context)))
+            update(v, p)
+            renderer.state(machine.last?.state ?: PetPack.IDLE, machine.last?.reduceMotion == true)
+            renderer.freeze(dimmed)
+            renderer.start()
+        } catch (_: RuntimeException) {
+            if (current()) companionFailed("companion_hardware_unavailable")
+        }
+    }
+
+    private fun stopCompanion(restorePixels: Boolean = true) {
+        val renderer = companionView ?: return
+        companionView = null
+        companionEpoch++ // Fence queued JS, page and renderer callbacks before destroy.
+        val v = petView
+        try { renderer.close() } finally {
+            v?.clearCompanion()
+            stateKey = null
+        }
+        if (!restorePixels || v == null || !alive(petTicket)) return
+        v.cancelInteraction()
+        slideAnim?.cancel()
+        val p = petParams ?: return
+        p.alpha = 1f
+        p.flags = p.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+        p.width = v.frame.width; p.height = v.frame.height
+        placeRest(v, p, EdgeSnap.position(dock, v.reach, safeArea(), edge(v.context)))
+        update(v, p)
+        retarget()
+        drawStill()
+        followBubble(force = true)
+    }
+
+    private fun companionFailed(code: String) {
+        val failure = companionRecovery.failed()
+        if (failure == CompanionFloatRecovery.Failure.IGNORE) return
+        companionProblem = code
+        stopCompanion()
+        if (failure == CompanionFloatRecovery.Failure.FALLBACK) {
+            removeWindows() // Pixel fallback uses the original window flags again.
+            companionNotice?.let { Toast.makeText(app, it, Toast.LENGTH_LONG).show() }
+        }
+        main.post(evaluateRunnable)
     }
 
     // ---- permission -----------------------------------------------------------------------------
@@ -429,14 +619,15 @@ internal object PetOverlay {
 
     private fun packKey(p: PetPush?): String? = p?.packId?.let { "$it@${p.size}" }
 
-    private fun ensurePack(id: String, size: String) {
+    /** Loads [id] at [size] unless it is loaded, loading or broken; [reload]: from disk again regardless. */
+    private fun ensurePack(id: String, size: String, reload: Boolean = false) {
         val key = "$id@$size"
-        if (key == loadedKey || key == loadingKey || id in failedIds) return
+        if (!reload && (key == loadedKey || key == loadingKey || id in failedIds)) return
         loadingKey = key
         val request = ++loadRequest
         val density = app.resources.displayMetrics.density
         worker.execute {
-            val l = sprites.load(id, worker) { pack -> pack.screenScale(PetSize.fromName(size), density) }
+            val l = sprites.load(id, worker) { pack -> pack.screenScale(size, density) }
             l?.warmResident()
             main.post {
                 if (request != loadRequest || loadingKey != key || packKey(machine.last) != key) {
@@ -448,6 +639,14 @@ internal object PetOverlay {
                 if (l == null) {
                     Log.w(TAG, "pet pack $id not found")
                     failedIds += id
+                    // Read again (reloadPack) and gone or broken now: the old picture doesn't stay.
+                    if (loadedKey == key) {
+                        loaded?.release()
+                        loaded = null
+                        loadedKey = null
+                        stateKey = null
+                        if (petView != null) removeWindows()
+                    }
                 } else {
                     loaded?.release()
                     loaded = l
@@ -466,6 +665,7 @@ internal object PetOverlay {
     private fun retarget() {
         val l = loaded ?: return
         val p = machine.last ?: return
+        companionView?.let { it.state(p.state, p.reduceMotion); return }
         // The floating pet doesn't roam: roam plays as idle.
         val state = if (p.state == PetPush.ROAM) PetPack.IDLE else p.state
         val key = "${l.pack.id}|$state|${p.tier}|${p.reduceMotion}"
@@ -483,8 +683,14 @@ internal object PetOverlay {
         if (looping) restartLoop() else petView?.let { drawStill() }
     }
 
-    private fun react(kind: String, loop: Boolean) {
-        val a = loaded?.pack?.reaction(kind) ?: return
+    /**
+     * Plays [kind]'s reaction. A tap picks one at random among the pack's alternatives; the drag
+     * pose stays the one first named (the window is rebuilt around it, so it must not change).
+     */
+    private fun react(kind: String, loop: Boolean, random: Boolean = true) {
+        if (petView?.companionGeometry != null) return
+        val pack = loaded?.pack ?: return
+        val a = (if (random) pack.reaction(kind, Random.Default) else pack.reaction(kind)) ?: return
         player.react(a, loop, SystemClock.uptimeMillis())
         restartLoop()
     }
@@ -492,7 +698,12 @@ internal object PetOverlay {
     private var frame: Choreographer.FrameCallback? = null
 
     private fun startLoop() {
-        if (looping) return
+        if (petView?.companionGeometry != null) return
+        if (looping) {
+            // System animations may have been re-enabled while no frame was scheduled.
+            if (player.still && animationsOn()) restartLoop()
+            return
+        }
         if (!alive(petTicket)) return
         looping = true
         tick()
@@ -540,6 +751,7 @@ internal object PetOverlay {
 
     /** Paused or dimmed: still draw the current picture once (sheet permitting). */
     private fun drawStill() {
+        if (petView?.companionGeometry != null) return
         val ticket = petTicket
         if (!alive(ticket)) return
         val view = petView ?: return
@@ -580,6 +792,7 @@ internal object PetOverlay {
      */
     private fun fitFrame() {
         val v = petView ?: return
+        if (v.companionGeometry != null) return
         val p = petParams ?: return
         val l = loaded ?: return
         if (!alive(petTicket)) return
@@ -660,7 +873,9 @@ internal object PetOverlay {
             dimmed = false
             systemShown = true
             val pos = EdgeSnap.position(dock, view.reach, safeArea(), edge(ctx))
-            val params = baseParams(view.pixelWidth, view.pixelHeight, 0).apply { x = pos.x; y = pos.y }
+            val hardware = if (companionEndpoint != null && !companionRecovery.fallback)
+                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED else 0
+            val params = baseParams(view.pixelWidth, view.pixelHeight, hardware).apply { x = pos.x; y = pos.y }
             petView = view
             petParams = params
             // The 「×」 goes in first, hidden, so the dragged pet stays above it.
@@ -670,7 +885,7 @@ internal object PetOverlay {
                 return false
             }
             if (want == OverlayHost.APPLICATION) lastAdd = AddResult.OK
-            enter(view)
+            if (companionEndpoint == null || companionRecovery.fallback) enter(view)
             drawStill()
             true
         } catch (e: Exception) {
@@ -691,6 +906,7 @@ internal object PetOverlay {
     private fun removeWindows() {
         // Invalidate input/async callbacks before cancel() or platform removal can call us back.
         windows.retire()
+        stopCompanion(restorePixels = false)
         stopLoop()
         openPendingIntent?.cancel()
         openPendingIntent = null
@@ -722,6 +938,7 @@ internal object PetOverlay {
 
     private fun remove(v: View) {
         val ticket = windowTickets.remove(v)
+        v.visibility = View.GONE // A deferred or failed platform removal must not leak UI into a screenshot.
         windows.remove(ticket)
         v.animate().cancel()
         scheduleCleanup()
@@ -813,6 +1030,7 @@ internal object PetOverlay {
         if (on == dimmed) return
         val v = petView ?: return
         dimmed = on
+        companionView?.freeze(on)
         if (on) {
             dismissMenu()
             removeBubble()
@@ -862,9 +1080,8 @@ internal object PetOverlay {
             dismissMenu()
             removeBubble()
             showTarget()
-            react("drag", loop = true)
+            react("drag", loop = true, random = false)
             startLoop()
-            fitFrame()
         }
 
         override fun onDrag(dx: Int, dy: Int) {
@@ -882,8 +1099,7 @@ internal object PetOverlay {
             // always was: docking doesn't change, though at the top the held window stops earlier.
             val drop = EdgeSnap.clampDrag(s.x + dx, s.y + dy, v.pixelWidth, v.pixelHeight, area)
             dropAt = drop
-            val c = targetCenter
-            target?.setArmed(c != null && EdgeSnap.overDismiss(drop, v.pixelWidth, v.pixelHeight, c, v.context.dp(TARGET_DP)))
+            updateTargetArmed(v)
         }
 
         override fun onDragEnd(velocityX: Float) {
@@ -911,27 +1127,66 @@ internal object PetOverlay {
             slide(v, p, EdgeSnap.position(dock, v.reach, area, edge(v.context))) { evaluate() }
         }
 
+        override fun onDragCancel() {
+            if (!alive(ticket)) return
+            dragging = false
+            player.endReaction()
+            hideTarget()
+            redraw()
+            val v = petView ?: return
+            val p = petParams ?: return
+            slide(v, p, EdgeSnap.position(dock, v.reach, safeArea(), edge(v.context))) { evaluate() }
+        }
+
+        override fun onPoke(leftHalf: Boolean, x: Float, y: Float) {
+            if (!alive(ticket)) return
+            machine.onTouch(now())
+            if (dimmed) evaluate()
+            dismissMenu()
+            companionView?.tap(x, y) ?: react(if (leftHalf) "tapLeft" else "tapRight", loop = false)
+            // One tap used to open the conversation: say where that went, a few times.
+            val told = prefs.getInt(K_TAP_HINTS, 0)
+            if (told < TAP_HINTS) {
+                prefs.edit().putInt(K_TAP_HINTS, told + 1).apply()
+                Toast.makeText(app, AppStrings.get(app, R.string.pet_tap_hint), Toast.LENGTH_SHORT).show()
+            }
+        }
+
         override fun onTap(leftHalf: Boolean) {
             if (!alive(ticket)) return
             machine.onTouch(now())
             if (dimmed) evaluate()
             dismissMenu()
-            react(if (leftHalf) "tapLeft" else "tapRight", loop = false)
+            prefs.edit().putInt(K_TAP_HINTS, TAP_HINTS).apply()
             val push = machine.last
             open(push?.sessionId, push?.host, null)
         }
 
-        override fun onLongPress() {
+        override fun onLongPress(rawX: Float?, rawY: Float?) {
             if (!alive(ticket)) return
             machine.onTouch(now())
             if (dimmed) evaluate()
-            showMenu()
+            showMenu(rawX, rawY)
+        }
+
+        override fun onMenuMove(rawX: Float, rawY: Float) {
+            if (alive(ticket)) menuView?.movePointer(rawX, rawY)
+        }
+
+        override fun onMenuEnd(rawX: Float, rawY: Float, cancelled: Boolean) {
+            if (!alive(ticket)) return
+            menuView?.endPointer(rawX, rawY, cancelled)
+            menuView?.let { windowTickets[it] }?.takeIf(::alive)?.let(::scheduleMenuTimeout)
         }
 
         override fun onShownChanged(shown: Boolean) {
             if (!alive(ticket)) return
             if (shown == systemShown) return
             systemShown = shown
+            if (!shown) {
+                stopCompanion()
+                dismissMenu()
+            }
             // Hidden by the system (another app's setHideOverlayWindows): wait, don't re-add.
             main.post(evaluateRunnable)
         }
@@ -949,13 +1204,16 @@ internal object PetOverlay {
             return
         }
         val from = restPos(v, p)
+        val initialBounds = v.companionBounds
         slideAnim = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = 260
             interpolator = easing
             addUpdateListener { a ->
                 if (!alive(ticket)) return@addUpdateListener
                 val f = a.animatedValue as Float
-                placeRest(v, p, WindowPos((from.x + (to.x - from.x) * f).roundToInt(), (from.y + (to.y - from.y) * f).roundToInt()))
+                val at = WindowPos((from.x + (to.x - from.x) * f).roundToInt(), (from.y + (to.y - from.y) * f).roundToInt())
+                placeRest(v, p, if (v.companionGeometry == null) at else
+                    CompanionFloatGeometry.move(at, initialBounds, v.companionBounds))
                 update(v, p)
             }
             addListener(object : AnimatorListenerAdapter() {
@@ -991,6 +1249,13 @@ internal object PetOverlay {
         installWindow(ticket, view, w, params)
     }
 
+    private fun updateTargetArmed(v: PetView) {
+        val drop = dropAt
+        val center = targetCenter
+        target?.setArmed(drop != null && center != null &&
+            EdgeSnap.overDismiss(drop, v.pixelWidth, v.pixelHeight, center, v.context.dp(TARGET_DP)))
+    }
+
     private fun showTarget() {
         val view = target ?: return
         view.setArmed(false)
@@ -1017,7 +1282,7 @@ internal object PetOverlay {
     // ---- bubble ---------------------------------------------------------------------------------
 
     private fun showBubble(b: PetBubble?) {
-        if (b == null || dragging || dimmed || slideAnim != null) {
+        if (b == null || dragging || dimmed || slideAnim != null || menuView != null || closingMenu != null || capture.inFlight) {
             removeBubble()
             return
         }
@@ -1091,14 +1356,14 @@ internal object PetOverlay {
      * The picture under a bubble changed (idle to a jump, say): the bubble glides to its place over
      * the new one, the way the chat page's bubble follows the head. Nothing to do while it stays.
      */
-    private fun followBubble() {
+    private fun followBubble(force: Boolean = false) {
         val view = bubbleView ?: return
         val p = bubbleParams ?: return
         val card = bubbleCard ?: return
         val ticket = windowTickets[view]
         if (!alive(ticket)) return
         val shown = petView?.shown?.name
-        if (shown == bubbleFor) return
+        if (!force && shown == bubbleFor) return
         bubbleFor = shown
         val place = bubblePlace(card, view.tailPx) ?: return
         bubbleMove?.cancel()
@@ -1106,7 +1371,7 @@ internal object PetOverlay {
         p.width = place.w
         p.height = place.h
         val from = WindowPos(p.x, p.y)
-        if (!animationsOn() || from == place.pos) {
+        if (force || !animationsOn() || from == place.pos) {
             p.x = place.pos.x
             p.y = place.pos.y
             update(view, p)
@@ -1206,20 +1471,26 @@ internal object PetOverlay {
     private var menuTimeout: Runnable? = null
     private var menuParams: WindowManager.LayoutParams? = null
 
-    private fun showMenu() {
+    private fun showMenu(rawX: Float? = null, rawY: Float? = null) {
+        if (capture.inFlight || !interactive()) return
         val currentTicket = menuView?.let { windowTickets[it] }
         if (currentTicket != null && alive(currentTicket)) {
             // Reuse the live menu: removing it would reserve MENU until the
             // next-loop confirmation, so an immediate replacement cannot add.
+            if (rawX != null && rawY != null) menuView?.beginPointer(rawX, rawY)
             scheduleMenuTimeout(currentTicket)
             return
         }
         dismissMenu()
         val ctx = hostContext ?: return
         val ticket = windows.claim(OverlayWindowOwner.Role.MENU) ?: return
+        slideAnim?.cancel()
+        removeBubble()
         val menuTarget = machine.last
-        val rows = PetMenuItem.of(menuTarget).map { item -> PetMenuView.Row(menuLabel(item)) { if (alive(ticket)) onMenu(item, ticket, menuTarget) } }
-        val view = PetMenuView(ctx, rows, onOutside = { if (alive(ticket)) dismissMenu() })
+        val rows = menuItems(menuTarget).map { item ->
+            PetMenuView.Row(menuLabel(item), item = item, shortLabel = wheelLabel(item)) { if (alive(ticket)) onMenu(item, ticket, menuTarget) }
+        }
+        val view = PetMenuView(ctx, rows, onOutside = { if (alive(ticket)) dismissMenu(animated = true) }, motion = ::animationsOn)
         val params = baseParams(0, 0, WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH)
         if (!placeMenu(view, params)) return
         try {
@@ -1231,52 +1502,60 @@ internal object PetOverlay {
         }
         menuView = view
         menuParams = params
-        if (animationsOn()) {
-            view.alpha = 0f
-            view.animate().alpha(1f).setDuration(150).setInterpolator(easing).start()
-        }
+        if (rawX != null && rawY != null) view.beginPointer(rawX, rawY)
         scheduleMenuTimeout(ticket)
     }
 
-    /**
-     * Sizes [params] to the menu's rows and puts it beside the docked spot (the pet may still be
-     * sliding there after a drag), clear of whatever frame the window may grow to there.
-     */
     private fun placeMenu(view: PetMenuView, params: WindowManager.LayoutParams): Boolean {
         val ctx = hostContext ?: return false
         val pv = petView ?: return false
-        val reach = pv.reach
-        val (mw, mh) = view.measureFor()
-        val area = safeArea()
-        val gap = ctx.dp(8f)
-        val at = EdgeSnap.position(dock, reach, area, edge(ctx))
-        val x = if (dock.side == Side.RIGHT) at.x + reach.left - gap - mw else at.x + reach.right + gap
-        val y = at.y + pv.pixelHeight / 2 - mh / 2
-        params.width = mw
-        params.height = mh
-        params.x = x.coerceIn(area.left + gap, max(area.left + gap, area.screenW - area.right - gap - mw))
-        params.y = y.coerceIn(area.top + gap, max(area.top + gap, area.screenH - area.bottom - gap - mh))
+        val pp = petParams ?: return false
+        val rest = restPos(pv, pp)
+        val body = loaded?.frames?.body?.at(rest) ?: return false
+        val g = PetWheelGeometry.fit(
+            if (view.hosts) machine.last?.hosts?.size?.coerceAtLeast(1) ?: 1 else menuItems(machine.last).size,
+            dock.side, body.centerX.toFloat(), body.centerY.toFloat(), safeArea(), ctx.resources.displayMetrics.density,
+            if (view.hosts) 2f else ctx.resources.configuration.fontScale,
+            view.labelWidth(),
+        )
+        view.place(g)
+        params.width = g.bounds.width
+        params.height = g.bounds.height
+        params.x = g.bounds.left
+        params.y = g.bounds.top
         return true
     }
 
     private fun menuLabel(item: PetMenuItem): String = AppStrings.get(app, when (item) {
         PetMenuItem.ASK -> R.string.pet_ask
         PetMenuItem.NEW_CHAT -> R.string.pet_new_chat
+        PetMenuItem.SCREENSHOT -> R.string.pet_screenshot
         PetMenuItem.STOP -> R.string.pet_stop
         PetMenuItem.SWITCH_HOST -> R.string.pet_switch_host
         PetMenuItem.SNOOZE -> R.string.pet_snooze
         PetMenuItem.SETTINGS -> R.string.pet_settings
     })
 
+    private fun wheelLabel(item: PetMenuItem): String = AppStrings.get(app, when (item) {
+        PetMenuItem.ASK -> R.string.pet_ask
+        PetMenuItem.NEW_CHAT -> R.string.pet_new_chat
+        PetMenuItem.SCREENSHOT -> R.string.pet_wheel_screenshot
+        PetMenuItem.STOP -> R.string.pet_wheel_stop
+        PetMenuItem.SWITCH_HOST -> R.string.pet_wheel_hosts
+        PetMenuItem.SNOOZE -> R.string.pet_wheel_snooze
+        PetMenuItem.SETTINGS -> R.string.pet_wheel_settings
+    })
+
     private fun onMenu(item: PetMenuItem, ticket: OverlayWindowOwner.Ticket, target: PetPush?) {
         machine.onTouch(now())
         when (item) {
             PetMenuItem.ASK, PetMenuItem.NEW_CHAT -> {
-                dismissMenu()
+                dismissMenu(animated = true)
                 showAsk(fresh = item == PetMenuItem.NEW_CHAT)
             }
+            PetMenuItem.SCREENSHOT -> captureScreenshot()
             PetMenuItem.STOP -> {
-                dismissMenu()
+                dismissMenu(animated = true)
                 callDart("stop", mapOf("host" to target?.host, "sessionId" to target?.sessionId)) { evaluate() }
             }
             PetMenuItem.SWITCH_HOST -> showHosts(ticket)
@@ -1294,6 +1573,9 @@ internal object PetOverlay {
     }
 
     /** 切换主机: the menu's rows become the hosts, the one in use muted. */
+    /** The rows this phone can offer: the accessibility screenshot exists from Android 11. */
+    private fun menuItems(push: PetPush?) = PetMenuItem.of(push, screenshots = Build.VERSION.SDK_INT >= 30)
+
     private fun showHosts(ticket: OverlayWindowOwner.Ticket) {
         val view = menuView ?: return
         val params = menuParams ?: return
@@ -1305,7 +1587,9 @@ internal object PetOverlay {
                 }
             }
         })
-        if (placeMenu(view, params)) update(view, params)
+        // Rows and buttons only match again once placed; a list that can't be shown goes.
+        if (!placeMenu(view, params)) { dismissMenu(); return }
+        update(view, params)
         scheduleMenuTimeout(ticket)
     }
 
@@ -1317,12 +1601,62 @@ internal object PetOverlay {
         }
     }
 
-    private fun dismissMenu() {
+    private fun dismissMenu(animated: Boolean = false) {
         menuTimeout?.let(main::removeCallbacks)
         menuTimeout = null
-        menuView?.let { remove(it) }
+        closingMenu?.let { remove(it) }
+        closingMenu = null
+        val view = menuView
         menuView = null
         menuParams = null
+        if (view != null) {
+            if (animated && animationsOn() && alive(windowTickets[view])) {
+                closingMenu = view
+                view.close {
+                    remove(view)
+                    if (closingMenu === view) closingMenu = null
+                }
+            } else remove(view)
+        }
+    }
+
+    private fun captureScreenshot() {
+        val ticket = petTicket
+        if (!alive(ticket)) return
+        val request = capture.begin() ?: return
+        // No exit animation may remain in the image. INVISIBLE keeps the PET generation alive
+        // for EntryActivity's authenticated openIntent without drawing or intercepting touches.
+        dismissMenu()
+        removeBubble()
+        removeAsk()
+        hideTarget()
+        stopLoop()
+        stopCompanion()
+        petView?.animate()?.cancel()
+        petView?.visibility = View.INVISIBLE
+        speaksForResults = false
+        publishStatus()
+        PetScreenshot.capture(app) { result ->
+            val accepted = capture.finish(request) && alive(ticket) && interactive() && machine.enabled &&
+                started == 0 && !machine.appForeground && !machine.snoozed(now()) &&
+                // A phone task that began meanwhile keeps the screen; DSH Go doesn't jump in front of it.
+                PhoneControl.peek()?.foregroundLine() == null
+            val path = result.path
+            if (accepted && path != null) {
+                openIntent(EntryActivity.screenshot(app, path), null)
+            } else {
+                if (path != null) PetScreenshot.discard(app, path)
+                if (accepted) Toast.makeText(app, AppStrings.get(app, when (result.error) {
+                    PetScreenshot.Error.UNSUPPORTED -> R.string.pet_screenshot_unsupported
+                    PetScreenshot.Error.ACCESSIBILITY_REQUIRED -> R.string.pet_screenshot_accessibility
+                    PetScreenshot.Error.SECURE -> R.string.pet_screenshot_secure
+                    PetScreenshot.Error.BUSY -> R.string.pet_screenshot_busy
+                    PetScreenshot.Error.TIMEOUT -> R.string.pet_screenshot_timeout
+                    else -> R.string.pet_screenshot_failed
+                }), Toast.LENGTH_LONG).show()
+            }
+            evaluate()
+        }
     }
 
     private fun deliverSettings() {
@@ -1363,6 +1697,7 @@ internal object PetOverlay {
      * Dart where a send would go meanwhile.
      */
     private fun showAsk(fresh: Boolean) {
+        if (capture.inFlight || !interactive()) return
         removeAsk()
         val ctx = hostContext ?: return
         val pv = petView ?: return
@@ -1378,7 +1713,8 @@ internal object PetOverlay {
         val area = safeArea()
         val gap = ctx.dp(8f)
         val margin = edge(ctx)
-        val at = EdgeSnap.position(dock, pv.reach, area, margin)
+        val at = if (pv.companionGeometry != null) petParams?.let { restPos(pv, it) } ?: return
+            else EdgeSnap.position(dock, pv.reach, area, margin)
         val body = f.body.at(at)
         val pet = ScreenRect(at.x + pv.reach.left, body.top, at.x + pv.reach.right, body.bottom)
         val w = AskPlace.width(pet, dock.side, area, gap, margin, ctx.dp(ASK_MIN_DP), ctx.dp(ASK_MAX_DP))
@@ -1557,7 +1893,18 @@ internal object PetOverlay {
     private fun startRecording(view: AskBarView) {
         stopRecording()
         val gen = ++recording
-        val r = WavRecorder(maxSeconds = 60, onLevel = {}, onLimit = { main.post { if (gen == recording) micUp(cancelled = false) } })
+        lateinit var r: WavRecorder
+        r = WavRecorder(
+            maxSeconds = 60,
+            onLevel = {},
+            onLimit = { main.post { if (gen == recording) micUp(cancelled = false) } },
+            onError = { main.post {
+                if (gen == recording && recorder === r) {
+                    stopRecording()
+                    if (askView === view) view.setStatus(AppStrings.get(app, R.string.pet_ask_not_heard), error = true)
+                }
+            } },
+        )
         val mic = MicArbiter.beginDictation()
         if (!runCatching { r.start() }.getOrDefault(false)) {
             MicArbiter.endDictation(mic)
@@ -1703,6 +2050,8 @@ internal object PetOverlay {
 
     private val screen = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == PowerManager.ACTION_POWER_SAVE_MODE_CHANGED && companionEndpoint == null) return
+            if (intent.action == Intent.ACTION_SCREEN_OFF || !interactive()) capture.invalidate()
             evaluate()
         }
     }
@@ -1711,8 +2060,9 @@ internal object PetOverlay {
         override fun onConfigurationChanged(newConfig: Configuration) {
             val diff = lastConfig?.diff(newConfig) ?: 0
             lastConfig = Configuration(newConfig)
-            val relevant = ActivityInfo.CONFIG_ORIENTATION or ActivityInfo.CONFIG_SCREEN_SIZE or ActivityInfo.CONFIG_UI_MODE or ActivityInfo.CONFIG_DENSITY
+            val relevant = ActivityInfo.CONFIG_ORIENTATION or ActivityInfo.CONFIG_SCREEN_SIZE or ActivityInfo.CONFIG_UI_MODE or ActivityInfo.CONFIG_DENSITY or ActivityInfo.CONFIG_FONT_SCALE
             if (diff and relevant == 0) return
+            capture.invalidate()
             removeWindows()
             if (diff and ActivityInfo.CONFIG_DENSITY != 0) {
                 loadRequest++
@@ -1737,6 +2087,7 @@ internal object PetOverlay {
         override fun onActivityStarted(activity: Activity) {
             if (activity !is MainActivity) return
             started++
+            capture.invalidate()
             machine.onForeground(true, now())
             app.getSystemService(NotificationManager::class.java)?.cancel(NOTICE_ID)
             evaluate()
@@ -1762,7 +2113,9 @@ internal object PetOverlay {
             callDart("voiceFallback", mapOf("text" to askDraft)) { raw ->
                 if (listener !== owner || generation != voiceHandoff) return@callDart
                 val text = (raw as? Map<*, *>)?.get("text") as? String ?: return@callDart
-                askDraft = text.take(AskBarView.MAX_TEXT)
+                val limit = AskBarView.MAX_TEXT
+                val cut = if (text.length > limit && text[limit - 1].isHighSurrogate() && text[limit].isLowSurrogate()) limit - 1 else limit
+                askDraft = text.take(cut)
                 prefs.edit().putString("ask_draft", askDraft).apply()
                 returnAsk = true
                 activity.moveTaskToBack(true)

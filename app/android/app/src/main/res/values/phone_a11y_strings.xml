@@ -26,4 +26,21 @@
     <string name="overlay_list_separator">", "</string>
     <!-- The ball's screen-reader action that stops the task. -->
     <item type="id" name="overlay_action_stop" />
+    <!-- The capsule's screen-reader actions: where it rests (it can't be dragged by touch exploration), and folding. -->
+    <item type="id" name="overlay_action_left" />
+    <item type="id" name="overlay_action_centre" />
+    <item type="id" name="overlay_action_right" />
+    <item type="id" name="overlay_action_fold" />
+    <string name="overlay_move_left">Move to the left</string>
+    <string name="overlay_move_centre">Move to the middle</string>
+    <string name="overlay_move_right">Move to the right</string>
+    <string name="overlay_preview_readonly">Background screen preview. View only.</string>
+    <string name="overlay_preview_waiting">Waiting for the background screen…</string>
+    <string name="overlay_preview_protected">Protected screen. Preview is hidden.</string>
+    <string name="overlay_preview_unavailable">Background preview is unavailable.</string>
+    <string name="overlay_control_rejected">The task did not accept this control.</string>
+    <string name="overlay_steer_rejected">Not sent. The task no longer accepts this message; your text is kept.</string>
+    <string name="overlay_preview_in_use">Another task is being previewed</string>
+    <string name="background_parallel_limit_invalid">Choose 1, 2, or 3 background tasks.</string>
+    <string name="background_parallel_limit_save_failed">Could not save the background task limit. Please try again.</string>
 </resources>

@@ -56,8 +56,9 @@ fun main(args: Array<String>) {
         launcher.path, "-b", "{ROOTFS}:{ROOTFS}", "-b", "/fixture-storage:/mnt/storage",
         "/usr/bin/env", "-i", "{GUEST_ENV}", "startup-probe-command"
     )), root, object : DshProcess.Listener {
-        override fun onLog(line: String, stream: String) { logs += line }
+        override fun onLog(line: String, stream: String, storageLine: String) { logs += line }
         override fun onReady(source: DshProcess, baseUrl: String, token: String) {}
+        override fun onStartupFailure(source: DshProcess) {}
         override fun onExit(source: DshProcess, code: Int, expected: Boolean) { exits += code; done.countDown() }
     })
     try {

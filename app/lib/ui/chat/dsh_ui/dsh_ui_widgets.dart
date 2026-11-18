@@ -1,5 +1,5 @@
-// The Flutter components of a dsh-ui view. The catalog and its names follow
-// DS Bot (see `dsh_ui_model.dart`); the drawing is the app's own.
+// The Flutter components of a dsh-ui view. The catalog names live in
+// `dsh_ui_model.dart`.
 
 import 'package:flutter/material.dart';
 

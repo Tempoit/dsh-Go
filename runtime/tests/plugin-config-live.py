@@ -66,7 +66,7 @@ try:
  def post(view,ops):return request(base+'/wave10-config-fixture',{'revision':view['revision'],'ops':ops})
  if mode in ('home','cli'):
   before=get();old=(home/'profiles/web/cordis.patch.yml').read_bytes()
-  status,denied=post(before,[{'op':'set','path':['ordinary'],'value':'write-denied'}]);assert status==409 and denied['code']=='overridden',(status,denied)
+  status,denied=post(before,[{'op':'set','path':['ordinary'],'value':'write-denied'}]);assert status==409 and denied['error']['code']=='overridden',(status,denied)
   assert (home/'profiles/web/cordis.patch.yml').read_bytes()==old
   print(json.dumps({'result':'PASS','mode':mode,'case':'override refuses and file unchanged'}));sys.exit(0)
  guards=[]
@@ -88,7 +88,7 @@ try:
  with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
   futures=[pool.submit(post,before,[{'op':'set','path':['count'],'value':n}]) for n in [8,9]]
   simultaneous=[f.result() for f in futures]
- assert sorted(status for status,_ in simultaneous)==[200,409],[(status,body.get('code')) for status,body in simultaneous]
+ assert sorted(status for status,_ in simultaneous)==[200,409],[(status,body.get('error',{}).get('code')) for status,body in simultaneous]
  results['simultaneousPostStatuses']=[status for status,_ in simultaneous]
  before=get()
  status,defaultArray=post(before,[{'op':'unset','path':['items','0']}]);assert status==200 and defaultArray['value']['items']==['second'],(status,defaultArray)
@@ -96,7 +96,7 @@ try:
  status,mixed=post(before,[{'op':'set','path':['ordinary'],'value':'ordinary-new'},{'op':'set','path':['live'],'value':'live-new'}]);assert status==200,(status,mixed)
  assert mixed['value']['ordinary']=='ordinary-new' and mixed['value']['live']=='live-new'
  results['mixed']=mixed
- status,stale=post(before,[{'op':'set','path':['count'],'value':9}]);assert status==409 and stale['code']=='conflict',(status,stale)
+ status,stale=post(before,[{'op':'set','path':['count'],'value':9}]);assert status==409 and stale['error']['code']=='conflict',(status,stale)
  results['stale']=stale
  for ops in [[{'op':'set','path':['secret'],'value':'SYNTHETIC_DENIED'}],[{'op':'set','path':['nested'],'value':{'visible':'x'}}],[{'op':'set','path':['ordinary'],'value':{'__jsExpr':'1'}}],[{'op':'set','path':['constructor'],'value':{}}],[{'op':'set','path':[],'value':{}}]]:
   status,denied=post(get(),ops);assert status==400,(status,denied)
@@ -106,30 +106,32 @@ try:
  results['unset']=unset
  status,array=post(get(),[{'op':'set','path':['items'],'value':['a','b','c']},{'op':'unset','path':['items','1']}]);assert status==200 and array['value']['items']==['a','c'],(status,array)
  results['array']=array
- status,failed=post(get(),[{'op':'set','path':['fail'],'value':True}]);assert status==409 and failed['code']=='apply-failed',(status,failed)
+ status,failed=post(get(),[{'op':'set','path':['fail'],'value':True}]);assert status==409 and failed['error']['code']=='apply-failed',(status,failed)
  after=get();assert after['value']['fail'] is False and after['value']['ordinary']=='ordinary-new'
  results['applyFailure']=failed
  beforeRestart=get();_,obsBefore=request('/wave10-config-probe')
  status,_=request('/wave10-config-probe',{'action':'restart'});assert status==200
  _,obsAfter=request('/wave10-config-probe');assert obsBefore['uid']==obsAfter['uid']
  assert len(obsAfter['history'])>len(obsBefore['history'])
- status,restarted=post(beforeRestart,[{'op':'set','path':['count'],'value':12}]);assert status==409 and restarted['code']=='conflict',(status,restarted)
+ status,restarted=post(beforeRestart,[{'op':'set','path':['count'],'value':12}]);assert status==409 and restarted['error']['code']=='conflict',(status,restarted)
  results['sameUidRestart']=restarted
  externalBefore=get()
  with (home/'profiles/web/cordis.patch.yml').open('a') as f:f.write('\n- id: wave10-config-fixture\n  config:\n    ordinary: external-change\n')
- status,external=post(externalBefore,[{'op':'set','path':['count'],'value':13}]);assert status==409 and external['code']=='conflict',(status,external)
+ status,external=post(externalBefore,[{'op':'set','path':['count'],'value':13}]);assert status==409 and external['error']['code']=='conflict',(status,external)
  results['externalChange']=external
  status,_=request('/wave10-config-probe',{'action':'failRecovery'});assert status==200
- status,recovery=post(get(),[{'op':'set','path':['fail'],'value':True}]);assert status==500 and recovery['code']=='recovery-failed',(status,recovery)
+ status,recovery=post(get(),[{'op':'set','path':['fail'],'value':True}]);assert status==500 and recovery['error']['code']=='recovery-failed',(status,recovery)
  results['recoveryFailure']=recovery
  results['final']=after
  (root/'results.json').write_text(json.dumps(results,ensure_ascii=False,indent=2)+'\n')
  print(json.dumps({'result':'PASS','extraCases':['20 GET/POST real route guard refusals','simultaneous POST one winner','same UID restart conflict','external disk change conflict','recovery failure 500'],'cases':['list and two instances','schema graph and secret redaction','mixed persist','stale revision','secret-parent-expression-prototype-root denial','invalid config','unset default','array remove','apply rollback']}))
 
 finally:
- if 'results' in locals(): (root/'results.partial.json').write_text(json.dumps(results,ensure_ascii=False,indent=2)+'\n')
- p.terminate()
- try:p.wait(timeout=10)
- except subprocess.TimeoutExpired:p.kill();p.wait()
- f.close()
- (root/'host.log').write_text(redact(logpath.read_text()))
+ try:
+  if 'results' in locals(): (root/'results.partial.json').write_text(json.dumps(results,ensure_ascii=False,indent=2)+'\n')
+ finally:
+  p.terminate()
+  try:p.wait(timeout=10)
+  except subprocess.TimeoutExpired:p.kill();p.wait()
+  f.close()
+  (root/'host.log').write_text(redact(logpath.read_text()))

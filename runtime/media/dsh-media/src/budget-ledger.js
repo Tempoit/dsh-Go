@@ -192,14 +192,13 @@ export function createBudgetLedger(trustedDirectory, { clock = Date.now, checkpo
   async function prepare() {
     await mkdir(trustedDirectory, { recursive: true, mode: 0o700 });
     await guardDirectory();
-    // Existence does not prove durability: a previous creator may have died
-    // after mkdir and before syncing the parent entry. Every caller repairs
-    // the complete ancestor barrier, including the filesystem root, before
-    // reading or admitting work. If any ancestor cannot be synced, fail closed.
-    // No ancestor's mode or contents is changed.
+    // Repair ancestors even when a previous creator died after mkdir. The
+    // Direct runtime synced its installed rootfs before startup; otherwise
+    // only the filesystem root is an established durability boundary.
+    const directRoot = globalThis[Symbol.for('dsh.go.direct')]?.root;
     for (let path = trustedDirectory; ; path = dirname(path)) {
       await syncDirectory(path);
-      if (dirname(path) === path) break;
+      if (path === directRoot || dirname(path) === path) break;
     }
     await guardDirectory();
   }

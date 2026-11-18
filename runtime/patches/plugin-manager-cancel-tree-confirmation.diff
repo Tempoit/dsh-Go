@@ -1,6 +1,6 @@
 --- a/node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js
-@@ -182,8 +182,9 @@
+@@ -270,8 +270,9 @@
  	});
  	try {
  		return alive(targetOf(pid, tree.grouped, platform));
@@ -12,7 +12,7 @@
  	}
  }
  /**
-@@ -199,6 +200,92 @@
+@@ -287,6 +288,92 @@
  		if (Date.now() >= deadline) return;
  		await new Promise((resolve) => setTimeout(resolve, TREE_POLL_MS));
  	}
@@ -105,7 +105,7 @@
  }
  //#endregion
  //#region lib/types/failure.js
-@@ -607,6 +694,18 @@
+@@ -707,6 +794,18 @@
  		if (preflight.length > 0) return await rejected(preflight, "nothing was installed");
  		const cancellation = new AbortController();
  		const grouped = leadsOwnGroup(options.execution);
@@ -124,7 +124,7 @@
  		const child = execa(options.command ?? "pnpm", [...options.args ?? [], ...args.map((arg) => anchorPathSpec(arg, context.cwd))], {
  			cwd: dir,
  			env: environment,
-@@ -617,9 +716,11 @@
+@@ -717,9 +816,11 @@
  			killDescendants: options.execution === "service",
  			buffer: false,
  			stdin: options.execution === "cli" ? "inherit" : "ignore",
@@ -137,7 +137,7 @@
  		let writes = Promise.resolve();
  		/** `settled` records that the process outcome is known; `stalled` that the silence bound stopped the run. */
  		const control = {
-@@ -637,6 +738,7 @@
+@@ -737,6 +838,7 @@
  			clearTimeout(idleTimer);
  			idleTimer = setTimeout(() => {
  				control.stalled = true;
@@ -145,7 +145,7 @@
  				child.kill();
  			}, options.idleTimeoutMs);
  		};
-@@ -664,16 +766,19 @@
+@@ -764,16 +866,19 @@
  		for (const collector of collectors) collector.catch(() => {});
  		if (collectors.length > 0) armIdle();
  		let exitCode;
@@ -169,7 +169,7 @@
  				pid: child.pid,
  				grouped
  			});
-@@ -689,7 +794,8 @@
+@@ -789,7 +894,8 @@
  				options.onOutput?.(notice, "stderr");
  				append(Buffer.from(notice));
  			}
@@ -179,7 +179,7 @@
  			if (completion.status === "rejected") throw completion.reason;
  			const result = completion.value;
  			exitCode = result.exitCode ?? (result.code === "ENOENT" ? 127 : 1);
-@@ -738,7 +844,10 @@
+@@ -839,7 +945,10 @@
  					}
  				}
  				if (warnings.length > 0) {
@@ -190,7 +190,7 @@
  					const repair = ["install", savedFiles.some((file) => file.path.endsWith("pnpm-lock.yaml") && file.text !== void 0) ? "--frozen-lockfile" : "--config.lockfile=false"];
  					const repairing = execa(options.command ?? "pnpm", [...options.args ?? [], ...repair], {
  						cwd: dir,
-@@ -746,13 +855,22 @@
+@@ -847,13 +956,22 @@
  						extendEnv: false,
  						reject: false,
  						stdin: "ignore",
@@ -218,9 +218,9 @@
  					exitCode = 1;
  					const restoration = repaired.exitCode === 0 ? "restored package.json, pnpm-lock.yaml, and node_modules" : "restored package.json and pnpm-lock.yaml, but node_modules could not be reinstalled; run 'dsh plugin install'";
  					const diagnostic = `\ndsh: installation rejected: ${warnings.join("\n")}\ndsh: ${restoration}.\n`;
-@@ -761,11 +879,38 @@
- 					append(Buffer.from(diagnostic));
- 				} else if (options.activateNewBundles !== false) await reconcile(before, dir, context.installAnchor, options);
+@@ -871,11 +989,38 @@
+ 					}
+ 				}
  			}
 +			completed = true;
  		} finally {
@@ -259,15 +259,16 @@
  		}
  		return {
  			exitCode,
-@@ -1972,6 +2117,7 @@
+@@ -2714,6 +2859,8 @@
  			const control = {
  				abort: new AbortController(),
  				phase: "installing",
 +				runs: [],
++				restoreFailure: void 0,
  				result: Promise.resolve(null)
  			};
  			const stopped = () => control.abort.signal.aborted || this.abort.signal.aborted;
-@@ -2021,7 +2167,10 @@
+@@ -2789,7 +2936,10 @@
  					let run;
  					let used = null;
  					for (const [index, registry] of plan.entries()) {
@@ -279,8 +280,8 @@
  						if (stopped()) throw new InstallCancelledError();
  						result.registries.push(registry);
  						used = registry;
-@@ -2035,7 +2184,7 @@
- 							spec,
+@@ -2803,7 +2953,7 @@
+ 							installSpec,
  							...options?.saveExact === true ? ["--save-exact"] : [],
  							...registryArguments(registry)
 -						], control.abort.signal, requestId);
@@ -288,17 +289,20 @@
  						result.packageResult = run;
  						if (stopped()) throw new InstallCancelledError();
  						if (run.incompatible !== void 0) throw new ManagementFailure("incompatible-version", run.incompatible);
-@@ -2077,12 +2226,20 @@
+@@ -2845,12 +2995,23 @@
  					for (const file of bundlePatchPaths(dir, manifest.dsh.bundle)) loadOverlayPatches("dsh", file);
  					version = manifest.version;
  					this.installedFrom.set(name, used);
 +					if (stopped()) throw new InstallCancelledError();
  				} catch (error) {
 -					await this.restoreFiles(files);
-+					// Private stop facts survive unrelated log/finalizer failures and result folding.
++					// Private stop and restore facts survive unrelated finalizer failures and result folding.
 +					await stopOwnedRuns(control.runs);
 +					try {
 +						await this.restoreFiles(files);
++					} catch (restoreError) {
++						control.restoreFailure = restoreError;
++						throw restoreError;
 +					} finally {
 +						for (const run of control.runs) await run.release();
 +					}
@@ -310,16 +314,17 @@
  				result.bundle = name;
  				if (version !== void 0) result.version = version;
  				result.target = name;
-@@ -2127,6 +2284,8 @@
+@@ -2895,6 +3056,9 @@
  			control.abort.abort();
  			/* v8 ignore next -- change() folds every failure into its result; only a lock or disposal error rejects */
  			await control.result.then(() => void 0, () => void 0);
 +			const stopFailure = ownedStopFailure(control.runs);
 +			if (stopFailure !== void 0) throw stopFailure;
++			if (control.restoreFailure !== void 0) throw control.restoreFailure;
  			return { status: "cancelled" };
  		}
  		/** Unload and remove a profile-owned bundle dependency through dsh plugin's pnpm path; a selected name no
-@@ -2201,7 +2360,7 @@
+@@ -2969,7 +3133,7 @@
  			};
  		}
  		/** Run one pnpm command in the profile, streaming its output as install-log chunks. */
@@ -328,7 +333,7 @@
  			const jobId = randomUUID();
  			// Log arguments are separate from execution arguments. Restrict userinfo
  			// matching to URL authority; support aliases and --registry=URL too.
-@@ -2219,6 +2378,7 @@
+@@ -2987,6 +3151,7 @@
  				activateNewBundles: false,
  				idleTimeoutMs: this.idleTimeoutMs,
  				lookupTimeoutMs: this.inspectTimeoutMs,

@@ -1,4 +1,4 @@
-# DSH rc4 after R6: await config authorizers inside the existing HMR/profile locks.
+# DSH 0.2.2-rc.1 after R6: await config authorizers inside the existing HMR/profile locks.
 --- a/node_modules/@deepseek-ai/dsh-config-editor/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-config-editor/lib/index.js
 @@ -13,6 +13,8 @@
@@ -10,17 +10,16 @@
  	static inject = ["loader", "profileContext"];
  	constructor(ownerContext) {
  		super(ownerContext, "configEditor");
-@@ -100,9 +102,11 @@
+@@ -100,9 +102,10 @@
  				if (!this.entries().includes(entry)) throw new Error("Configuration entry changed during reload");
  				const current = structuredClone(entry.options.config ?? {});
  				const inherited = this.inherited(entry, loadProfileDirectory("dsh", this.ownerContext.profileContext.dir, this.ownerContext.profileContext.installAnchor));
 -				const next = change(current, inherited);
  				const fiber = entry.fiber;
 -				if (fiber.state !== 2) throw new Error("Configuration plugin is no longer active");
-+				// Async authorizers run under the same HMR and profile file locks.
-+				// Existing synchronous change callbacks keep their return-value contract.
++				// Authorizers stay inside the existing HMR and profile write locks.
 +				const next = await change(current, inherited);
 +				if (!this.entries().includes(entry) || entry.fiber !== fiber || fiber?.state !== 2) throw new Error("Configuration plugin is no longer active");
- 				const resolved = fiber.ctx.waterfall(fiber, "internal/config", next, () => next);
- 				resolveConfig(fiber.runtime, resolved);
+ 				fiber.resolveConfig(next);
  				let before;
+ 				try {

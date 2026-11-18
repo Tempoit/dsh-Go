@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Portions derived from Material Icons (https://github.com/google/material-design-icons), Apache-2.0, Copyright Google LLC. See THIRD_PARTY_NOTICES.md. -->
+<!-- SPDX-FileCopyrightText: Google -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- See THIRD_PARTY_NOTICES.md. -->
 <!-- 问一句's hold-to-talk key on the floating pet: Material `mic_none_rounded`, tinted in code. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"

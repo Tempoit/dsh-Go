@@ -33,7 +33,7 @@ function validationPath(error,ops){
 }
 export function pluginConfigUnavailable(req){
  let path;try{path=new URL(req.url??'/', 'http://dsh-go.invalid').pathname;}catch{return;}
- if(path===BASE||path.startsWith(BASE+'/'))return {v:1,code:'host-unavailable',message:MESSAGES['host-unavailable']};
+ if(path===BASE||path.startsWith(BASE+'/'))return {v:1,error:{code:'host-unavailable',message:MESSAGES['host-unavailable']}};
 }
 function labelOf(title,entry){
  try{
@@ -255,34 +255,43 @@ export function createPluginConfig(ctx,{readBody,send}){
   let writable=false;if(!reason&&origin.kind==='plugin')try{writable=service().dshGoAsyncChange===true&&service().canWrite?.(entry)===true;}catch{}
   return {summary:{entryId:entry.options.id,package:origin.package,owner:origin.owner,bundle:origin.bundle,kind:origin.kind,source:origin.source,label:labelOf(origin.label,entry),state,configurable:!reason,writable,...reason?{reason}:!writable?{reason:service().dshGoAsyncChange===true?'overridden':'host-unavailable'}:{}},schema,graph,origin};
  }
- async function rows(){
+ async function rows(targetId){
   const editor=service(),manager=ctx.get('pluginManager');if(typeof manager?.listBundles!=='function')throw fault(503,'host-unavailable');
   const bundles=await manager.listBundles();if(serviceIdentity(ctx.get('pluginManager'))!==serviceIdentity(manager)||serviceIdentity(service())!==serviceIdentity(editor))throw fault(409,'conflict');
   const all=[...ctx.get('loader').entries()].filter(e=>typeof e.options.id==='string'),address=new Set(editor.entries()),sources=bundleEntrySources(ctx,all,bundles);const count=new Map();for(const e of all)count.set(e.options.id,(count.get(e.options.id)??0)+1);
-  return all.map((entry,index)=>{const item=inspect(entry,address.has(entry),sources[index]);if(count.get(entry.options.id)>1){item.summary={...item.summary,state:'unsupported',configurable:false,writable:false,reason:'ambiguous-id'};}return {entry,...item};});
+  // Source ownership and duplicate IDs still depend on the full current entry set.
+  // A detail request only needs to serialize/validate its own schema.
+  return all.flatMap((entry,index)=>{if(targetId!==undefined&&entry.options.id!==targetId)return [];const item=inspect(entry,address.has(entry),sources[index]);if(count.get(entry.options.id)>1){item.summary={...item.summary,state:'unsupported',configurable:false,writable:false,reason:'ambiguous-id'};}return {entry,...item};});
  }
- async function locate(id){const row=(await rows()).find(x=>x.summary.entryId===id);if(row&&!row.origin.allowed)throw fault(403,'entry-unavailable');if(!row?.summary.configurable)throw fault(404,'entry-unavailable');return row;}
+ async function locate(id){const row=(await rows(id)).find(x=>x.summary.entryId===id);if(row&&!row.origin.allowed)throw fault(403,'entry-unavailable');if(!row?.summary.configurable)throw fault(404,'entry-unavailable');return row;}
  function token(row,layer){const e=row.entry;return createHmac('sha256',key).update(JSON.stringify([identity(e),identity(e.fiber),identity(e.fiber?.runtime),generations.get(e.fiber)??0,row.origin.proof,row.graph,e.options.config??{},layer.inherited,layer.override,row.summary.writable])).digest('base64url');}
  async function snapshot(id){const row=await locate(id),layer=service().configuration().find(x=>x.entry===row.entry);if(!layer)throw fault(404,'entry-unavailable');
   let inherited=layer.inherited;try{inherited=row.schema(inherited);}catch{}
-  const resolved=plain(row.entry.fiber.config),value=project(row.graph,row.graph.uid,resolved)??{};
+  // Cordis 4.1 retains raw input in config; effectiveConfig is the running value.
+  const fiber=row.entry.fiber,resolved=plain('effectiveConfig'in fiber?fiber.effectiveConfig:fiber.config),value=project(row.graph,row.graph.uid,resolved)??{};
   return {row,layer,body:{v:1,entryId:id,kind:'plugin',owner:row.origin.owner,bundle:row.origin.bundle,source:row.origin.source,revision:token(row,layer),schema:cleanSchema(row.graph),value,base:project(row.graph,row.graph.uid,plain(inherited))??{},user:project(row.graph,row.graph.uid,plain(layer.override))??{},secrets:secretFacts(row.graph,row.entry.options.config,resolved),writable:row.summary.writable}};
  }
  async function update(id,input){
   if(!record(input)||Object.keys(input).some(k=>!['revision','ops'].includes(k))||typeof input.revision!=='string'||input.revision.length>256||!Array.isArray(input.ops)||!input.ops.length||input.ops.length>128)throw fault(400,'invalid-operation');
-  const before=await snapshot(id),editor=service(),bytes=fileBytes(editor.documentPath),oldRaw=structuredClone(before.row.entry.options.config??{});let changed=false;
+  const before=await snapshot(id),editor=service();let changed=false,bytes,oldRaw;
   if(editor.dshGoAsyncChange!==true)throw fault(503,'host-unavailable');
   if(!before.body.writable)throw fault(409,'overridden');
   try{await editor.edit(before.row.entry,async(raw,inherited)=>{
    const current=await snapshot(id);if(!current.body.writable)throw fault(409,'overridden');if(current.row.entry!==before.row.entry||current.body.revision!==input.revision)throw fault(409,'conflict');
    const next=operations(current.row.graph,raw,inherited,input.ops,current.body.value);
    try{current.row.schema(next);}catch(error){throw fault(422,'invalid-config',validationPath(error,input.ops));}
+   try{bytes=fileBytes(editor.documentPath);oldRaw=structuredClone(raw);}catch{throw fault(503,'host-unavailable');}
    changed=true;return next;
   });}catch(error){
    if(FAULTS.has(error))throw error;
    if(String(error?.message).includes('overridden by a home patch or command-line overlay'))throw fault(409,'overridden');
-   if(!changed)throw fault(409,'conflict');
-   const restored=fileBytes(editor.documentPath).equals(bytes)&&before.row.entry.fiber?.state===2&&isDeepStrictEqual(before.row.entry.options.config??{},oldRaw);
+   if(!changed){
+    if(error?.code==='ENOSPC'||error?.code==='EFBIG')throw fault(503,'host-unavailable');
+    throw fault(409,'conflict');
+   }
+   let restoredBytes;
+   try{restoredBytes=fileBytes(editor.documentPath);}catch{throw fault(500,'recovery-failed');}
+   const restored=restoredBytes.equals(bytes)&&before.row.entry.fiber?.state===2&&isDeepStrictEqual(before.row.entry.options.config??{},oldRaw);
    throw fault(restored?409:500,restored?'apply-failed':'recovery-failed');
   }
   return (await snapshot(id)).body;
@@ -290,7 +299,7 @@ export function createPluginConfig(ctx,{readBody,send}){
  return {statusChanged,async handle(req,res,path){
   if(path!==BASE&&!path.startsWith(BASE+'/'))return false;
   try{
-   if(path===BASE){if(req.method!=='GET')send(res,405,{v:1,code:'invalid-operation',message:'此接口不支持该请求方法。'});else send(res,200,{v:1,entries:(await rows()).map(x=>x.summary)});return true;}
+   if(path===BASE){if(req.method!=='GET')send(res,405,{v:1,error:{code:'invalid-operation',message:'此接口不支持该请求方法。'}});else send(res,200,{v:1,entries:(await rows()).map(x=>x.summary)});return true;}
    let id;try{id=decodeURIComponent(path.slice(BASE.length+1));}catch{throw fault(400,'invalid-operation');}
    if(!id||id.length>512)throw fault(404,'entry-unavailable');
    if(req.method==='GET')send(res,200,(await snapshot(id)).body);
@@ -301,8 +310,8 @@ export function createPluginConfig(ctx,{readBody,send}){
     if(String(req.headers['content-type']).split(';')[0].trim().toLowerCase()!=='application/json'){req.resume();throw fault(400,'invalid-operation');}
     let input;try{input=JSON.parse((await readBody(req,512*1024)).toString('utf8'));}catch{throw fault(400,'invalid-operation');}
     send(res,200,await update(id,input));
-   }else send(res,405,{v:1,code:'invalid-operation',message:'此接口不支持该请求方法。'});
-  }catch(error){const known=FAULTS.has(error),code=known?error.code:'host-unavailable',path=known?publicPath(error.path):undefined;send(res,known?error.status:503,{v:1,code,message:MESSAGES[code],...path?{path}:{}});}
+   }else send(res,405,{v:1,error:{code:'invalid-operation',message:'此接口不支持该请求方法。'}});
+  }catch(error){const known=FAULTS.has(error),code=known?error.code:'host-unavailable',path=known?publicPath(error.path):undefined;send(res,known?error.status:503,{v:1,error:{code,message:MESSAGES[code],...path?{path}:{}}});}
   return true;
  }};
 }

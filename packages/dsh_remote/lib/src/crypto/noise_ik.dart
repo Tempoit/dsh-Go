@@ -1,4 +1,6 @@
-// Portions derived from ds-harness-remote (https://github.com/liguobao/ds-harness-remote), MIT, Copyright (c) 2026 DSH Remote contributors. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 DSH Remote contributors
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 // Noise_IK_25519_ChaChaPoly_SHA256 for ds-harness-remote. The IK state machine
 // (Noise Protocol Framework revision 34) is our own implementation, written
 // with the upstream author's agreement; it must reproduce the upstream golden

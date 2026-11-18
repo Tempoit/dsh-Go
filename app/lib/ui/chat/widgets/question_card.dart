@@ -1,4 +1,6 @@
-// Portions derived from PiPilot (https://github.com/CikeSeven/pi_pilot), MIT, Copyright (c) 2026 CikeSeven. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 CikeSeven
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 
 import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +11,7 @@ import '../../theme/app_icons.dart';
 import '../../theme/theme.dart';
 import '../render/markdown_body.dart';
 import 'chat_card.dart';
+import 'schedule_question_body.dart';
 import 'stream_motion.dart';
 
 typedef QuestionResponder = Future<void> Function(UserQuestionRequest request, List<QuestionAnswer> answers);
@@ -169,6 +172,9 @@ class _QuestionCardState extends State<QuestionCard> {
                 if (i > 0) const SizedBox(height: 24),
                 _QuestionBlock(
                   question: questions[i],
+                  scheduleAuthorization:
+                      widget.request.raw['purpose'] == 'schedule-authorization' &&
+                      questions[i].id.startsWith('dsh-go-schedule-authorization-'),
                   index: questions.length > 1 ? i + 1 : null,
                   picked: _picked[i],
                   controller: _custom[i],
@@ -223,6 +229,7 @@ class _QuestionCardState extends State<QuestionCard> {
 class _QuestionBlock extends StatelessWidget {
   const _QuestionBlock({
     required this.question,
+    required this.scheduleAuthorization,
     required this.index,
     required this.picked,
     required this.controller,
@@ -234,6 +241,7 @@ class _QuestionBlock extends StatelessWidget {
   });
 
   final UserQuestion question;
+  final bool scheduleAuthorization;
   final int? index;
   final Set<int> picked;
   final TextEditingController controller;
@@ -266,7 +274,10 @@ class _QuestionBlock extends StatelessWidget {
               style: AppType.eyebrow(color: dsh.textTertiary),
             ),
           ),
-        Text(question.question, style: theme.textTheme.bodyLarge?.copyWith(color: colors.onSurface, height: 1.5)),
+        if (scheduleAuthorization)
+          ScheduleQuestionBody(text: question.question)
+        else
+          Text(question.question, style: theme.textTheme.bodyLarge?.copyWith(color: colors.onSurface, height: 1.5)),
         if (question.detail case final detail? when detail.trim().isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 4),

@@ -286,9 +286,9 @@ void main() {
       expect(find.text('Deepy 小鲸鱼'), findsOneWidget);
       expect(find.text('鲸娘'), findsOneWidget);
       expect(find.text('不显示'), findsOneWidget);
-      expect(find.text('来自 DSH-TUI'), findsOneWidget);
+      expect(find.textContaining('来自 DSH-TUI'), findsOneWidget);
       expect(find.text('大小'), findsOneWidget);
-      for (final s in ['小', '标准', '大']) {
+      for (final s in ['小', '标准', '大', '自定义']) {
         expect(find.text(s), findsOneWidget);
       }
       expect(find.text('安静模式'), findsOneWidget);
@@ -312,6 +312,28 @@ void main() {
       expect(c.read(petPrefsProvider).packId, noPetId);
       expect(find.text('安静模式'), findsNothing);
       expect(find.byType(PetPreview), findsNWidgets(3));
+    });
+
+    testWidgets('自定义: a slider under the sizes, saved on release, the pet at that height', (tester) async {
+      final c = await page(tester);
+      expect(find.byKey(const ValueKey('pet-custom-size')), findsNothing);
+      await tester.tap(find.text('自定义'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(c.read(petPrefsProvider).size, PetSize.custom);
+      expect(find.text('100%'), findsOneWidget);
+      final slider = find.byKey(const ValueKey('pet-custom-size'));
+      await tester.ensureVisible(slider);
+      await tester.pumpAndSettle();
+      await tester.drag(slider, Offset(tester.getSize(slider).width, 0));
+      await tester.pump();
+      expect(c.read(petPrefsProvider).customHeight, PetSize.customMax);
+      expect(c.read(petPrefsProvider).bodyHeight, PetSize.customMax);
+      expect(find.text('300%'), findsOneWidget);
+      await tester.tap(find.text('标准'));
+      await tester.pump();
+      expect(c.read(petPrefsProvider).bodyHeight, 30);
+      expect(c.read(petPrefsProvider).customHeight, PetSize.customMax, reason: 'kept for the next 自定义');
     });
   });
 }

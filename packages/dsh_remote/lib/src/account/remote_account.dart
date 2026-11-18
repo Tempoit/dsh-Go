@@ -1,4 +1,6 @@
-// Portions derived from ds-harness-remote (https://github.com/liguobao/ds-harness-remote), MIT, Copyright (c) 2026 DSH Remote contributors. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 DSH Remote contributors
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 // Account sign-in, device identity, Host directory/pinning and connect.
 library;
 
@@ -14,6 +16,7 @@ import '../channel/rpc_client.dart';
 import '../channel/secure_channel.dart';
 import '../crypto/noise_ik.dart';
 import '../protocol/control.dart' show maxRemoteCapabilityEntries;
+import '../pairing/device_pairing.dart';
 import '../server/server_api.dart';
 import '../state.dart';
 import '../transport/peer_connection.dart';
@@ -22,6 +25,15 @@ import '../transport/transport.dart';
 import '../transport/webrtc_transport.dart';
 import '../util/bytes.dart';
 import 'secret_store.dart';
+
+// Accounts using the same storage object and server keys share commit order.
+// An Expando does not keep an otherwise unreachable SecretStore alive.
+class _AccountStorageState {
+  Future<void> credentialWrites = Future<void>.value();
+  int signInEpoch = 0;
+}
+
+final _accountStorageStates = Expando<Map<String, _AccountStorageState>>();
 
 /// The signed-in account on one Server.
 class RemoteUser {
@@ -132,6 +144,108 @@ class RemoteLogin {
   /// cannot undo it and [result] reports the actual commit outcome.
   /// Registration already processed by the Server is not revoked.
   void cancel() => _cancel();
+}
+
+/// The computer a finished pairing bound this phone to, and the account the
+/// phone is now signed in to.
+class RemotePairedHost {
+  const RemotePairedHost({required this.user, required this.host});
+
+  final RemoteUser user;
+
+  /// The Host from the scanned code (its key is pinned already).
+  final PairingDevice host;
+}
+
+/// A claimed pairing session: show [verificationCode] until the person typed
+/// it into the computer's Remote plugin; [result] completes once this phone's
+/// credentials are stored and the Host key is pinned.
+///
+/// The phone never confirms for the computer. The code has one attempt: a
+/// wrong one on the computer ends the session ([result] fails with
+/// `PAIRING_CODE_REJECTED`) and the whole scan starts over.
+class RemotePairing {
+  RemotePairing._(this.offer, this.mobile, this._claim, this._sendCancel);
+
+  final PairingOffer offer;
+
+  /// This phone's device as the session knows it.
+  final PairingDevice mobile;
+  final PairingClaim _claim;
+  final Future<void> Function() _sendCancel;
+  final Completer<RemotePairedHost> _result = Completer();
+  final StreamController<PairingState> _states = StreamController.broadcast();
+  PairingState _state = PairingState.claimed;
+  bool _committing = false;
+  bool _paused = false;
+  Completer<void>? _resumed;
+
+  /// Exactly 8 digits, leading zeros kept. Show it on the pairing screen only:
+  /// never log, notify, copy or share it.
+  String get verificationCode => _claim.verificationCode;
+
+  /// When the computer can no longer submit the code.
+  DateTime get codeExpiresAt => _claim.expiresAt;
+
+  PairingState get state => _state;
+  Stream<PairingState> get states => _states.stream;
+
+  /// Fails with [PairingException]: `PAIRING_CODE_REJECTED`,
+  /// `PAIRING_CANCELLED`, `PAIRING_EXPIRED`, `PAIRING_ACCOUNT_CONFLICT`,
+  /// `PAIRING_IDENTITY_MISMATCH`, another Server code, ...
+  Future<RemotePairedHost> get result => _result.future;
+
+  bool get isClosed => _result.isCompleted;
+
+  /// Stops polling while the app is in the background (a poll in flight
+  /// still lands). Resuming polls again at once.
+  set paused(bool value) {
+    if (_paused == value) return;
+    _paused = value;
+    if (!value) {
+      final resumed = _resumed;
+      _resumed = null;
+      resumed?.complete();
+    }
+  }
+
+  bool get paused => _paused;
+
+  /// Gives up before the credentials are being stored, and tells the Server
+  /// (best effort). A completed binding is undone by revoking it, not here.
+  Future<void> cancel() async {
+    if (_committing || isClosed) return;
+    _fail(const PairingException('PAIRING_CANCELLED', 'Pairing was cancelled on this phone.'));
+    await _sendCancel().catchError((Object _) {});
+  }
+
+  Future<void> _wait(Duration delay) async {
+    await Future<void>.delayed(delay);
+    while (_paused && !isClosed) {
+      await (_resumed ??= Completer<void>()).future;
+    }
+  }
+
+  void _emit(PairingState state) {
+    if (isClosed || state == _state) return;
+    _state = state;
+    _states.add(state);
+  }
+
+  void _complete(RemotePairedHost host) {
+    if (isClosed) return;
+    _state = PairingState.completed;
+    _states.add(PairingState.completed);
+    _result.complete(host);
+    unawaited(_states.close());
+  }
+
+  void _fail(PairingException error) {
+    if (isClosed) return;
+    _result.completeError(error);
+    unawaited(_states.close());
+    paused = false;
+  }
 }
 
 class _Identity {
@@ -260,10 +374,12 @@ class RemoteAccount {
     HttpClient? httpClient,
     ControlSocketConnector? socketConnector,
     this.loginPollInterval = const Duration(seconds: 2),
+    this.pairingPollInterval = const Duration(milliseconds: 2500),
     this.controlTracer,
     this.peerConnector,
     this.preferredTransports,
     this.onDirectFallback,
+    this.compactHistory = false,
     this.directTimeout = const Duration(seconds: 8),
     this.iceServersTimeout = const Duration(seconds: 10),
   }) : serverUrl = normalizeServerUrl(serverUrl ?? defaultRemoteServer),
@@ -271,6 +387,8 @@ class RemoteAccount {
        _socketConnector = socketConnector {
     api = RemoteServerApi(this.serverUrl, httpClient: httpClient);
     _scope = hashes.sha256.convert(utf8.encode(this.serverUrl.origin)).toString().substring(0, 24);
+    final scopes = _accountStorageStates[secrets] ??= {};
+    _storageState = scopes.putIfAbsent(_scope, _AccountStorageState.new);
   }
 
   final Uri serverUrl;
@@ -280,6 +398,9 @@ class RemoteAccount {
   final String platform;
   final String clientVersion;
   final Duration loginPollInterval;
+
+  /// How often a claimed pairing asks for the computer's answer (2–3 s).
+  final Duration pairingPollInterval;
 
   /// Optional Control-frame tracer (tokens and ciphertext redacted).
   final ControlTracer? controlTracer;
@@ -297,6 +418,13 @@ class RemoteAccount {
   /// raw native exception text, SDP or candidate addresses.
   void Function(String reason)? onDirectFallback;
 
+  /// Requests bounded history summaries from supporting Hosts. Captured by
+  /// [connectHost] for that client's lifetime, including automatic reconnects.
+  /// Changing it only affects the next [connectHost], not live streams or
+  /// cached history. The first successful session fixes the effective mode:
+  /// an unsupported Host stays full even if it gains support on reconnect.
+  bool compactHistory;
+
   /// How long a direct attempt may take to open its DataChannel before the
   /// next path is tried (the Server's larger deadline is capped at 15 s).
   final Duration directTimeout;
@@ -312,10 +440,12 @@ class RemoteAccount {
   _Identity? _identity;
   Future<_Identity>? _creatingIdentity;
   _Credentials? _credentials;
-  Future<void> _credentialWrites = Future<void>.value();
+  // Shared only within this storage object and normalized server scope.
+  late final _AccountStorageState _storageState;
   bool _restored = false;
+  Future<void>? _restoring;
   Map<String, _Pin>? _pins;
-  Future<String>? _refreshing;
+  ({_Credentials owner, Future<String> result})? _refreshing;
   _ActiveConnection? _active;
   final Map<String, DateTime> _directCooldown = {};
   final Map<String, DateTime> _turnCooldown = {};
@@ -346,9 +476,12 @@ class RemoteAccount {
     );
   }
 
-  Future<void> _restore() async {
-    if (_restored) return;
-    _restored = true;
+  Future<void> _restore() {
+    if (_restored) return Future<void>.value();
+    return _restoring ??= _readStoredAccount().whenComplete(() => _restoring = null);
+  }
+
+  Future<void> _readStoredAccount() async {
     final identity = asMap(tryDecodeJson(await _secrets.read(_identityKey) ?? ''));
     try {
       if (identity != null) _identity = _Identity.fromJson(identity);
@@ -364,6 +497,7 @@ class RemoteAccount {
     } on Object {
       _credentials = null;
     }
+    _restored = true;
   }
 
   /// QR-capable sign-in providers of this Server (empty on a self-hosted
@@ -490,6 +624,7 @@ class RemoteAccount {
     await _saveCredentials(
       _Credentials.fromTokens(identity.deviceId, account, tokens, provider: provider),
       beforeWrite: beforeCommit,
+      signIn: true,
     );
     return RemoteUser(account: account, deviceId: identity.deviceId, serverUrl: serverUrl, provider: provider);
   }
@@ -529,40 +664,47 @@ class RemoteAccount {
     );
     await _secrets.write(_identityKey, jsonEncode(identity.toJson()));
     _identity = identity;
-    _credentials = null;
-    await _secrets.delete(_credentialsKey);
+    await _dropCredentials();
     return identity;
   }
 
-  Future<void> _saveCredentials(_Credentials credentials, {void Function()? beforeWrite}) {
+  Future<void> _saveCredentials(_Credentials credentials, {void Function()? beforeWrite, bool signIn = false}) {
     // SecretStore writes are atomic, but not cancellable. Serialize commits
     // so a slow older write cannot finish after a newer login's write.
-    final write = _credentialWrites.then((_) async {
+    final write = _storageState.credentialWrites.then((_) async {
       beforeWrite?.call();
       await _secrets.write(_credentialsKey, jsonEncode(credentials.toJson()));
       _credentials = credentials;
+      if (signIn) _storageState.signInEpoch++;
     });
-    _credentialWrites = write.catchError((Object _) {});
+    _storageState.credentialWrites = write.catchError((Object _) {});
     return write;
   }
 
   /// Signs out: closes the active connection, revokes this device on the
   /// Server (best effort, when [revokeDevice]) and deletes its tokens. A
   /// revoked device identity is discarded too; Host pins are kept.
+  /// A newer committed sign-in retires further cleanup from this logout;
+  /// a revoke or storage delete already issued cannot be undone here.
   Future<void> logout({bool revokeDevice = true}) async {
+    final epoch = _storageState.signInEpoch;
+    bool isCurrent() => epoch == _storageState.signInEpoch;
     await _restore();
+    if (!isCurrent()) return;
     await _active?.close();
+    if (!isCurrent()) return;
     final credentials = _credentials;
     if (revokeDevice && credentials != null) {
       try {
-        await api.revokeSelf(await accessToken());
+        final token = await accessToken();
+        if (!isCurrent()) return;
+        await api.revokeSelf(token);
       } on Object {
         // Offline or already revoked: still sign out locally.
       }
     }
-    _credentials = null;
-    await _secrets.delete(_credentialsKey);
-    if (revokeDevice) {
+    await _dropCredentials(isCurrent: isCurrent);
+    if (revokeDevice && isCurrent()) {
       _identity = null;
       await _secrets.delete(_identityKey);
     }
@@ -586,12 +728,19 @@ class RemoteAccount {
     if (!forceRefresh && credentials.accessTokenExpiresAt.isAfter(DateTime.now().add(const Duration(seconds: 60)))) {
       return credentials.accessToken;
     }
-    return _refreshing ??= _rotate(credentials).whenComplete(() => _refreshing = null);
+    final refreshing = _refreshing;
+    if (refreshing != null && identical(refreshing.owner, credentials)) return refreshing.result;
+    late final Future<String> result;
+    result = _rotate(credentials).whenComplete(() {
+      if (identical(_refreshing?.result, result)) _refreshing = null;
+    });
+    _refreshing = (owner: credentials, result: result);
+    return result;
   }
 
   Future<String> _rotate(_Credentials credentials) async {
     if (!credentials.refreshTokenExpiresAt.isAfter(DateTime.now())) {
-      await _dropCredentials();
+      await _dropCredentials(owner: credentials);
       throw const RemoteConnectException(
         RemoteFailure('ACCOUNT_AUTH_REQUIRED', 'The device sign-in expired; sign in again.', retryable: false),
       );
@@ -600,13 +749,20 @@ class RemoteAccount {
       final tokens = await api.refresh(credentials.deviceId, credentials.refreshToken);
       await _saveCredentials(
         _Credentials.fromTokens(credentials.deviceId, credentials.account, tokens, provider: credentials.provider),
+        beforeWrite: () {
+          if (!identical(_credentials, credentials)) {
+            throw const RemoteConnectException(
+              RemoteFailure('ACCOUNT_AUTH_REQUIRED', 'The device sign-in changed during refresh.', retryable: false),
+            );
+          }
+        },
       );
       return tokens.accessToken;
     } on RemoteApiException catch (error) {
       if (error.retryable || error.code == 'CONNECTION_FAILED' || error.code == 'RATE_LIMITED') {
         throw RemoteConnectException(RemoteFailure(error.code, error.message, retryable: true));
       }
-      await _dropCredentials();
+      await _dropCredentials(owner: credentials);
       throw RemoteConnectException(
         RemoteFailure(
           'ACCOUNT_AUTH_REQUIRED',
@@ -617,10 +773,281 @@ class RemoteAccount {
     }
   }
 
-  Future<void> _dropCredentials() async {
-    _credentials = null;
-    await _secrets.delete(_credentialsKey);
+  Future<void> _dropCredentials({_Credentials? owner, bool Function()? isCurrent}) {
+    // Deletes share the commit queue; retired refreshes and logouts recheck
+    // their owner at the point where the mutation would actually begin.
+    final write = _storageState.credentialWrites.then((_) async {
+      if (isCurrent != null && !isCurrent()) return;
+      if (owner != null && !identical(_credentials, owner)) return;
+      _credentials = null;
+      await _secrets.delete(_credentialsKey);
+    });
+    _storageState.credentialWrites = write.catchError((Object _) {});
+    return write;
   }
+
+  // ---------------------------------------------------------------------------
+  // Device pairing: scan the computer's code (upstream docs/device-pairing-v1.md)
+
+  /// Whether this Server pairs devices by scanning. A failed discovery
+  /// throws ([PairingException]); it never reads as "unsupported".
+  Future<bool> supportsPairing() async {
+    try {
+      return (await api.serverCapabilities()).devicePairing == devicePairingProtocol;
+    } on RemoteApiException catch (error) {
+      throw _pairingException(error);
+    }
+  }
+
+  /// What a scanned code points at (read-only on the Server: it does not
+  /// use up the claim). The code must belong to this account's Server;
+  /// another fails with `PAIRING_SERVER_MISMATCH` (its [PairingException.origin]
+  /// says which), so the caller can switch Servers with the person's OK.
+  Future<PairingOffer> resolvePairing(PairingScan scan) async {
+    if (scan.origin != serverUrl) {
+      throw PairingException(
+        'PAIRING_SERVER_MISMATCH',
+        'The code belongs to ${scan.origin}, not $serverUrl.',
+        origin: scan.origin,
+      );
+    }
+    final RemoteServerCapabilities capabilities;
+    try {
+      capabilities = await api.serverCapabilities();
+    } on RemoteApiException catch (error) {
+      throw _pairingException(error);
+    }
+    if (capabilities.devicePairing != devicePairingProtocol) {
+      throw const PairingException('PAIRING_UNSUPPORTED', 'This Server does not pair devices by scanning.');
+    }
+    switch (scan) {
+      case PairingLegacyScan(:final offer):
+        return offer;
+      case PairingTicketScan(:final ticket):
+        if (capabilities.devicePairingQr != devicePairingQrFormat) {
+          throw const PairingException('PAIRING_UNSUPPORTED', 'This Server does not resolve short pairing codes.');
+        }
+        final body = await _pairingRequest(
+          () => api.resolvePairing(ticket),
+          until: DateTime.now().add(const Duration(seconds: 30)),
+        );
+        return PairingOffer.parse(body, origin: serverUrl, ticket: ticket);
+    }
+  }
+
+  /// Claims [offer] with this phone's own device identity, once the person
+  /// confirmed the computer on the phone. Returns the code to show; the
+  /// phone then polls until the computer submitted it. No access exists
+  /// before [RemotePairing.result] completes.
+  ///
+  /// [deepseekUserId] is optional unverified metadata (a DeepSeek account
+  /// id from a non-sensitive profile read); never credentials.
+  Future<RemotePairing> claimPairing(PairingOffer offer, {String? deepseekUserId}) async {
+    if (offer.origin != serverUrl) {
+      throw PairingException('PAIRING_SERVER_MISMATCH', 'The session belongs to another Server.', origin: offer.origin);
+    }
+    await _restore();
+    final identity = await _ensureIdentity();
+    final mobile = PairingDevice(
+      deviceId: identity.deviceId,
+      name: identity.name,
+      role: 'client',
+      platform: identity.platform,
+      identityKey: identity.publicKey,
+    );
+    if (mobile.deviceId == offer.host.deviceId || mobile.identityKey == offer.host.identityKey) {
+      throw const PairingException('PAIRING_IDENTITY_MISMATCH', 'The computer and this phone share an identity.');
+    }
+    final privateKey = fromBase64Url(identity.privateKey);
+    String proof(String path, String raw) => pairingProof(
+      devicePrivateKey: privateKey,
+      serverPublicKey: offer.serverPublicKey,
+      sessionId: offer.sessionId,
+      side: 'mobile',
+      path: path,
+      rawJson: raw,
+    );
+    // One serialization; a lost response is recovered by resending exactly
+    // these bytes, never by claiming again with other content.
+    final raw = pairingClaimBody(scanSecret: offer.scanSecret, device: mobile, deepseekUserId: deepseekUserId);
+    final path = offer.path('claim');
+    final claimProof = proof(path, raw);
+    final claim = PairingClaim.parse(
+      await _pairingRequest(() => api.pairingPost(path, raw, claimProof), until: offer.expiresAt),
+    );
+    final cancelPath = offer.path('mobile/cancel');
+    final cancelProof = proof(cancelPath, '{}');
+    final pairing = RemotePairing._(offer, mobile, claim, () => api.pairingPost(cancelPath, '{}', cancelProof));
+    unawaited(_followPairing(pairing, identity, proof(offer.path('mobile/status'), '{}')));
+    return pairing;
+  }
+
+  Future<void> _followPairing(RemotePairing pairing, _Identity identity, String statusProof) async {
+    final path = pairing.offer.path('mobile/status');
+    // Results stay retrievable until `recoverUntil` (creation + 480 s).
+    var deadline = pairing.offer.expiresAt.add(const Duration(seconds: 300));
+    var delay = pairingPollInterval;
+    try {
+      while (!pairing.isClosed) {
+        await pairing._wait(delay);
+        if (pairing.isClosed) return;
+        if (DateTime.now().isAfter(deadline.add(PairingOffer.clockSkew))) {
+          throw const PairingException('PAIRING_EXPIRED', 'The pairing session expired.');
+        }
+        final Object? body;
+        try {
+          body = await api.pairingPost(path, '{}', statusProof);
+          delay = pairingPollInterval;
+        } on RemoteApiException catch (error) {
+          if (error.code == 'PAIRING_NOT_FOUND') {
+            throw const PairingException('PAIRING_EXPIRED', 'The pairing session expired.');
+          }
+          if (!_pairingRetryable(error)) throw _pairingException(error);
+          // Back off on 429 and outages; never start a new session.
+          delay = delay * 2 > const Duration(seconds: 15) ? const Duration(seconds: 15) : delay * 2;
+          continue;
+        }
+        if (pairing.isClosed) return;
+        final status = PairingStatus.parse(body, offer: pairing.offer, mobile: pairing.mobile);
+        if (status.recoverUntil case final recover?) deadline = recover;
+        // Completed is announced once the credentials are stored.
+        if (status.state != PairingState.completed) pairing._emit(status.state);
+        switch (status.state) {
+          case PairingState.created || PairingState.claimed || PairingState.approved:
+            continue;
+          case PairingState.completed:
+            final RemoteUser user;
+            try {
+              user = await _commitPairing(pairing, identity, status.credentials!);
+            } on PairingException {
+              rethrow;
+            } on Object {
+              // Storage failed before the credentials were stored: the same
+              // ones can be fetched again until `recoverUntil`.
+              pairing._committing = false;
+              continue;
+            }
+            // Stored: from here on nothing is committed twice.
+            await _pinPairedHost(pairing.offer.host);
+            pairing._complete(RemotePairedHost(user: user, host: pairing.offer.host));
+            return;
+          case PairingState.failed:
+            final reason = status.failureReason;
+            throw reason == null || reason == 'verification_failed'
+                ? const PairingException('PAIRING_CODE_REJECTED', 'The computer submitted a wrong code.')
+                : PairingException(reason, 'The Server refused the binding ($reason).');
+          case PairingState.cancelled:
+            throw const PairingException('PAIRING_CANCELLED', 'The pairing was cancelled.');
+          case PairingState.expired:
+            throw const PairingException('PAIRING_EXPIRED', 'The pairing session expired.');
+        }
+      }
+    } on PairingException catch (error) {
+      pairing._fail(error);
+    } on Object catch (error) {
+      pairing._fail(PairingException('PAIRING_FAILED', '$error'));
+    }
+  }
+
+  /// Stores this phone's credentials, unless they would replace another
+  /// account's. A storage failure throws (the caller fetches them again);
+  /// only an undecodable stored record counts as none.
+  Future<RemoteUser> _commitPairing(RemotePairing pairing, _Identity identity, PairingCredentials credentials) async {
+    await _restore();
+    const identityChanged = PairingException('PAIRING_IDENTITY_MISMATCH', 'This phone signed out or changed identity.');
+    late String? provider;
+    // Decide at the serialized commit point, from what is stored now: another
+    // sign-in (here, or in another RemoteAccount on the same store) may have
+    // committed since this pairing started.
+    final write = _storageState.credentialWrites.then((_) async {
+      // Still cancellable while queued behind other writes.
+      if (pairing.isClosed) throw const PairingException('PAIRING_CANCELLED', 'Pairing was cancelled on this phone.');
+      final storedIdentity = asMap(tryDecodeJson(await _secrets.read(_identityKey) ?? ''));
+      if (!identical(_identity, identity) || storedIdentity?['deviceId'] != identity.deviceId) throw identityChanged;
+      // A failed read is not "no credentials": it must not let this write
+      // replace another account's sign-in.
+      final raw = await _secrets.read(_credentialsKey);
+      _Credentials? stored;
+      try {
+        final map = asMap(tryDecodeJson(raw ?? ''));
+        stored = map == null ? null : _Credentials.fromJson(map);
+      } on Object {
+        stored = null;
+      }
+      final current =
+          stored != null &&
+          stored.deviceId == identity.deviceId &&
+          stored.refreshTokenExpiresAt.isAfter(DateTime.now().add(const Duration(seconds: 30)));
+      if (current && stored.account != credentials.account) {
+        throw const PairingException(
+          'PAIRING_ACCOUNT_CONFLICT',
+          'This phone is signed in to another account; its credentials are kept.',
+        );
+      }
+      provider = current ? stored.provider : 'pairing';
+      final saved = _Credentials.fromTokens(
+        identity.deviceId,
+        credentials.account,
+        credentials.tokens,
+        provider: provider,
+      );
+      pairing._committing = true;
+      await _secrets.write(_credentialsKey, jsonEncode(saved.toJson()));
+      _credentials = saved;
+      _storageState.signInEpoch++;
+    });
+    _storageState.credentialWrites = write.catchError((Object _) {});
+    await write;
+    return RemoteUser(
+      account: credentials.account,
+      deviceId: identity.deviceId,
+      serverUrl: serverUrl,
+      provider: provider,
+    );
+  }
+
+  /// Pins the Host key from the code the person confirmed, retrying the
+  /// read and the save. Never re-commits credentials: when the pin cannot be
+  /// stored the pairing fails with `PAIRING_PIN_SAVE_FAILED` and the stored
+  /// sign-in stays (pairing again pins it).
+  Future<void> _pinPairedHost(PairingDevice host) async {
+    for (var attempt = 1; ; attempt++) {
+      try {
+        final pins = await _loadPins();
+        pins[host.deviceId] = _Pin(host.identityKey, host.name, DateTime.now());
+        await _savePins(pins);
+        return;
+      } on Object {
+        if (attempt == 3) {
+          throw const PairingException(
+            'PAIRING_PIN_SAVE_FAILED',
+            'The computer key could not be stored on this phone; pair again.',
+          );
+        }
+        await Future<void>.delayed(Duration(milliseconds: 200 * attempt));
+      }
+    }
+  }
+
+  /// Retries outages and rate limits with the same request until [until];
+  /// any other refusal is final.
+  Future<Object?> _pairingRequest(Future<Object?> Function() send, {required DateTime until}) async {
+    var delay = const Duration(seconds: 1);
+    while (true) {
+      try {
+        return await send();
+      } on RemoteApiException catch (error) {
+        if (!_pairingRetryable(error) || DateTime.now().add(delay).isAfter(until)) throw _pairingException(error);
+      }
+      await Future<void>.delayed(delay);
+      if (delay < const Duration(seconds: 8)) delay *= 2;
+    }
+  }
+
+  static bool _pairingRetryable(RemoteApiException error) =>
+      error.retryable || error.code == 'CONNECTION_FAILED' || error.status == 429 || error.status == 503;
+
+  static PairingException _pairingException(RemoteApiException error) => PairingException(error.code, error.message);
 
   // ---------------------------------------------------------------------------
   // Hosts and pins
@@ -744,13 +1171,15 @@ class RemoteAccount {
     Duration healthTimeout = const Duration(seconds: 10),
     DshTracer? tracer,
   }) async {
+    final historyMode = _HistoryMode(compactHistory);
     await _restore();
     final previous = _active;
     _active = null;
     await previous?.close();
-    final carrier = RemoteTunnelCarrier(
+    late final RemoteTunnelCarrier carrier;
+    carrier = RemoteTunnelCarrier(
       hostId: host.id,
-      open: (last) => _openHostSession(host, last, confirmNewHost),
+      open: (last) => _openHostSession(host, last, confirmNewHost, historyMode, () => carrier.isClosed),
       healthInterval: healthInterval,
       healthTimeout: healthTimeout,
       tracer: tracer,
@@ -793,9 +1222,15 @@ class RemoteAccount {
     }
   }
 
-  Future<RemoteHostSession> _openHostSession(RemoteHost host, RemoteFailure? previous, HostTrustPrompt? confirm) async {
+  Future<RemoteHostSession> _openHostSession(
+    RemoteHost host,
+    RemoteFailure? previous,
+    HostTrustPrompt? confirm,
+    _HistoryMode historyMode,
+    bool Function() isCancelled,
+  ) async {
     try {
-      return await _openHostSessionOnce(host, previous, confirm);
+      return await _openHostSessionOnce(host, previous, confirm, historyMode, isCancelled);
     } on RemoteConnectException {
       rethrow;
     } on Object catch (error) {
@@ -807,6 +1242,8 @@ class RemoteAccount {
     RemoteHost host,
     RemoteFailure? previous,
     HostTrustPrompt? confirm,
+    _HistoryMode historyMode,
+    bool Function() isCancelled,
   ) async {
     final identity = _identity;
     if (identity == null || _credentials == null) {
@@ -842,11 +1279,11 @@ class RemoteAccount {
     // (refresh once when the token is refused).
     _TransportSelection selection;
     try {
-      selection = await _connectTransport(token, host.id);
+      selection = await _connectTransport(token, host.id, isCancelled);
     } on RemoteTransportException catch (error) {
       if (error.code != 'AUTH_INVALID' && error.code != 'TOKEN_EXPIRED') rethrow;
       token = await accessToken(forceRefresh: true);
-      selection = await _connectTransport(token, host.id);
+      selection = await _connectTransport(token, host.id, isCancelled);
     }
     final transport = selection.transport;
 
@@ -879,10 +1316,12 @@ class RemoteAccount {
     );
 
     // 4. Capability probe: the first RPC must be harness.transport.describe.
+    var probingCapabilities = true;
     try {
       final description = asMap(
         await rpc.call('harness.transport.describe', const <String, Object?>{}, timeout: const Duration(seconds: 10)),
       );
+      probingCapabilities = false;
       final raw = description?['capabilities'];
       if (raw is! List ||
           raw.length > maxRemoteCapabilityEntries ||
@@ -915,11 +1354,34 @@ class RemoteAccount {
           ),
         );
       }
+      final supportsCompact = capabilities.contains('remote.history.compact.v1');
+      final compact = historyMode.negotiated ?? (supportsCompact && historyMode.requested);
+      if (compact && !supportsCompact) {
+        throw const RemoteConnectException(
+          RemoteFailure(
+            'HISTORY_MODE_CHANGED',
+            'The Host no longer supports compact history; create a new client to load full history.',
+            retryable: false,
+          ),
+        );
+      }
+      if (supportsCompact) {
+        final result = asMap(
+          await rpc.call('remote.history.configure', {'compact': compact}, timeout: const Duration(seconds: 10)),
+        );
+        if (result == null || result.length != 1 || result['compact'] is! bool || result['compact'] != compact) {
+          throw const RemoteConnectException(
+            RemoteFailure('INVALID_MESSAGE', 'The Host returned an invalid history configuration.', retryable: false),
+          );
+        }
+      }
+      historyMode.negotiated = compact;
       setup.stop();
       RemoteNetworkDiagnostics snapshot() => RemoteNetworkDiagnostics(
         transportMode: transport is WebRtcTransport ? transport.actualMode : transport.mode,
         connectionDuration: setup.elapsed,
         roundTripTime: transport is WebRtcTransport ? transport.roundTripTime : null,
+        peerNetwork: transport is WebRtcTransport ? transport.peerNetwork : null,
         fallbackReason:
             selection.fallbackReason ??
             (transport is WebRtcTransport && transport.actualMode == null
@@ -943,7 +1405,7 @@ class RemoteAccount {
       );
     } on RemoteRpcException catch (error) {
       await rpc.close();
-      if (error.code == 'METHOD_NOT_FOUND') {
+      if (probingCapabilities && error.code == 'METHOD_NOT_FOUND') {
         throw const RemoteConnectException(
           RemoteFailure(
             'HARNESS_VERSION_INCOMPATIBLE',
@@ -966,10 +1428,13 @@ class RemoteAccount {
   /// the Host may still hold state for the old one. Noise always starts only
   /// after the final data plane is chosen. Recent failures skip the bad path
   /// for 45 seconds; a changed native network hint clears that cooldown.
-  Future<_TransportSelection> _connectTransport(String token, String hostId) async {
+  Future<_TransportSelection> _connectTransport(String token, String hostId, bool Function() isCancelled) async {
     final connector = peerConnector;
     if (connector == null) {
-      return _TransportSelection(await _connectRelay(token, hostId), RemoteNetworkFallbackReason.webrtcUnavailable);
+      return _TransportSelection(
+        await _connectRelay(token, hostId, isCancelled: isCancelled),
+        RemoteNetworkFallbackReason.webrtcUnavailable,
+      );
     }
     var preferred = RemoteTransportMode.values;
     try {
@@ -996,8 +1461,10 @@ class RemoteAccount {
     // must not suppress a fresh lookup on the separately authorized TURN stage.
     Future<List<RemoteIceServer>> fetchIce(String id) => api.turnCredentials(token, id);
 
-    if (!wantDirect && !wantTurn) return _TransportSelection(await _connectRelay(token, hostId), reason);
-    var control = await _connectRelay(token, hostId, direct: true, preferred: preferred);
+    if (!wantDirect && !wantTurn) {
+      return _TransportSelection(await _connectRelay(token, hostId, isCancelled: isCancelled), reason);
+    }
+    var control = await _connectRelay(token, hostId, direct: true, preferred: preferred, isCancelled: isCancelled);
     if (control.directTransports.isEmpty) {
       return _TransportSelection(control, RemoteNetworkFallbackReason.webrtcUnavailable);
     }
@@ -1020,7 +1487,9 @@ class RemoteAccount {
         _directCooldown[hostId] = DateTime.now().add(const Duration(seconds: 45));
         _notifyFallback(reason);
       }
-      if (wantTurn) control = await _connectRelay(token, hostId, direct: true, preferred: preferred);
+      if (wantTurn) {
+        control = await _connectRelay(token, hostId, direct: true, preferred: preferred, isCancelled: isCancelled);
+      }
     }
     if (wantTurn) {
       try {
@@ -1048,7 +1517,7 @@ class RemoteAccount {
     } else if (!wantDirect) {
       await control.close();
     }
-    return _TransportSelection(await _connectRelay(token, hostId), reason);
+    return _TransportSelection(await _connectRelay(token, hostId, isCancelled: isCancelled), reason);
   }
 
   void _notifyFallback(RemoteNetworkFallbackReason reason) {
@@ -1062,6 +1531,7 @@ class RemoteAccount {
   Future<RelayTransport> _connectRelay(
     String token,
     String hostId, {
+    required bool Function() isCancelled,
     bool direct = false,
     List<RemoteTransportMode>? preferred,
   }) => RelayTransport.connect(
@@ -1071,6 +1541,7 @@ class RemoteAccount {
     hostDeviceId: hostId,
     clientVersion: clientVersion,
     connector: _socketConnector,
+    isCancelled: isCancelled,
     tracer: controlTracer,
     offerDirect: direct,
     preferredTransports: preferred,
@@ -1169,6 +1640,14 @@ const Set<String> _terminalCodes = {
   'UNSUPPORTED_VERSION',
   'ACCOUNT_AUTH_REQUIRED',
 };
+
+// A client's transcript cache must not mix compact and full baselines.
+class _HistoryMode {
+  _HistoryMode(this.requested);
+
+  final bool requested;
+  bool? negotiated;
+}
 
 class _ActiveConnection {
   _ActiveConnection(this.client, this.carrier);

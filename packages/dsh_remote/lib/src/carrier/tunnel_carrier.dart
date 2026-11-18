@@ -1,4 +1,6 @@
-// Portions derived from ds-harness-remote (https://github.com/liguobao/ds-harness-remote), MIT, Copyright (c) 2026 DSH Remote contributors. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 DSH Remote contributors
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 // dsh_client carrier over an authenticated ds-harness-remote connection: maps
 // DshRpc / DshMux onto the Typert Remote tunnel RPCs (`harness.remote.call`,
 // `harness.remote.stream.open|close`, `harness.remote.transfer.*`) and events
@@ -258,6 +260,9 @@ class RemoteTunnelCarrier extends DshCarrier implements WorkspaceUploadCarrier {
 
   /// Capabilities of the live (or last) Host connection.
   List<String> get capabilities => _lastCapabilities;
+
+  @override
+  Set<String>? get peerCapabilities => _lastCapabilities.isEmpty ? null : _lastCapabilities.toSet();
   List<String> _lastCapabilities = const [];
 
   RemoteFailure? get lastFailure => _lastFailure;
@@ -464,7 +469,16 @@ class RemoteTunnelCarrier extends DshCarrier implements WorkspaceUploadCarrier {
         try {
           response = await session.rpc.call('harness.remote.call', request, timeout: timeout ?? callTimeout);
         } on RemoteRpcException catch (error) {
-          if (error.isLocal || error.code != 'RESPONSE_TOO_LARGE') rethrow;
+          // The Host checks response size after executing the request. A
+          // transfer retry would execute it again, not retrieve its result.
+          if (error.isLocal ||
+              error.code != 'RESPONSE_TOO_LARGE' ||
+              endpoint == 'commands/execute' ||
+              endpoint == 'settings/mutate' ||
+              endpoint == 'settings/update' ||
+              endpoint == 'settings/replace') {
+            rethrow;
+          }
           response = await _callTransferred(session, endpoint, encoded, timeout);
         }
       }
@@ -534,14 +548,12 @@ class RemoteTunnelCarrier extends DshCarrier implements WorkspaceUploadCarrier {
     final perCall = timeout ?? callTimeout;
     final transferId = uuidV7();
     final totalChunks = (encoded.length + remoteTransferChunkBytes - 1) ~/ remoteTransferChunkBytes;
-    var opened = false;
     try {
       await rpc.call('harness.remote.transfer.open', {
         'transferId': transferId,
         'totalBytes': encoded.length,
         'totalChunks': totalChunks,
       }, timeout: perCall);
-      opened = true;
       for (var index = 0; index < totalChunks; index++) {
         final start = index * remoteTransferChunkBytes;
         final end = start + remoteTransferChunkBytes < encoded.length
@@ -594,15 +606,127 @@ class RemoteTunnelCarrier extends DshCarrier implements WorkspaceUploadCarrier {
       if (decoded == null) throw DshProtocolException('$endpoint: remote transfer is not JSON');
       return decoded;
     } finally {
-      if (opened) {
+      // An open timeout can follow allocation on the Host. Closing a missing
+      // UUID is harmless; keep cleanup on this request's original connection.
+      unawaited(
+        rpc
+            .call('harness.remote.transfer.close', {'transferId': transferId}, timeout: const Duration(seconds: 5))
+            .then((_) {}, onError: (Object _) {}),
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Workspace files (independent top-level RPCs, not Gateway endpoints).
+  // Wire contract: plugin 0.6.2, ds-harness-remote commit 479b943.
+
+  @override
+  Future<WorkspaceUploadedFile> uploadWorkspaceFile(String sessionId, List<int> bytes, {required String name}) async {
+    final session = _session;
+    if (!supportsWorkspaceUpload || session == null) {
+      throw const DshRemoteException(
+        'WORKSPACE_UPLOAD_UNSUPPORTED',
+        'The live Host connection does not support workspace uploads.',
+      );
+    }
+    if (sessionId.isEmpty || sessionId.length > 512) {
+      throw const DshRemoteException('INVALID_MESSAGE', 'Invalid workspace upload session.');
+    }
+    if (!_safeWorkspaceUploadName(name)) {
+      throw const DshRemoteException('UPLOAD_INVALID_NAME', 'Invalid workspace upload file name.');
+    }
+    final totalBytes = bytes.length;
+    if (totalBytes > maxWorkspaceUploadBytes) {
+      throw const DshRemoteException(
+        'WORKSPACE_UPLOAD_TOO_LARGE',
+        'Workspace uploads exceed the 1 GiB protocol limit.',
+      );
+    }
+    final uploadId = uuidV7();
+    final scope = <String, Object?>{'sessionId': sessionId, 'uploadId': uploadId};
+    var committed = false;
+    try {
+      final opened = asMap(
+        await _workspaceUploadCall(session, 'workspace.upload.open', {
+          ...scope,
+          'name': name,
+          'totalBytes': totalBytes,
+        }),
+      );
+      final chunkBytes = opened?['chunkBytes'];
+      if (opened?['uploadId'] != uploadId || chunkBytes is! int || chunkBytes < 1 || chunkBytes > 64 * 1024) {
+        throw const DshRemoteException('INVALID_MESSAGE', 'Invalid workspace upload open acknowledgement.');
+      }
+      for (var offset = 0; offset < totalBytes;) {
+        final end = offset + chunkBytes < totalBytes ? offset + chunkBytes : totalBytes;
+        final chunk = bytes.sublist(offset, end);
+        if (chunk.any((byte) => byte < 0 || byte > 255)) {
+          throw const DshRemoteException('INVALID_MESSAGE', 'Invalid workspace upload bytes.');
+        }
+        final ack = asMap(
+          await _workspaceUploadCall(session, 'workspace.upload.chunk', {
+            ...scope,
+            'offset': offset,
+            'data': base64Encode(chunk),
+          }),
+        );
+        if (ack?['uploadId'] != uploadId || ack?['receivedBytes'] != end || ack?['receivedBytes'] is! int) {
+          throw const DshRemoteException('INVALID_MESSAGE', 'Invalid workspace upload chunk acknowledgement.');
+        }
+        offset = end;
+      }
+      final result = asMap(await _workspaceUploadCall(session, 'workspace.upload.commit', scope));
+      final finalName = result?['name'];
+      if (finalName is! String ||
+          // The Host may append the longest collision suffix, ' (9999)'.
+          !_safeWorkspaceUploadName(finalName, maxBytes: 227) ||
+          result?['path'] != './$finalName' ||
+          result?['bytes'] != totalBytes ||
+          result?['bytes'] is! int) {
+        throw const DshRemoteException('INVALID_MESSAGE', 'Invalid workspace upload commit result.');
+      }
+      committed = true;
+      return WorkspaceUploadedFile(name: finalName, path: './$finalName', bytes: totalBytes);
+    } finally {
+      if (!committed) {
+        // Even an open timeout can leave an allocation. Never reconnect or
+        // replay a mutation; abort only this UUID on its original connection.
         unawaited(
-          rpc
-              .call('harness.remote.transfer.close', {'transferId': transferId}, timeout: const Duration(seconds: 5))
+          session.rpc
+              .call('workspace.upload.abort', scope, timeout: const Duration(seconds: 5))
               .then((_) {}, onError: (Object _) {}),
         );
       }
     }
   }
+
+  Future<Object?> _workspaceUploadCall(RemoteHostSession session, String method, Map<String, Object?> params) async {
+    void checkConnection() {
+      if (_closed || _session != session || session.isClosed) {
+        throw const RemoteRpcException('TRANSPORT_CLOSED', 'The workspace upload connection ended.', isLocal: true);
+      }
+    }
+
+    try {
+      checkConnection();
+      final result = await session.rpc.call(method, params, timeout: callTimeout);
+      checkConnection();
+      return result;
+    } on RemoteRpcException catch (error) {
+      throw (_foldRpcFailure(method, error) as RpcError).error;
+    }
+  }
+
+  static bool _safeWorkspaceUploadName(String name, {int maxBytes = 220}) =>
+      name.isNotEmpty &&
+      utf8.encode(name).length <= maxBytes &&
+      name != '.' &&
+      name != '..' &&
+      !RegExp(r'[\x00-\x1f\x7f/\\<>:"|?*]').hasMatch(name) &&
+      !name.endsWith('.') &&
+      !name.endsWith(' ') &&
+      !name.startsWith('.dsh-upload-') &&
+      !RegExp(r'^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)', caseSensitive: false).hasMatch(name);
 
   // ---------------------------------------------------------------------------
   // Workspace files (independent top-level RPCs, not Gateway endpoints).
@@ -998,9 +1122,12 @@ class _TunnelLink implements DshMuxLink {
   Future<void> close(int code, String reason) async {
     if (_closed) return;
     _closed = true;
-    await _events?.cancel();
     // A link the mux abandons (ready timeout, $events closed, reconnect(),
     // client close) takes its connection with it; the next link is fresh.
-    await _carrier._closeSession(_session);
+    // Detach the session before the first await so an immediate reconnect
+    // cannot pick up this closing one.
+    final closing = _carrier._closeSession(_session);
+    await _events?.cancel();
+    await closing;
   }
 }

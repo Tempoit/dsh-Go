@@ -1,4 +1,6 @@
-// Portions derived from DS Bot (https://github.com/Fei2411/DeepSeek-Bot), Apache-2.0, Copyright 2026 Fei2411 and the DS Bot contributors. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 Fei2411 and the DS Bot contributors
+// SPDX-License-Identifier: Apache-2.0
+// See THIRD_PARTY_NOTICES.md.
 // Modified: `views.js` normalisation, checks and summary translated to Dart;
 // lenient instead of strict (unknown properties ignored, a broken child becomes
 // a placeholder, limits truncate); a smaller catalog plus `compare` and
@@ -1344,7 +1346,7 @@ String dshUiPlainText(String markdown) {
     final line = lines[i];
     final match = open.firstMatch(line);
     if (match == null) {
-      // 别的围栏：整块照抄，里面的 dsh-ui 字样不当作开头。
+      // 别的围栏：整块原样保留，里面的 dsh-ui 字样不当作开头。
       final other = anyOpen.firstMatch(line);
       out.add(line);
       i++;
@@ -1381,8 +1383,8 @@ bool _closes(String line, String fence) {
   return t.split('').every((c) => c == ch);
 }
 
-/// 模型偶尔不写围栏:把视图 JSON 直接当正文发出来(AGENTS.md 早先的示例就是
-/// 这种写法,模型照着学会)。渲染前把这些裸 JSON 补成 ```` ```dsh-ui ```` 围栏,
+/// 模型偶尔不写围栏:把视图 JSON 直接当正文发出来。渲染前把这些裸 JSON
+/// 补成 ```` ```dsh-ui ```` 围栏,
 /// 后面的围栏链路就能照常画成卡片。
 ///
 /// 只认「单独成段、能完整解析成视图」的 JSON 对象:行内提到的 JSON、已有围栏
@@ -1395,7 +1397,7 @@ String fenceBareDshUiViews(String markdown) {
   while (i < lines.length) {
     final fence = _openingFence(lines[i]);
     if (fence != null) {
-      // 别人的围栏:整块照抄,里面的裸 JSON 不补。
+      // 别人的围栏:整块原样保留,里面的裸 JSON 不补。
       out.add(lines[i]);
       i++;
       while (i < lines.length) {

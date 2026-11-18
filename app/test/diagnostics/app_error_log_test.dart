@@ -3,10 +3,22 @@ import 'dart:convert';
 
 import 'package:dsh_app/diagnostics/app_error_log.dart';
 import 'package:dsh_app/diagnostics/diagnostics_bundle.dart';
+import 'package:dsh_app/diagnostics/diagnostics_channel.dart';
 import 'package:dsh_app/runtime/runtime_bridge.dart';
 import 'package:dsh_app/state/settings_state.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+class _EvidenceChannel extends DiagnosticsChannel {
+  final records = <Map<String, Object?>>[];
+  bool fail = false;
+
+  @override
+  Future<void> recordAppError({required String source, required String errorType, required String stack}) async {
+    if (fail) throw StateError('synthetic evidence failure');
+    records.add({'source': source, 'errorType': errorType, 'stack': stack});
+  }
+}
 
 class _BrokenDescription {
   @override
@@ -25,6 +37,42 @@ class _ReentrantDescription {
 }
 
 void main() {
+  test('persistent evidence contains category and source locations, never exception text', () async {
+    final channel = _EvidenceChannel();
+    final log = AppErrorLog(diagnostics: channel);
+    log.record(
+      AppErrorSource.platform,
+      StateError('PRIVATE_CHAT token=PRIVATE_TOKEN'),
+      StackTrace.fromString('#0 synthetic (package:dsh_app/main.dart:12:3)\nPRIVATE_AUDIO\n/home/private.dart:1:2'),
+    );
+    await Future<void>.value();
+    expect(channel.records.single, {
+      'source': 'platform',
+      'errorType': 'StateError',
+      'stack': 'package:dsh_app/main.dart:12:3',
+    });
+    expect(jsonEncode(channel.records), isNot(contains('PRIVATE_')));
+    channel.fail = true;
+    expect(() => log.record(AppErrorSource.flutter, StateError('original'), StackTrace.empty), returnsNormally);
+    await Future<void>.value();
+    expect(log.snapshot(), hasLength(2));
+  });
+
+  test('error notifications coalesce and listener errors cannot recursively wake the collector', () async {
+    final log = AppErrorLog(diagnostics: _EvidenceChannel());
+    var calls = 0;
+    log.revision.addListener(() {
+      calls++;
+      log.record(AppErrorSource.platform, StateError('listener diagnostic'), StackTrace.empty);
+    });
+    log.record(AppErrorSource.flutter, StateError('one'), StackTrace.empty);
+    log.record(AppErrorSource.flutter, StateError('two'), StackTrace.empty);
+    expect(calls, 0);
+    await Future<void>.value();
+    expect(calls, 1);
+    expect(log.snapshot(), hasLength(3));
+  });
+
   test('records are redacted on entry, including a truncated private-key block', () {
     final at = DateTime.utc(2026, 10, 28);
     final log = AppErrorLog(clock: () => at);

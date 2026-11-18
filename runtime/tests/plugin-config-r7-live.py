@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Actual rc4 HTTP/bundle authorization. Own loopback Host and synthetic MCP peer."""
+"""Actual installed DSH HTTP/bundle authorization. Own loopback Host and synthetic MCP peer."""
 import argparse, pathlib, tempfile, json, hashlib, os, shutil, subprocess, time, re
 import http.cookiejar, urllib.request, urllib.error, concurrent.futures, signal
 p=argparse.ArgumentParser()
@@ -91,7 +91,7 @@ def run_host(stage,actions):
    host.terminate()
    try:host.wait(timeout=10)
    except subprocess.TimeoutExpired:host.kill();host.wait(timeout=5)
-  handle.close();cleanup.append({'stage':stage,'pid':host.pid if host else None,'returncode':host.returncode if host else None,'identity':identity(host.pid)if host else None});save('cleanup.json',cleanup)
+  handle.close();cleanup.append({'stage':stage,'pid':host.pid if host else None,'returncode':host.returncode if host else None,'childReaped':host is not None and host.poll()is not None,'procObservation':identity(host.pid)if host else None});save('cleanup.json',cleanup)
 def first(op,stage):
  before=snapshot('before-reads');proof=observer_get(op,stage);live={x['localId']:x for x in proof['entries']};bundles={x['name']:x for x in proof['bundles']}
  assert live['dsh-app-phone']['state']==2 and live['bare-overlay']['state']==2 and live['disabled-owner']['state']==2
@@ -167,12 +167,12 @@ def optional_profile(op,stage):
  for id in ['sandbox-policy','webserver','dsh-app-phone','optional-session-query-sqlite']:assert request(op,stage,route+'/'+id)[0]==403
  status,sync,_=request(op,stage,'/r7-observer',{'action':'sync-edit'});assert status==200 and sync['synchronousCallbackApplied'];assert get(op,stage)['value']['count']==4
  status,disposed,_=request(op,stage,'/r7-observer',{'action':'dispose-during-change'});assert status==200 and disposed['rejected']and disposed['profileUnchanged'],disposed
- save('optional-profile-proof.json',{'resolvedSource':source,'ordinaryEditorSynchronousCallback':sync,'asyncCallbackDisposedOwnEntry':disposed,'scope':'same fixed rc4 optional module relocated into private profile, no package manager or update download; public bridge GET/POST plus two explicitly separate editor compatibility fixture calls'})
+ save('optional-profile-proof.json',{'resolvedSource':source,'ordinaryEditorSynchronousCallback':sync,'asyncCallbackDisposedOwnEntry':disposed,'scope':'same installed optional module relocated into private profile, no package manager or update download; public bridge GET/POST plus two explicitly separate editor compatibility fixture calls'})
  snapshot('optional-profile-after')
 try:
  if a.mode=='full':run_host('r7',first);run_host('r7-restart',restart)
  else:run_host('r7-optional-profile',optional_profile)
- save('RESULT.json',{'status':'PASS_REAL_RC4_HOST_R7','mode':a.mode,'run':str(run),'httpRequests':len(audit),'ownHostsAllGone':all(x['identity']is None for x in cleanup),'mediaToolsExecuted':False,'packageManagerInvoked':False,'speechPreparationInvoked':False,'source':{'prefix':str(prefix),'bridge':str(a.bridge.resolve()),'media':str(a.media.resolve())},'limits':'Linux loopback Host; synthetic MCP peer only; no App fixture/r13 parity or Android/ABI claim'})
+ save('RESULT.json',{'status':'PASS_REAL_HOST_R7','dshVersion':json.loads((prefix/'node_modules/@deepseek-ai/dsh/package.json').read_text())['version'],'mode':a.mode,'run':str(run),'httpRequests':len(audit),'ownHostsAllGone':all(x['childReaped']for x in cleanup),'mediaToolsExecuted':False,'packageManagerInvoked':False,'speechPreparationInvoked':False,'source':{'prefix':str(prefix),'bridge':str(a.bridge.resolve()),'media':str(a.media.resolve())},'limits':'Linux loopback Host; synthetic MCP peer only; no App fixture/r13 parity or Android/ABI claim'})
  print(json.dumps({'pass':True,'run':str(run),'requests':len(audit)}),flush=True)
 except BaseException as error:save('FAILURE.json',{'type':type(error).__name__,'message':str(error)});raise
 finally:

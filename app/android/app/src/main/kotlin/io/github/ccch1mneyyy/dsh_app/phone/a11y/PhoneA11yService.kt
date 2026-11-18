@@ -1,4 +1,6 @@
-// Portions derived from Phase (https://github.com/CikeSeven/phase), used with the author's permission. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 CikeSeven
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 // Local changes: registers into PhoneRegistry; stops the task on screen off, interrupt and
 // unbind through ControlListener; debug-only probe.
 
@@ -20,6 +22,7 @@ import android.view.Display
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
+import io.github.ccch1mneyyy.dsh_app.phone.PhoneTasks
 
 /**
  * DSH's accessibility service (same process as the app). While connected it is the MAIN
@@ -29,11 +32,29 @@ import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
  */
 class PhoneA11yService : AccessibilityService() {
     internal val clock = EventClock()
+    internal val focusInputObservation = FocusInputObservation()
+    private var focusInputMethod: FocusInputMethod33? = null
+    private var focusInputRetired = false
+
+    @android.annotation.TargetApi(33)
+    override fun onCreateInputMethod(): android.accessibilityservice.InputMethod =
+        FocusInputMethod33(this, focusInputObservation).also {
+            focusInputMethod = it
+            if (destroyed || focusInputRetired) focusInputObservation.retire()
+        }
+
+    @android.annotation.TargetApi(33)
+    internal fun captureFocusInput(): FocusCapturedInput33? {
+        check(android.os.Looper.myLooper() == android.os.Looper.getMainLooper())
+        if (destroyed || instance !== this || PhoneRegistry.mainDriver !== driver || driver == null) return null
+        return focusInputMethod?.capture()
+    }
     private var overlay: ControlOverlay? = null
     private var driver: MainScreenDriver? = null
     private var probe: A11yProbe? = null
     private var receiverRegistered = false
     private var overlayContext: Context? = null
+    private var destroyed = false
 
     /** A dedicated manager whose default token comes from the live accessibility connection. */
     internal fun overlayWindowContext(): Context = overlayContext ?: run {
@@ -48,15 +69,27 @@ class PhoneA11yService : AccessibilityService() {
 
     internal fun invalidateOverlayWindowContext() { overlayContext = null }
 
+    /** User-initiated display captures must omit the service's own controls too. */
+    internal fun hideControlOverlayForPetScreenshot(hide: Boolean) { overlay?.hideForCapture(hide) }
+
     private val screenOff = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             // l10n:keep agent stop reason
-            if (intent.action == Intent.ACTION_SCREEN_OFF) stopAll("屏幕关闭了")
+            if (intent.action == Intent.ACTION_SCREEN_OFF) stopAll("屏幕关闭了", PhoneTasks.StopSource.SCREEN_OFF)
         }
     }
 
     override fun onServiceConnected() {
+        if (destroyed) return
         super.onServiceConnected()
+        // Re-init can reuse this service object. Retire the old driver/handler before publishing
+        // the new one; coordinate starts are on this same main queue and check exact publication.
+        instance?.takeIf { it !== this }?.teardown("无障碍连接已更换") // l10n:keep agent stop reason
+        if (driver != null) teardown("无障碍连接已更换") // l10n:keep agent stop reason
+        if (focusInputRetired) {
+            if (Build.VERSION.SDK_INT >= 33) focusInputMethod?.reconnect()
+            focusInputRetired = false
+        }
         invalidateOverlayWindowContext()
         val o = ControlOverlay(this)
         val d = MainScreenDriver(this, o)
@@ -77,15 +110,22 @@ class PhoneA11yService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         clock.tick(event?.packageName)
+        // A keyboard coming or going moves the control clear of it.
+        if (event?.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) overlay?.onWindowsChanged()
+        // Window changes retire both coordinates and screenshot authorization. Only an identified
+        // window of this service's controls is exempt; switching to DSH itself is still a transition.
+        if (event != null && invalidatesVisual(event.eventType) {
+            overlay?.ownsWindow(event.windowId) == true
+        }) driver?.windowChanged()
     }
 
     /**
-     * The system interrupts feedback (rare for a feedbackGeneric service). The service stays
-     * bound, so the registration stays; only the running task stops.
+     * The system requests feedback interruption, not cancellation of the phone task.
+     * We own no ongoing speech or vibration feedback; keep task ownership and actions intact.
+     * Screen off, explicit stop and service teardown retain their separate stop paths.
      */
     override fun onInterrupt() {
-        // l10n:keep agent stop reason
-        stopAll("无障碍服务被系统打断")
+        Log.i(TAG, "accessibility feedback interrupted; phone task unchanged")
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -100,19 +140,26 @@ class PhoneA11yService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        destroyed = true
         // l10n:keep agent stop reason
         teardown("无障碍服务已停止")
         super.onDestroy()
     }
 
-    /** Screen off, lock, interrupt: abort what runs, answer pending questions with STOP, tell the core. */
-    internal fun stopAll(reason: String) {
-        driver?.abort()
-        overlay?.stopAll()
-        PhoneRegistry.controlListener?.onStopRequested(reason)
+    /** Commit the ambient fence before cancelling prompts, whose STOP reply is not a user choice. */
+    internal fun stopAll(reason: String, source: PhoneTasks.StopSource =
+        PhoneTasks.StopSource.ENVIRONMENT) {
+        try {
+            PhoneRegistry.controlListener?.onStopAllRequested(reason, source)
+        } finally {
+            driver?.abort()
+            overlay?.stopAll()
+        }
     }
 
     private fun teardown(reason: String) {
+        focusInputObservation.retire()
+        focusInputRetired = true
         if (instance !== this && driver == null) return
         val d = driver
         val o = overlay
@@ -120,20 +167,28 @@ class PhoneA11yService : AccessibilityService() {
         if (PhoneRegistry.overlayGate === o) PhoneRegistry.overlayGate = null
         if (instance === this) instance = null
         invalidateOverlayWindowContext()
-        d?.abort()
-        o?.destroy()
-        d?.close()
-        probe?.unregister()
-        probe = null
-        if (receiverRegistered) { runCatching { unregisterReceiver(screenOff) }; receiverRegistered = false }
-        driver = null
-        overlay = null
-        Log.i(TAG, "accessibility service gone: $reason")
-        PhoneRegistry.controlListener?.let { it.onStopRequested(reason); it.onAccessibilityChanged(false) }
+        try {
+            PhoneRegistry.controlListener?.onStopAllRequested(reason)
+        } finally {
+            d?.abort()
+            o?.destroy()
+            d?.close()
+            probe?.unregister()
+            probe = null
+            if (receiverRegistered) { runCatching { unregisterReceiver(screenOff) }; receiverRegistered = false }
+            driver = null
+            overlay = null
+            Log.i(TAG, "accessibility service gone: $reason")
+            PhoneRegistry.controlListener?.onAccessibilityChanged(false)
+        }
     }
 
     companion object {
         private const val TAG = "DshA11y"
+
+        internal fun invalidatesVisual(eventType: Int, ownOverlay: () -> Boolean): Boolean =
+            (eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+                eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) && !ownOverlay()
 
         /** The connected service, if any. */
         @Volatile var instance: PhoneA11yService? = null

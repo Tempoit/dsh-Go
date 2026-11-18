@@ -1,9 +1,13 @@
-// Portions derived from PiPilot (https://github.com/CikeSeven/pi_pilot), MIT, Copyright (c) 2026 CikeSeven. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 CikeSeven
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:dsh_client/dsh_client.dart' show CotTranslationLimits;
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../l10n/l10n.dart';
@@ -14,9 +18,11 @@ import '../../common/pressable.dart';
 import '../../common/smooth_size.dart';
 import '../../common/think_glyph.dart';
 import '../../engine_settings/engine_settings_page.dart' show openSettingsPage;
+import '../../fx/orbs/thinking_orb.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/theme.dart';
 import '../render/markdown_body.dart';
+import 'stream_pacer.dart';
 import 'stream_row.dart';
 
 /// 思考过程:**和工具行同一套解剖的一行**。
@@ -52,9 +58,13 @@ class ThinkingPill extends StatefulWidget {
     this.active = false,
     this.streaming = false,
     this.growIn = false,
+    this.meta,
   });
 
   final String reasoning;
+
+  /// Shown after the label, as a role-play shows how long it has thought.
+  final Widget? meta;
 
   /// 模型此刻还在思考(流式中且正文还没开始)。
   final bool active;
@@ -137,16 +147,18 @@ class _ThinkingPillState extends State<ThinkingPill> {
               shape: Squircle.border(StreamRow.lead * 0.32),
             ),
             child: Center(
-              // 自己一层:转动只重绘这个图形,不重绘整行。
-              child: RepaintBoundary(
-                child: ThinkGlyph(size: 15, color: brand, spinning: active),
-              ),
+              // 思考中是一颗慢慢变形的点阵小光球(Libraries.dev 思考光球),想完换回静止的图形
+              // (和标签一样直接换,不叠着淡入淡出)。
+              child: active
+                  ? ThinkingOrb(state: OrbState.breathing, size: OrbSize.px20, displaySize: 18, ink: OrbInk.tint(brand))
+                  : ThinkGlyph(size: 15, color: brand),
             ),
           ),
         ),
         const SizedBox(width: StreamRow.gap),
-        // 标签直接换字,不做淡入淡出:两个词叠在同一个位置上闪一下更难看。
+        // 标签直接换字,不做淡入淡出:两个词叠在同一个位置上闪一下更乱。
         ThinkingLabel(active ? l10n.chatThinkingActive : l10n.chatThinking, active: active),
+        ?widget.meta,
         if (preview.isNotEmpty) ...[
           const StreamDot(),
           Expanded(
@@ -370,6 +382,7 @@ class ThinkingTicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (AppMotion.fluid(context)) return _FluidTicker(text: text);
     final style = StreamRow.detail(context);
     final scaler = MediaQuery.textScalerOf(context);
     final lineHeight = scaler.scale(style?.fontSize ?? 13) * (style?.height ?? 1.3);
@@ -431,6 +444,195 @@ String thinkingTickerText(String text) {
 /// 尾部最多排这么多字。
 const _tickerChars = 2000;
 
+/// The fluid window's text. [thinkingTickerText] drops a character off the front for
+/// every new one, and past [_tickerChars] that rewraps everything on every update. Here
+/// the cut stands still for [_fluidCutStep] characters, and lands on a line break when
+/// there is one, so the last lines keep their wrapping.
+@visibleForTesting
+String fluidTickerText(String text) {
+  var tail = text.trimRight();
+  if (tail.length > _tickerChars) {
+    var cut = ((tail.length - _tickerChars) ~/ _fluidCutStep + 1) * _fluidCutStep;
+    cut = math.min(cut, tail.length);
+    final breakAt = tail.indexOf('\n', cut);
+    if (breakAt >= 0 && breakAt - cut < _fluidCutStep) cut = breakAt + 1;
+    tail = tail.substring(cut);
+  }
+  return tail.replaceAll('**', '').replaceAll(_blankRun, '\n').trimLeft();
+}
+
+const _fluidCutStep = 600;
+
+/// [ThinkingTicker] on the fluid tier: the same three-line window, in continuous
+/// motion. What made the plain one stutter: text arrives in lumps, each new line starts
+/// its own 160ms move and then stops dead, and a long thought rewraps on every update.
+///
+/// Here the text is paced ([StreamPacer]), and the window holds the text by its bottom
+/// edge: a new line only adds to how far the text still has to rise, and that distance
+/// is worked off at a speed matched to how fast lines are coming. Between updates only
+/// a transform changes; the text isn't laid out again. Lines leave through a soft edge.
+class _FluidTicker extends StatefulWidget {
+  const _FluidTicker({required this.text});
+
+  final String text;
+
+  @override
+  State<_FluidTicker> createState() => _FluidTickerState();
+}
+
+class _FluidTickerState extends State<_FluidTicker> with SingleTickerProviderStateMixin {
+  /// Text to show at most this often; the motion in between runs every frame.
+  static const _publishEvery = 1 / 30;
+  static const _minSettle = 0.09;
+  static const _maxSettle = 0.45;
+
+  late final Ticker _ticker = createTicker(_tick);
+  // Not lazily: made at the first growth, it would take that growth as already shown.
+  late final StreamPacer _pacer;
+
+  /// How far the text still has to rise. Only ever a transform.
+  final _behind = ValueNotifier(0.0);
+  late String _shown = fluidTickerText(widget.text);
+
+  Duration _last = Duration.zero;
+  double _sincePublish = 0;
+  double _height = -1;
+  double _width = -1;
+  double _lineHeight = -1;
+  double _sinceLine = 1;
+
+  /// How long the last lines took to come: what the rise is paced by.
+  double _settle = 0.2;
+
+  @override
+  void initState() {
+    super.initState();
+    _pacer = StreamPacer(shown: widget.text.length);
+  }
+
+  @override
+  void didUpdateWidget(_FluidTicker old) {
+    super.didUpdateWidget(old);
+    if (!widget.text.startsWith(old.text)) {
+      _pacer.reset(widget.text.length);
+      _shown = fluidTickerText(widget.text);
+      // Different text, not more of it: nothing to rise.
+      _height = -1;
+    }
+    if (!_ticker.isActive) {
+      _last = Duration.zero;
+      unawaited(_ticker.start());
+    }
+  }
+
+  @override
+  void dispose() {
+    _ticker.dispose();
+    _behind.dispose();
+    super.dispose();
+  }
+
+  void _tick(Duration elapsed) {
+    final seconds = (elapsed - _last).inMicroseconds / Duration.microsecondsPerSecond;
+    _last = elapsed;
+    _sinceLine += seconds;
+    _pacer.advance(seconds, widget.text.length);
+    _sincePublish += seconds;
+    final behind = _behind.value;
+    if (behind > 0.1) {
+      _behind.value = behind * math.exp(-seconds / _settle);
+    } else if (behind != 0) {
+      _behind.value = 0;
+    }
+    // The last of it goes out at once: the ticker is about to stop.
+    if (_sincePublish >= _publishEvery || _pacer.caughtUp(widget.text.length)) {
+      _sincePublish = 0;
+      final next = fluidTickerText(widget.text.substring(0, _pacer.shown));
+      if (next != _shown) setState(() => _shown = next);
+    }
+    if (_pacer.caughtUp(widget.text.length) && _behind.value == 0) _ticker.stop();
+  }
+
+  /// Text height at [width], with what growing by a line means for the motion.
+  double _measure(TextStyle? style, TextScaler scaler, double width, double lineHeight, double window, String text) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: Directionality.of(context),
+      textScaler: scaler,
+    )..layout(maxWidth: width);
+    final height = painter.height;
+    painter.dispose();
+    // Only what goes past the window has to rise: below that the text grows into the
+    // space it has, and any distance saved up would jump when the window fills.
+    final past = math.max(_height, window);
+    // A wider line or larger type grows the text too, but that isn't a new line.
+    if (_width == width && _lineHeight == lineHeight && _height >= 0 && height > past) {
+      final added = height - past;
+      if (added < lineHeight * 3) {
+        _settle = (0.5 * _settle + 0.5 * _sinceLine * 0.5).clamp(_minSettle, _maxSettle);
+        _sinceLine = 0;
+      }
+      // Set during build for the transform below it: nothing has painted yet. A big lump
+      // rises too, from no further down than the window is tall.
+      _behind.value = math.min(_behind.value + added, window);
+    }
+    _height = height;
+    _width = width;
+    _lineHeight = lineHeight;
+    return height;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final style = StreamRow.detail(context);
+    final scaler = MediaQuery.textScalerOf(context);
+    final lineHeight = scaler.scale(style?.fontSize ?? 13) * (style?.height ?? 1.3);
+    final window = lineHeight * ThinkingTicker.rows;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final height = _measure(style, scaler, width, lineHeight, window, _shown);
+        final overflows = height > window;
+        final text = OverflowBox(
+          // Short of a full window it starts at the top; past that, by the bottom edge.
+          alignment: overflows ? AlignmentDirectional.bottomStart : AlignmentDirectional.topStart,
+          minHeight: 0,
+          maxHeight: double.infinity,
+          child: SizedBox(
+            width: width,
+            child: Text(_shown, style: style),
+          ),
+        );
+        return SizedBox(
+          width: width,
+          height: window,
+          child: ShaderMask(
+            blendMode: BlendMode.dstIn,
+            shaderCallback: (rect) {
+              final soft = overflows ? (lineHeight * 0.7 / rect.height).clamp(0.0, 0.5) : 0.0;
+              return LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: const [Color(0x00000000), Color(0xFF000000)],
+                stops: [0, soft == 0 ? 0.001 : soft],
+              ).createShader(rect);
+            },
+            child: ClipRect(
+              child: ValueListenableBuilder<double>(
+                valueListenable: _behind,
+                child: text,
+                // Under a full window the text is just growing downward: nothing to rise.
+                builder: (context, behind, child) =>
+                    Transform.translate(offset: Offset(0, overflows ? behind : 0), child: child),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 /// 连着几个空行压成一个。
 final _blankRun = RegExp(r'\n[ \t]*(\n[ \t]*)+');
 
@@ -450,8 +652,17 @@ bool _hasProviderScope(BuildContext context) {
 class _TranslationHolder {
   ReasoningTranslation? controller;
 
+  /// [controller] 开始翻译时的界面语言;界面语言一变,旧译文就不再沿用。
+  String? language;
+
   /// 正在看译文(false = 用户切回了原文)。
   bool showTranslation = false;
+
+  void reset() {
+    controller?.dispose();
+    controller = null;
+    showTranslation = false;
+  }
 
   void dispose() => controller?.dispose();
 }
@@ -514,6 +725,7 @@ class _TranslatableReasoningState extends ConsumerState<_TranslatableReasoning> 
   void _start(CotTranslationLimits limits, ReasoningTranslator translator) {
     final holder = widget.holder;
     final sessionId = ref.read(currentSessionProvider);
+    holder.language = reasoningUiLanguage;
     final controller = holder.controller ??= ReasoningTranslation(
       maxTextChars: limits.maxTextChars,
       translate: (text) => translator(text, limits: limits, sessionId: sessionId),
@@ -527,6 +739,7 @@ class _TranslatableReasoningState extends ConsumerState<_TranslatableReasoning> 
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final holder = widget.holder;
+    if (holder.controller != null && holder.language != reasoningUiLanguage) holder.reset();
     final controller = holder.controller;
     final limits = ref.watch(cotTranslationProvider).value;
     final translator = ref.watch(reasoningTranslatorProvider);

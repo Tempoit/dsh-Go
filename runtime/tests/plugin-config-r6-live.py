@@ -82,16 +82,16 @@ def first(op,stage):
  for id in ['home-covered','home-same','cli-covered','home-insert','cli-insert']:
   value=get(op,stage,id);assert not entries[id]['writable'] and not value['writable'];old=patch.read_bytes()
   for ops in [[{'op':'set','path':['count'],'value':9}],[{'op':'unset','path':['count']}],[{'op':'set','path':['live'],'value':'new-online'}],[{'op':'set','path':['count'],'value':9},{'op':'set','path':['live'],'value':'new-online'}]]:
-   status,body,_=post(op,stage,value,ops,id);assert status==409 and body['code']=='overridden' and body['message']!=body['code']
+   status,body,_=post(op,stage,value,ops,id);assert status==409 and body['error']['code']=='overridden' and body['error']['message']!=body['error']['code']
   assert patch.read_bytes()==old
  for id in ['webserver','connection','credentials','sandbox-policy','fs-sandbox','approval','system-prompt']:
   assert id not in entries;assert request(op,stage,route+'/'+id)[0]==403;assert request(op,stage,route+'/'+id,{'revision':view['revision'],'ops':[{'op':'set','path':['title'],'value':'denied'}]})[0]==403
  for path in [route,route+'/normal']:
   for method in ['DELETE','PUT']:
-   status,body,headers=request(op,stage,path,method=method);assert status==405 and body['v']==1 and body['code']=='invalid-operation' and headers.get('content-type','').startswith('application/json')
- status,body,_=post(op,stage,view,[{'op':'set','path':['count'],'value':'SYNTHETIC_R6_DENIED'}]);assert status==422 and body['path']==['count'] and body['message']!=body['code']
- status,body,_=post(op,stage,view,[{'op':'set','path':['validation'],'value':2}]);assert status==422 and 'path' not in body
- status,body,_=post(op,stage,view,[{'op':'set','path':['explicit'],'value':'SYNTHETIC_R6_DENIED'}]);assert status==400 and body['path']==['explicit']
+   status,body,headers=request(op,stage,path,method=method);assert status==405 and body['v']==1 and body['error']['code']=='invalid-operation' and headers.get('content-type','').startswith('application/json')
+ status,body,_=post(op,stage,view,[{'op':'set','path':['count'],'value':'SYNTHETIC_R6_DENIED'}]);assert status==422 and body['error']['path']==['count'] and body['error']['message']!=body['error']['code']
+ status,body,_=post(op,stage,view,[{'op':'set','path':['validation'],'value':2}]);assert status==422 and 'path' not in body['error']
+ status,body,_=post(op,stage,view,[{'op':'set','path':['explicit'],'value':'SYNTHETIC_R6_DENIED'}]);assert status==400 and body['error']['path']==['explicit']
  view=get(op,stage);status,changed,_=post(op,stage,view,[{'op':'set','path':['title'],'value':'persisted'},{'op':'set','path':['count'],'value':5},{'op':'set','path':['live'],'value':'persisted-live'}]);assert status==200 and changed['value']['count']==5
  assert post(op,stage,view,[{'op':'set','path':['count'],'value':6}])[0]==409
  status,media_view,_=post(op,stage,get(op,stage,'dsh-media'),[{'op':'set','path':['limits','maxImages'],'value':1}],'dsh-media');assert status==200 and media_view['value']['limits']['maxImages']==1
@@ -100,7 +100,7 @@ def first(op,stage):
  snapshot('after-writes')
  restore_patch=patch.read_bytes()
  status,disposed,_=request(op,stage,'/r6-observer',{},method='POST');assert status==200 and disposed['connectionAbsent'] and disposed['entryDisabled'] and disposed['privateProfileDisabled'],disposed
- # The real upstream named-route guard now lacks its actual service. It remains closed.
+ # The upstream guard remains closed and retains its legacy flat 503 envelope.
  for path in [route,route+'/normal']:
   status,body,headers=request(op,stage,path);assert status==503 and body['code']=='host-unavailable' and body['message']!=body['code'] and headers.get('content-type','').startswith('application/json') and headers.get('x-dsh-go-guard')=='reject'
  status,body,headers=request(op,stage,route,method='HEAD');assert status==503 and body=='' and headers.get('content-type','').startswith('application/json')
@@ -116,7 +116,7 @@ def fallback(op,stage):
  restore_patch=patch.read_bytes()
  status,disposed,_=request(op,stage,'/r6-observer',{},method='POST');assert status==200 and disposed['connectionAbsent'] and disposed['entryDisabled'] and disposed['privateProfileDisabled']
  for path in [route,route+'/normal']:
-  status,body,headers=request(op,stage,path);assert status==503 and body['code']=='host-unavailable' and body['message']!=body['code'] and headers.get('content-type','').startswith('application/json') and headers.get('x-dsh-go-guard')=='reject'
+  status,body,headers=request(op,stage,path);assert status==503 and body['error']['code']=='host-unavailable' and body['error']['message']!=body['error']['code'] and headers.get('content-type','').startswith('application/json') and headers.get('x-dsh-go-guard')=='reject'
  status,body,headers=request(op,stage,route,method='HEAD');assert status==503 and body=='' and headers.get('content-type','').startswith('application/json')
 try:
  if a.mode=='patched':

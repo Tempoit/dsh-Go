@@ -1,4 +1,5 @@
-// 界面: which home the app opens to (原生 / 网页), then everything about the
+// 界面: which home the app opens to (原生 / 网页), the native start page,
+// then everything about the
 // web app — opening it once, its phone layout, and the display and sending
 // preferences the official General settings keep on the host's engine (only
 // the web app reads them; they were 通用设置).
@@ -9,12 +10,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
+import '../../state/app_mode_state.dart';
 import '../../state/engine_settings_state.dart';
 import '../../state/quick_panel_state.dart';
 import '../../state/settings_state.dart';
 import '../../state/table_tint_state.dart';
 import '../../state/ui_mode_state.dart';
 import '../engine_settings/namespace_copy.dart';
+import '../modes/mode_switch.dart';
 import '../engine_settings/schema_form.dart';
 import '../shell/page_frame.dart';
 import '../shell/quick_panel.dart';
@@ -48,9 +51,22 @@ class InterfacePage extends ConsumerWidget {
     final tableTint = ref.watch(tableTintProvider);
     final engine = ref.watch(engineSettingsProvider).value;
     final quickPanel = ref.watch(quickPanelProvider);
+    final startup = ref.watch(appModeProvider.select((s) => s.startup));
     return AppPage.list(
       title: l10n.hubSettingsInterface,
       children: [
+        SettingsSection(
+          title: l10n.modeSheetTitle,
+          children: [
+            SettingsSegmentTile<AppMode>(
+              key: const ValueKey('interface-startup-mode'),
+              title: l10n.modeStartup,
+              segments: [for (final m in AppMode.values) PillSegment(m, appModeShortLabel(l10n, m))],
+              selected: startup,
+              onChanged: (m) => unawaited(ref.read(appModeProvider.notifier).setStartup(m)),
+            ),
+          ],
+        ),
         SettingsSection(
           title: l10n.hubInterfaceHome,
           spot: Spots.uiMode,
@@ -70,6 +86,17 @@ class InterfacePage extends ConsumerWidget {
                   onTap: () => choose(context, ref, m),
                 ),
               ),
+          ],
+        ),
+        SettingsSection(
+          title: l10n.hubStartPage,
+          children: [
+            SettingsSwitchTile(
+              spot: Spots.chatSuggestions,
+              subtitle: l10n.hubChatSuggestionsHint,
+              value: settings.chatSuggestions,
+              onChanged: (v) => unawaited(ref.read(settingsProvider.notifier).setChatSuggestions(v)),
+            ),
           ],
         ),
         SettingsSection(
@@ -166,6 +193,7 @@ class InterfacePage extends ConsumerWidget {
           ...schemaFormGroups([
             SchemaFormSection(
               title: l10n.engineGeneralWebDisplay,
+              footer: l10n.engineGeneralWebOnlyHint,
               fields: [
                 _field('ui-settings', 'enabled'),
                 _field('ui-chat', 'transcriptView'),
@@ -175,6 +203,7 @@ class InterfacePage extends ConsumerWidget {
             ),
             SchemaFormSection(
               title: l10n.engineGeneralWebSending,
+              footer: l10n.engineGeneralWebOnlyHint,
               fields: [_field('ui-conversation', 'busyEnter'), _field('ui-chat', 'linkOpening')],
             ),
           ], settings: engine),

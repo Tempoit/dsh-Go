@@ -4,6 +4,7 @@
 // (medium) or a column beside the chat (wide).
 
 import 'package:dsh_client/dsh_client.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/l10n.dart';
 import '../../state/adaptive_layout_state.dart';
 import '../../state/agents_state.dart';
+import '../../state/app_notes.dart';
 import '../../state/chat_state.dart';
 import '../../state/session_detail_state.dart';
 import '../../state/usage_state.dart';
@@ -45,8 +47,8 @@ import '../shell/page_frame.dart';
 import '../terminal/terminal_page.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
+import 'conversation_panes.dart';
 import 'session_tab.dart';
-import 'workspace_files.dart';
 
 export 'session_tab.dart';
 
@@ -62,6 +64,25 @@ enum SessionDetailMode {
   /// The two-height bottom sheet (medium windows).
   sheet,
 }
+
+/// Details use tools and prompts, not each changing assistant-text snapshot.
+/// Compare the selected immutable items so same-length replacements still notify.
+class _DetailItems<T extends ChatItem> {
+  _DetailItems(Iterable<T> source) : items = List.unmodifiable(source);
+
+  final List<T> items;
+
+  @override
+  bool operator ==(Object other) =>
+      other.runtimeType == runtimeType && other is _DetailItems<T> && listEquals(items, other.items);
+
+  @override
+  int get hashCode => Object.hashAll(items);
+}
+
+/// Whether [items] show this conversation having sent out a subagent.
+bool dispatchedSubagents(Iterable<ChatItem> items) =>
+    items.whereType<ToolChatItem>().any((t) => toolKindOf(t) == ToolKind.agent);
 
 /// The whole conversation's details (a detail page): the head carries the
 /// title and a few figures, with a row of capsule tabs under it, swiped
@@ -130,9 +151,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage> with Tick
   void initState() {
     super.initState();
     final items = ref.read(chatProvider(widget.sessionId)).items;
-    final delegated =
-        items.whereType<ToolChatItem>().any((t) => toolKindOf(t) == ToolKind.agent) ||
-        ref.read(subagentLineageProvider(widget.sessionId)).isNotEmpty;
+    final delegated = dispatchedSubagents(items) || ref.read(subagentLineageProvider(widget.sessionId)).isNotEmpty;
     final SessionTab initial =
         widget.initialTab ??
         (_mode == SessionDetailMode.page ? SessionTab.trajectory : ref.read(sessionDetailTabProvider));
@@ -347,7 +366,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage> with Tick
               key: _heroKey,
               child: Padding(
                 padding: EdgeInsets.symmetric(horizontal: column),
-                child: _SessionHero(
+                child: SessionHero(
                   sessionId: id,
                   // The panel and the sheet are named in their bar; the hero
                   // keeps the figures.
@@ -398,18 +417,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage> with Tick
           padding: EdgeInsets.symmetric(horizontal: gutter - 16 + column),
           child: TabBarView(
             controller: _controller,
-            children: [
-              for (final tab in _tabs)
-                switch (tab) {
-                  SessionTab.trajectory => TrajectoryTab(sessionId: id),
-                  SessionTab.changes => ChangesTab(sessionId: id),
-                  SessionTab.files => WorkspaceFilesTab(sessionId: id),
-                  SessionTab.progress => ProgressTab(sessionId: id),
-                  SessionTab.context => ContextTab(sessionId: id),
-                  SessionTab.subagents => SubagentsTab(sessionId: id),
-                  SessionTab.plugins => SessionPluginsTab(sessionId: id),
-                },
-            ],
+            children: [for (final tab in _tabs) ConversationPane.ofTab(tab).build(id)],
           ),
         ),
       ),
@@ -505,8 +513,8 @@ class _FadeTop extends StatelessWidget {
 /// The page head: the conversation's title (two lines at most), how many
 /// rounds and whether one runs, then 用时 / 步骤 / 改动文件. Without a [title]
 /// (the panel and the sheet, named in their bar) the rounds line leads.
-class _SessionHero extends ConsumerWidget {
-  const _SessionHero({required this.sessionId, required this.title, this.gutter = 24});
+class SessionHero extends ConsumerWidget {
+  const SessionHero({super.key, required this.sessionId, required this.title, this.gutter = 24});
 
   final String sessionId;
   final String? title;
@@ -518,12 +526,14 @@ class _SessionHero extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
     final turns = ref.watch(chatProvider(sessionId).select((s) => s.turns));
-    final items = ref.watch(chatProvider(sessionId).select((s) => s.items));
+    final tools = ref
+        .watch(chatProvider(sessionId).select((s) => _DetailItems(s.items.whereType<ToolChatItem>())))
+        .items;
     final skew = ref.watch(chatProvider(sessionId).select((s) => s.clockSkew));
     final running = turns.where((t) => t.running).lastOrNull;
     final finished = turns.fold(Duration.zero, (sum, t) => sum + (t.duration ?? Duration.zero));
     final steps = turns.fold(0, (sum, t) => sum + t.steps);
-    final files = fileChangesOf(items.whereType<ToolChatItem>()).length;
+    final files = fileChangesOf(tools).length;
     final subtitle = turns.isEmpty
         ? l10n.hubSessionNoTurns
         : running == null
@@ -760,7 +770,12 @@ class TrajectoryTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
     final turns = ref.watch(chatProvider(sessionId).select((s) => s.turns));
-    final items = ref.watch(chatProvider(sessionId).select((s) => s.items));
+    final items = ref
+        .watch(
+          chatProvider(sessionId)
+              .select((s) => _DetailItems(s.items.where((item) => item is ToolChatItem || item is UserChatItem))),
+        )
+        .items;
     final more = ref.watch(chatProvider(sessionId).select((s) => (s.hasMoreHistory, s.loadingOlder)));
     final skew = ref.watch(chatProvider(sessionId).select((s) => s.clockSkew));
     if (turns.isEmpty && !more.$1) {
@@ -774,7 +789,7 @@ class TrajectoryTab extends ConsumerWidget {
     String? promptOf(TurnTrace trace) {
       for (final p in prompts) {
         if (p.seq >= trace.startSeq && (trace.endSeq == null || p.seq <= trace.endSeq!)) {
-          return p.text;
+          return withoutAppNotes(p.text);
         }
       }
       return null;
@@ -990,11 +1005,10 @@ class _ChangesTabState extends ConsumerState<ChangesTab> {
   List<FileChange> _files = const [];
   Map<String, int> _lastTurn = const {};
 
-  void _derive(List<ChatItem> items, List<TurnTrace> turns) {
-    final inputs = (items, turns);
+  void _derive(List<ToolChatItem> tools, List<TurnTrace> turns) {
+    final inputs = (tools, turns);
     if (identical(_inputs, inputs) || _inputs == inputs) return;
     _inputs = inputs;
-    final tools = items.whereType<ToolChatItem>().toList();
     _files = fileChangesOf(tools);
     final turnOf = <String, int>{
       for (final trace in turns)
@@ -1009,9 +1023,11 @@ class _ChangesTabState extends ConsumerState<ChangesTab> {
     final l10n = context.l10n;
     final theme = Theme.of(context);
     final dsh = DshColors.of(context);
-    final items = ref.watch(chatProvider(widget.sessionId).select((s) => s.items));
+    final tools = ref
+        .watch(chatProvider(widget.sessionId).select((s) => _DetailItems(s.items.whereType<ToolChatItem>())))
+        .items;
     final turns = ref.watch(chatProvider(widget.sessionId).select((s) => s.turns));
-    _derive(items, turns);
+    _derive(tools, turns);
     final files = _files;
     if (files.isEmpty) {
       return _Empty(l10n.hubSessionNoChanges, icon: AppIcons.diff, message: l10n.hubSessionShellChangesHint);
@@ -1330,12 +1346,16 @@ class SubagentsTab extends ConsumerWidget {
     final l10n = context.l10n;
     final dsh = DshColors.of(context);
     final nodes = ref.watch(subagentLineageProvider(sessionId));
-    final items = ref.watch(chatProvider(sessionId).select((s) => s.items));
+    final calls = ref
+        .watch(
+          chatProvider(sessionId).select(
+            (s) => _DetailItems(s.items.whereType<ToolChatItem>().where((item) => toolKindOf(item) == ToolKind.agent)),
+          ),
+        )
+        .items
+        .reversed
+        .toList();
     final turns = ref.watch(chatProvider(sessionId).select((s) => s.turns));
-    final calls = [
-      for (final item in items)
-        if (item is ToolChatItem && toolKindOf(item) == ToolKind.agent) item,
-    ].reversed.toList();
     if (calls.isEmpty && nodes.isEmpty) {
       return _Empty(l10n.hubSessionNoSubagents, tile: FeatureKind.subagents);
     }

@@ -8,28 +8,83 @@ import java.time.ZoneId
 import java.time.format.DateTimeParseException
 
 /** A launchable app. */
-data class AppEntry(val label: String, val packageName: String)
+data class PhoneAppIdentity(val packageName: String, val uid: Int) {
+    init { require(packageName.isNotBlank() && uid >= 0) }
+}
 
-/** Outcome of a system action, one sentence for the model. */
-class SysResult(val ok: Boolean, val message: String, val packageName: String? = null, val appLabel: String? = null)
+data class AppEntry(val label: String, val identity: PhoneAppIdentity) {
+    val packageName: String get() = identity.packageName
+}
 
-/** Where a URL would open; [error] when it may not be opened at all. */
-class UrlTarget(val error: String? = null, val packageName: String? = null, val appLabel: String? = null)
+/** The handler being requested, not proof of the foreground app or a completed operation. */
+sealed interface SystemTarget {
+    data class Known(val app: AppEntry) : SystemTarget
+    data object UserChoice : SystemTarget
+    /** PM could not name the handler; the Intent is sent as it is, after a one-time confirmation. */
+    data object Unknown : SystemTarget
+}
 
-/**
- * The system actions seen from the core: Intents, deep links, notifications, the
- * clipboard, the app list. Implemented by [SystemActions] on Android, faked in the JVM tests.
- */
+/** Android keeps the Intent private; Core checks its prepared target and explicit package for approval. */
+interface SystemLaunch {
+    val target: SystemTarget
+    /** The fixed Intent's explicit package, when known; this does not certify a UID. */
+    val packageName: String? get() = null
+}
+
+/** target is present only once a platform start was attempted, including a throwing start. */
+class SysResult(val ok: Boolean, val message: String, val target: SystemTarget? = null,
+    /** A returned platform start still needs the person to check its actual effect. */
+    val requiresReview: Boolean = false) {
+    val appLabel: String? get() = (target as? SystemTarget.Known)?.app?.label
+}
+
+/** System actions consumed by Core, implemented by Android and faked at the same boundary in tests. */
 interface SystemApi {
     fun apps(): List<AppEntry>
     fun isInstalled(pkg: String): Boolean
-    fun launch(app: AppEntry): SysResult
-    fun urlTarget(url: String): UrlTarget
-    fun openUrl(url: String, target: UrlTarget): SysResult
-    fun intent(spec: IntentSpec, shareTo: AppEntry?): SysResult
+    fun prepareLaunch(app: AppEntry): Either<String, SystemLaunch>
+    fun prepareUrl(url: String): Either<String, SystemLaunch>
+    fun prepareIntent(spec: IntentSpec, selectedApp: AppEntry?): Either<String, SystemLaunch>
+    fun launch(plan: SystemLaunch, dispatch: PhoneTasks.SystemDispatch): SysResult
     fun notify(title: String, text: String): SysResult
     fun clipboardSet(text: String): SysResult
     fun clipboardGet(): SysResult
+}
+
+/** PM adapter data. No package-name heuristic can identify every platform/OEM resolver. */
+internal data class SystemHandler(val packageName: String, val component: String, val uid: Int)
+internal sealed interface SystemResolution {
+    data class Known(val handler: SystemHandler) : SystemResolution
+    data object Choice : SystemResolution
+}
+
+/** Classifies PM facts during Android preparation. Null means the target identity is unknown. */
+internal object SystemHandlers {
+    /** ActivityInfo.enabled may still be the manifest flag for a runtime-enabled launcher alias. */
+    fun componentEnabled(manifestEnabled: Boolean, readSetting: () -> Int): Boolean = try {
+        when (readSetting()) {
+            0 -> manifestEnabled // PackageManager.COMPONENT_ENABLED_STATE_DEFAULT
+            1 -> true // PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+            else -> false // Explicitly disabled or unknown: never fall back to the manifest.
+        }
+    } catch (_: Exception) { false }
+
+    fun valid(candidates: List<SystemHandler>, packageName: String?): Boolean =
+        candidates.isNotEmpty() && candidates.all {
+            it.packageName.isNotBlank() && it.component.isNotBlank() && it.uid >= 0 &&
+                (packageName == null || it.packageName == packageName)
+        } && candidates.groupBy { it.packageName to it.component }.values.all { group ->
+            group.map { it.uid }.distinct().size == 1
+        }
+
+    fun resolve(candidates: List<SystemHandler>, resolved: SystemHandler?, packageName: String?, allowChoice: Boolean): SystemResolution? {
+        if (!valid(candidates, packageName) || resolved == null || resolved.packageName.isBlank() ||
+            resolved.component.isBlank() || resolved.uid < 0) return null
+        if (resolved in candidates) return SystemResolution.Known(resolved)
+        // A conflicting UID for the same component is not a reason to launch a chooser.
+        if (candidates.any { it.packageName == resolved.packageName && it.component == resolved.component }) return null
+        return if (allowChoice) SystemResolution.Choice else null
+    }
 }
 
 /** The fixed `intent` kinds (no arbitrary Intents: they could carry any component or extra). */
@@ -272,6 +327,18 @@ sealed interface Either<out L, out R> {
 /** Lenient typed access to tool arguments (models send "7" for 7 and 7.0 for 7). */
 class Args(private val map: Map<String, Any?>) {
     fun has(key: String) = map[key] != null
+    /** Presence differs from the existing non-null has(): explicit null must not request AUTO. */
+    fun provided(key: String) = map.containsKey(key)
+    /** Disclosure choices require an actual JSON boolean, not a coerced string or number. */
+    fun strictBool(key: String) = map[key] as? Boolean
+    /** Focus input preserves the actual JSON string; existing type coercion is unchanged. */
+    fun strictText(key: String) = map[key] as? String
+    fun strictInt(key: String): Int? = when (val value = map[key]) {
+        is Int -> value
+        is Long -> value.toInt().takeIf { it.toLong() == value }
+        else -> null
+    }
+    fun onlyKeys(vararg keys: String) = map.keys.all { it in keys }
 
     fun str(key: String): String? = when (val v = map[key]) {
         is String -> v.trim().takeIf { it.isNotEmpty() }

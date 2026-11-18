@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../l10n/l10n.dart';
+import '../../state/app_notes.dart';
 import '../chat/dsh_ui/dsh_ui.dart';
 import '../chat/secret_mask.dart';
 import '../common/app_sheet.dart';
@@ -266,7 +267,7 @@ class MessagePickRow extends StatelessWidget {
 
   static String preview(ChatItem item) {
     final raw = switch (item) {
-      UserChatItem(:final text) => maskSecrets(text, mark: '•'),
+      UserChatItem(:final text) => maskSecrets(withoutAppNotes(text), mark: '•'),
       AssistantChatItem(:final text) => maskSecrets(dshUiPlainText(text), mark: '•'),
       _ => '',
     };

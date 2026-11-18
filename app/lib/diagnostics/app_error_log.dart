@@ -1,14 +1,16 @@
+import 'dart:async';
 import 'dart:collection';
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 
+import 'diagnostics_channel.dart';
 import 'redact.dart';
 
-enum AppErrorSource { flutter, platform }
+enum AppErrorSource { flutter, platform, session }
 
-/// A bounded, already-redacted record from this app process. It is not a
-/// persistent crash report, nor a listener for errors in other isolates.
+/// A bounded, already-redacted record from this app process. Persistent evidence
+/// retains only its category and source locations, never the error body.
 class AppErrorRecord {
   const AppErrorRecord({required this.at, required this.source, required this.message, required this.stack});
 
@@ -26,9 +28,11 @@ class AppErrorRecord {
 }
 
 /// Records before delegating to the existing error handlers. Collection is
-/// synchronous and in memory: it performs no IO or connection/provider reads.
+/// synchronous and in memory; content-free persistence is queued separately.
+/// No connection/provider reads or synchronous IO happen in an error handler.
 class AppErrorLog {
-  AppErrorLog({DateTime Function()? clock}) : _clock = clock ?? DateTime.now;
+  AppErrorLog({DateTime Function()? clock, this._diagnostics = const DiagnosticsChannel()})
+    : _clock = clock ?? DateTime.now;
 
   static const maxRecords = 40;
   static const maxMessageLength = 4000;
@@ -36,6 +40,10 @@ class AppErrorLog {
   static const _maxInputLength = 16000;
 
   final DateTime Function() _clock;
+  final DiagnosticsChannel _diagnostics;
+  final ValueNotifier<int> revision = ValueNotifier(0);
+  bool _notificationPending = false;
+  bool _notifying = false;
   final Queue<AppErrorRecord> _records = Queue();
   bool _recording = false;
 
@@ -55,10 +63,42 @@ class AppErrorLog {
       );
       if (_records.length == maxRecords) _records.removeFirst();
       _records.addLast(record);
+      _changed();
+      unawaited(_persist(record, error));
     } catch (_) {
       // Diagnostics must not replace the error being reported with its own.
     } finally {
       _recording = false;
+    }
+  }
+
+  void _changed() {
+    // Coalesce bursts; an error raised by a listener must not recursively notify.
+    if (_notificationPending || _notifying) return;
+    _notificationPending = true;
+    scheduleMicrotask(() {
+      _notificationPending = false;
+      _notifying = true;
+      try {
+        revision.value++;
+      } finally {
+        _notifying = false;
+      }
+    });
+  }
+
+  Future<void> _persist(AppErrorRecord record, Object error) async {
+    try {
+      final type = error.runtimeType.toString();
+      final locations = RegExp(r'\((package:(?:dsh_app|flutter)/[A-Za-z0-9_/.-]{1,120}\.dart:[0-9]{1,7}:[0-9]{1,7})\)');
+      final stack = locations.allMatches(record.stack).take(6).map((m) => m[1]!).join('\n');
+      await _diagnostics.recordAppError(
+        source: record.source.name,
+        errorType: diagnosticErrorTypes.contains(type) ? type : 'OtherError',
+        stack: stack,
+      );
+    } catch (_) {
+      // Diagnostic IO must never report another app error or alter the original handler.
     }
   }
 

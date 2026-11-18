@@ -1,4 +1,6 @@
-// Portions derived from PiPilot (https://github.com/CikeSeven/pi_pilot), MIT, Copyright (c) 2026 CikeSeven. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 CikeSeven
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 
 import 'dart:math' as math;
 
@@ -15,7 +17,7 @@ import 'palette.dart';
 ///
 /// DeepSeek 品牌蓝 `#4D6BFE` 是 OKLCH(0.59, 0.22, 270):饱和度几乎顶格,
 /// 大面积看久了刺眼。默认 [mist] 保留它的色相(267°),彩度压到 0.125,
-/// 明度 0.53,白字 5.39。其余每套只换色相和彩度,明度照抄:
+/// 明度 0.53,白字 5.39。其余每套只换色相和彩度,明度沿用:
 ///
 /// | 角色 | 明度 L | 彩度(× 强调彩度) |
 /// |---|---|---|

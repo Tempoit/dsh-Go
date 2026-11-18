@@ -59,11 +59,11 @@ export function createDescriptor(request, refs = []) {
   return { method: 'POST', path, body, headers };
 }
 
-function errorStatus(status, value) {
+function errorStatus(status, value, failedTaskReceipt = false) {
   if (status === 401 || status === 403) fail('authentication');
   if (status === 429) fail('rate_limit');
-  if (['DataInspectionFailed', 'content_policy_violation', 'moderation_blocked'].includes(value?.code ?? value?.error?.code)) fail('policy');
-  if (status < 200 || status >= 300 || value?.error || value?.code) fail('provider');
+  if (['DataInspectionFailed', 'InputTextSensitiveContentDetected', 'InputImageSensitiveContentDetected', 'OutputImageSensitiveContentDetected', 'OutputVideoSensitiveContentDetected', 'content_policy_violation', 'moderation_blocked'].includes(value?.code ?? value?.error?.code)) fail('policy');
+  if (status < 200 || status >= 300 || (value?.error && !failedTaskReceipt) || value?.code) fail('provider');
 }
 export function normalizeImages(profile, value, n) {
   let rows = value?.data;
@@ -91,7 +91,7 @@ export function normalizeTask(profile, value, expectedId) {
 
 export function createMediaClient({ transport = requestBytes, queryTimeoutMs = 30_000 } = {}) {
   if (!Number.isSafeInteger(queryTimeoutMs) || queryTimeoutMs < 1 || queryTimeoutMs > 30_000) fail('invalid_request');
-  async function send(service, descriptor, secret, { signal, maxResponseBytes = 32 * 1024 * 1024, timeoutMs = 180_000 } = {}) {
+  async function send(service, descriptor, secret, { signal, maxResponseBytes = 32 * 1024 * 1024, timeoutMs = 180_000 } = {}, queryId) {
     checkAbort(signal);
     const url = providerEndpoint(service, descriptor.path);
     parseMediaUrl(url); // Test transports rewrite a validated production URL internally.
@@ -107,7 +107,8 @@ export function createMediaClient({ transport = requestBytes, queryTimeoutMs = 3
     checkAbort(active);
     let value;
     try { value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(response.body)); } catch { errorStatus(response.status); fail('response'); }
-    errorStatus(response.status, value);
+    errorStatus(response.status, value, service.profile === 'ark-video' && queryId !== undefined
+      && value?.id === queryId && value?.status === 'failed');
     return value;
   }
   return {
@@ -128,7 +129,7 @@ export function createMediaClient({ transport = requestBytes, queryTimeoutMs = 3
       taskId(id);
       const profile = request.service.profile;
       const descriptor = { path: CATALOG.profiles[profile].queryPath.replace('{id}', encodeURIComponent(id)), method: profile === 'silicon-video' ? 'POST' : 'GET', ...(profile === 'silicon-video' ? { body: { requestId: id } } : {}) };
-      return normalizeTask(profile, await send(request.service, descriptor, secret, { ...options, timeoutMs: queryTimeoutMs }), id);
+      return normalizeTask(profile, await send(request.service, descriptor, secret, { ...options, timeoutMs: queryTimeoutMs }, id), id);
     },
     async cancel(request, id, secret, options) {
       taskId(id);

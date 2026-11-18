@@ -56,10 +56,27 @@ Future<void> openDrawerViewOptions(BuildContext context, WidgetRef ref, {VoidCal
 
 /// 新建文件夹, filing [sessionIds] in it. Returns the new folder's id.
 Future<String?> createFolderFlow(BuildContext context, WidgetRef ref, {List<String> sessionIds = const []}) async {
-  final view = ref.read(drawerViewProvider.notifier);
-  final draft = await showFolderEditor(context, takenNames: ref.read(drawerViewProvider).folders.map((f) => f.name));
-  if (draft == null) return null;
-  return view.createFolder(draft.name, tint: draft.tint, emoji: draft.emoji, sessionIds: sessionIds);
+  final container = ProviderScope.containerOf(context, listen: false);
+  final owner = container.read(activeHostProvider);
+  var retired = false;
+  final subscription = container.listen(activeHostProvider, (_, next) {
+    if (next != owner) retired = true;
+  });
+  bool owned() => !retired && !subscription.closed;
+  try {
+    final view = ref.read(drawerViewProvider.notifier);
+    final draft = await showFolderEditor(context, takenNames: ref.read(drawerViewProvider).folders.map((f) => f.name));
+    if (!context.mounted || draft == null || !owned()) return null;
+    return await view.createFolder(
+      draft.name,
+      tint: draft.tint,
+      emoji: draft.emoji,
+      sessionIds: sessionIds,
+      isCurrent: owned,
+    );
+  } finally {
+    subscription.close();
+  }
 }
 
 /// 编辑 a folder's name and mark.
@@ -106,19 +123,14 @@ Future<void> folderActionsFlow(
         final view = ref.read(drawerViewProvider.notifier);
         final removed = await view.deleteFolder(folder.id, isCurrent: owned);
         if (removed == null || !owned() || messenger == null || !messenger.mounted) return;
-        messenger.hideCurrentSnackBar();
-        final notice = messenger.showSnackBar(
-          SnackBar(
-            content: Text(appL10n.shellFolderDeleted(folder.name)),
-            persist: false,
-            action: SnackBarAction(
-              label: appL10n.shellUndo,
-              onPressed: () {
-                if (!owned()) return;
-                undo = view.restoreFolder(removed.$1, removed.$2, isCurrent: owned);
-              },
-            ),
-          ),
+        final notice = messenger.showUndoNotice(
+          appL10n.shellFolderDeleted(folder.name),
+          undoLabel: appL10n.shellUndo,
+          window: const Duration(seconds: 4),
+          onUndo: () {
+            if (!owned()) return;
+            undo = view.restoreFolder(removed.$1, removed.$2, isCurrent: owned);
+          },
         );
         await notice.closed;
         // Keep the lease through restore's own await, even if the action closes

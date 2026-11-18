@@ -2,10 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
-import { mkdtemp, mkdir, readFile, writeFile, rm, rename, readdir } from 'node:fs/promises';
+import fs, { mkdtemp, mkdir, readFile, writeFile, rm, rename, readdir } from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 import { spawnSync, spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join, sep } from 'node:path';
 import { CATALOG, HARD_LIMITS, Config, runtimeSnapshot, catalogModel } from '../src/config.js';
 import { createMediaClient, createDescriptor } from '../src/adapters.js';
 import { createHttpTransport } from '../src/http.js';
@@ -38,7 +39,7 @@ async function fixture(t, profile, behavior = {}) {
       controller.abort(new DOMException('deadline', 'TimeoutError'));
       return;
     }
-    if (creating && behavior.reject) { res.writeHead(behavior.reject); res.end('{}'); return; }
+    if (creating && behavior.reject) { res.writeHead(behavior.reject); res.end(JSON.stringify({ error: behavior.error })); return; }
     if (req.method === 'DELETE' || req.url.endsWith('/cancel')) { state = 'cancelled'; res.end('{}'); return; }
     const url = 'https://result.example/original.' + (profile.includes('video') ? 'mp4' : 'png');
     let value;
@@ -48,7 +49,7 @@ async function fixture(t, profile, behavior = {}) {
     else {
       if (behavior.queryError) { res.writeHead(503); res.end('{}'); return; }
       if (behavior.queryStall) return;
-      value = profile === 'ark-video' ? { id: 'task-1', status: state === 'cancelled' ? 'cancelled' : state, content: { video_url: url } }
+      value = profile === 'ark-video' ? { id: 'task-1', status: state === 'cancelled' ? 'cancelled' : state, error: behavior.error, content: { video_url: url } }
         : profile === 'ali-video' ? { output: { task_id: 'task-1', task_status: ({ queued: 'PENDING', running: 'RUNNING', succeeded: 'SUCCEEDED', failed: 'FAILED', cancelled: 'CANCELED' })[state], video_url: url } }
           : { status: ({ queued: 'InQueue', running: 'InProgress', succeeded: 'Succeed', failed: 'Failed' })[state], results: { videos: [{ url }] } };
     }
@@ -73,6 +74,123 @@ async function fixture(t, profile, behavior = {}) {
   t.after(async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await rm(directory, { recursive: true, force: true }); });
   return { directory, workspace, wires, controller, context, origin, setState(value) { state = value; } };
 }
+test('image stage partial write failure preserves storage classification and submitted hold', async t => {
+  const f = await fixture(t, 'openai-gpt-image'), req = request('openai-gpt-image');
+  f.context.admission = await admitGeneration(req, f.context);
+  const outputDirectory = join(f.workspace, 'generated', f.context.admission.outputDate);
+  const originalOpen = fs.open;
+  let failures = 0;
+  const injected = t.mock.method(fs, 'open', async function (path, ...args) {
+    const handle = await originalOpen.call(this, path, ...args);
+    if (String(path).startsWith(outputDirectory + sep) && basename(String(path)) === '1.png') {
+      const write = handle.writeFile.bind(handle);
+      handle.writeFile = async bytes => {
+        await write(bytes.subarray(0, 5));
+        assert.equal((await handle.stat()).size, 5);
+        failures++;
+        throw Object.assign(new Error('controlled image write ENOSPC'), { code: 'ENOSPC' });
+      };
+    }
+    return handle;
+  });
+  syncBuiltinESMExports();
+  try { await assert.rejects(generateMedia(req, f.context), { code: 'storage' }); }
+  finally { injected.mock.restore(); syncBuiltinESMExports(); }
+  assert.equal(failures, 1);
+  assert.equal(f.wires.length, 1);
+  assert.equal(f.wires[0].method, 'POST');
+  const ledger = await createBudgetLedger(join(f.context.hostStateDir, 'budget')).snapshot();
+  assert.equal(ledger.requests[0].state, 'submission_unknown');
+  assert.deepEqual(await readdir(outputDirectory), []);
+  assert.deepEqual(await readdir(join(f.context.hostStateDir, 'works', f.context.admission.outputDate)), []);
+});
+test('store preparation failure rolls back staging and releases the unsent hold', async t => {
+  const f = await fixture(t, 'openai-gpt-image'), req = request('openai-gpt-image');
+  f.context.admission = await admitGeneration(req, f.context);
+  const outputDirectory = join(f.workspace, 'generated', f.context.admission.outputDate);
+  const target = join(f.context.hostStateDir, 'works');
+  const originalMkdir = fs.mkdir;
+  let failures = 0, pendingNames;
+  const injected = t.mock.method(fs, 'mkdir', async function (path, options) {
+    if (path === target) {
+      pendingNames = await readdir(outputDirectory);
+      failures++;
+      throw Object.assign(new Error('controlled index directory ENOSPC'), { code: 'ENOSPC' });
+    }
+    return originalMkdir.call(this, path, options);
+  });
+  syncBuiltinESMExports();
+  try { await assert.rejects(generateMedia(req, f.context), { code: 'storage' }); }
+  finally { injected.mock.restore(); syncBuiltinESMExports(); }
+  assert.equal(failures, 1);
+  assert.equal(pendingNames.length, 1);
+  assert.ok(pendingNames[0].endsWith('.pending'));
+  assert.equal(f.wires.length, 0);
+  const ledger = await createBudgetLedger(join(f.context.hostStateDir, 'budget')).snapshot();
+  assert.equal(ledger.requests[0].state, 'released');
+  assert.deepEqual(await readdir(outputDirectory), []);
+  await assert.rejects(fs.stat(target), { code: 'ENOENT' });
+});
+for (const profile of ['openai-gpt-image', 'ark-video']) {
+  test(`${profile}: publishes directly from staging with hard links unavailable`, async t => {
+    const f = await fixture(t, profile), req = request(profile);
+    f.context.admission = await admitGeneration(req, f.context);
+    const { rid, outputDate } = f.context.admission;
+    const indexPath = join(f.context.hostStateDir, 'works', outputDate, rid + '.json');
+    const outputPath = join(f.workspace, 'generated', outputDate, rid + '-1.' + (profile === 'ark-video' ? 'mp4' : 'png'));
+    let links = 0;
+    const finalRenames = [];
+    const originalRename = fs.rename;
+    const blocked = t.mock.method(fs, 'link', async () => {
+      links++;
+      throw Object.assign(new Error('controlled app-domain hard-link refusal'), { code: 'EACCES' });
+    });
+    const observed = t.mock.method(fs, 'rename', async function (source, target) {
+      if (target === outputPath || target === indexPath) {
+        assert.equal(target === outputPath ? dirname(dirname(source)) : dirname(source), dirname(target));
+        finalRenames.push(target);
+      }
+      return originalRename.call(this, source, target);
+    });
+    syncBuiltinESMExports();
+    let result;
+    try { result = await generateMedia(req, f.context); }
+    finally { observed.mock.restore(); blocked.mock.restore(); syncBuiltinESMExports(); }
+    assert.equal(links, 0);
+    assert.deepEqual(finalRenames, [outputPath, indexPath]);
+    assert.deepEqual(await readFile(outputPath), profile === 'ark-video' ? MP4 : PNG);
+    assert.deepEqual(JSON.parse(await readFile(indexPath, 'utf8')).media, result.meta);
+    assert.deepEqual(await readdir(dirname(outputPath)), [basename(outputPath)]);
+    assert.deepEqual(await readdir(dirname(indexPath)), [basename(indexPath)]);
+    assert.equal(f.wires.filter(wire => wire.method === 'POST').length, 1);
+    assert.equal((await createBudgetLedger(join(f.context.hostStateDir, 'budget')).snapshot()).requests[0].state, 'settled');
+  });
+}
+test('concurrent requests keep the accepted work when the other session loses permission after publication', async t => {
+  const f = await fixture(t, 'openai-gpt-image'), req = request('openai-gpt-image');
+  f.context.budget.dailyMicros *= 2;
+  const first = { ...f.context }, second = { ...f.context, sessionId: 'session-2' };
+  first.admission = await admitGeneration(req, first);
+  second.admission = await admitGeneration(req, second);
+  const indexDirectory = join(f.context.hostStateDir, 'works', first.admission.outputDate);
+  const firstIndex = join(indexDirectory, first.admission.rid + '.json');
+  first.authorizeWorkspace = async () => {
+    const policy = await f.context.authorizeWorkspace();
+    try { await readFile(firstIndex); return { ...policy, mode: 'read-only' }; }
+    catch (error) { if (error.code !== 'ENOENT') throw error; return policy; }
+  };
+  const [failed, accepted] = await Promise.allSettled([generateMedia(req, first), generateMedia(req, second)]);
+  assert.equal(failed.status, 'rejected');
+  assert.equal(failed.reason.code, 'permission');
+  assert.equal(accepted.status, 'fulfilled');
+  const meta = accepted.value.meta;
+  assert.deepEqual(await readFile(meta.items[0].path), PNG);
+  assert.deepEqual(await readdir(dirname(meta.items[0].path)), [basename(meta.items[0].path)]);
+  assert.deepEqual(await readdir(indexDirectory), [second.admission.rid + '.json']);
+  assert.deepEqual(JSON.parse(await readFile(join(indexDirectory, second.admission.rid + '.json'), 'utf8')).media, meta);
+  assert.equal(f.wires.filter(wire => wire.method === 'POST').length, 2);
+  assert.deepEqual((await createBudgetLedger(join(f.context.hostStateDir, 'budget')).snapshot()).requests.map(row => row.state), ['settled', 'settled']);
+});
 for (const profile of ['openai-gpt-image', 'ark-image', 'ali-wan-image', 'silicon-image']) {
   test(`${profile}: real HTTP generation saves exact original and private index with budget`, async t => {
     const f = await fixture(t, profile), req = request(profile);
@@ -163,6 +281,25 @@ for (const profile of ['ark-video', 'ali-video', 'silicon-video']) {
   test(`${profile}: create timeout is unknown and not re-submitted`, async t => {
     const f = await fixture(t, profile, { stall: true });
     await assert.rejects(generateMedia(request(profile), f.context), { code: 'submission_unknown' }); assert.equal(f.wires.length, 1);
+  });
+}
+
+for (const [name, secret] of [
+  ['quote', 'MOCK_ONLY_SECRET_"_QUOTE'],
+  ['backslash', 'MOCK_ONLY_SECRET_\\_SLASH'],
+]) {
+  test(`media engine rejects ${name}-escaped credential in prompt before submission`, async t => {
+    const f = await fixture(t, 'openai-gpt-image');
+    const req = request('openai-gpt-image', { prompt: 'draw ' + secret });
+    f.context.resolveCredential = async () => secret;
+    f.context.admission = await admitGeneration(req, f.context);
+    await assert.rejects(generateMedia(req, f.context), { code: 'credential' });
+    assert.equal(f.wires.length, 0);
+    const ledger = await createBudgetLedger(join(f.context.hostStateDir, 'budget')).snapshot();
+    assert.equal(ledger.requests.length, 1);
+    assert.equal(ledger.requests[0].state, 'released');
+    assert.deepEqual(await readdir(join(f.workspace, 'generated', f.context.admission.outputDate)), []);
+    assert.deepEqual(await readdir(join(f.context.hostStateDir, 'works', f.context.admission.outputDate)), []);
   });
 }
 
@@ -345,3 +482,25 @@ test('legacy-only defaults keep the old selection and fail-closed behavior', () 
   const explicit = selectedRequest({ prompt: '猫', serviceId: 'vid' }, snapshot, snapshot.services, 'generate_video');
   assert.equal(explicit.request.service.id, 'vid');
 });
+
+for (const [phase, profile, errorCode] of [
+  ['create', 'ark-image', 'OutputImageSensitiveContentDetected'],
+  ['create', 'ark-video', 'InputImageSensitiveContentDetected'],
+  ['query', 'ark-video', 'InputTextSensitiveContentDetected'],
+]) {
+  test(`${profile}: ${phase} moderation reports policy and keeps the submitted budget hold`, async t => {
+    const f = await fixture(t, profile, { state: 'failed', error: { code: errorCode },
+      ...(phase === 'create' ? { reject: 400 } : {}) });
+    const req = request(profile);
+    f.context.admission = await admitGeneration(req, f.context);
+    await assert.rejects(generateMedia(req, f.context), { code: 'policy' });
+    assert.deepEqual(f.wires.map(wire => wire.method), phase === 'create' ? ['POST'] : ['POST', 'GET']);
+    const ledger = await createBudgetLedger(join(f.context.hostStateDir, 'budget')).snapshot();
+    assert.equal(ledger.requests.length, 1);
+    const record = ledger.requests[0];
+    assert.equal(record.state, phase === 'create' ? 'submission_unknown' : 'submitted');
+    assert.equal(record.providerTaskId, phase === 'create' ? undefined : 'task-1');
+    assert.equal(record.estimateMicros, f.context.budget.unknownHoldMicros);
+    assert.deepEqual(await readdir(join(f.workspace, 'generated', record.outputDate)), []);
+  });
+}

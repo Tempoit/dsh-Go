@@ -33,6 +33,8 @@ class ClipPlayer(context: Context, private val listener: Listener) {
     private var player: MediaPlayer? = null
     private var generation = 0
     private var focus: AudioFocusRequest? = null
+    private var prepared = false
+    private var startWhenPrepared = true
 
     /** Preparing, playing or paused. */
     val active get() = player != null
@@ -49,6 +51,8 @@ class ClipPlayer(context: Context, private val listener: Listener) {
             p.setAudioAttributes(ATTRIBUTES)
             p.setOnPreparedListener {
                 if (gen != generation) return@setOnPreparedListener
+                prepared = true
+                if (!startWhenPrepared) return@setOnPreparedListener
                 if (!requestFocus()) {
                     finish(gen) { listener.onStopped("focus") }
                     return@setOnPreparedListener
@@ -77,21 +81,37 @@ class ClipPlayer(context: Context, private val listener: Listener) {
 
     fun pause(): Boolean {
         val p = player ?: return false
+        if (!prepared) {
+            startWhenPrepared = false
+            return true
+        }
         if (!playing) return true
         return runCatching { p.pause() }.onSuccess { playing = false }.isSuccess
     }
 
     fun resume(): Boolean {
         val p = player ?: return false
+        if (!prepared) {
+            startWhenPrepared = true
+            return true
+        }
         if (playing) return true
         if (!requestFocus()) return false
-        return runCatching { p.start() }.onSuccess { playing = true }.isSuccess
+        return runCatching { p.start() }.onSuccess {
+            playing = true
+            if (!startWhenPrepared) {
+                startWhenPrepared = true
+                listener.onStarted() // First start was deferred by pause during preparation.
+            }
+        }.isSuccess
     }
 
     /** Stops and frees the player now; true when it is gone (or there was none). */
     fun release(): Boolean {
         generation++
         playing = false
+        prepared = false
+        startWhenPrepared = true
         val p = player ?: return true
         player = null
         abandonFocus()
@@ -104,17 +124,18 @@ class ClipPlayer(context: Context, private val listener: Listener) {
         then()
     }
 
-    private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
-        if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
-            if (player != null) finish(generation) { listener.onStopped("interrupted") }
-        }
-    }
-
     private fun requestFocus(): Boolean {
         val am = audio ?: return true
+        // A focus event can outlive abandon/re-request. Bind both the listener identity
+        // and its generation to this clip, rather than rebinding an old event to a new one.
+        val gen = generation
         val request = focus ?: AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
             .setAudioAttributes(ATTRIBUTES)
-            .setOnAudioFocusChangeListener(focusListener)
+            .setOnAudioFocusChangeListener { change ->
+                if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+                    if (player != null) finish(gen) { listener.onStopped("interrupted") }
+                }
+            }
             .build()
             .also { focus = it }
         return am.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED

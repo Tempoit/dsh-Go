@@ -1,4 +1,6 @@
-// Portions derived from DeepSeek Harness (https://github.com/deepseek-ai/deepseek-harness), MIT, Copyright (c) 2026 DeepSeek. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 DeepSeek
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 
 /// Files the agent declared for the user with the `present` tool.
 ///
@@ -112,7 +114,8 @@ Map<int, List<PresentedFile>> presentedByTurn(Iterable<SessionLogEvent> events) 
 /// `.` and `..` segments and repeated slashes are folded. A Windows path
 /// (`C:\…`) or a relative path without [cwd] is returned unchanged.
 String resolveSessionPath(String path, {String? cwd}) {
-  var p = path.trim();
+  // Whitespace belongs to the filename, including at the ends of a decoded URI path.
+  var p = path;
   if (p.startsWith('file://')) p = Uri.decodeFull(p.substring('file://'.length));
   if (RegExp(r'^[A-Za-z]:[\\/]').hasMatch(p)) return p;
   if (!p.startsWith('/')) {

@@ -16,8 +16,8 @@ Future<void> showRemoteNetworkDetails(BuildContext context, HostRef host) => sho
   builder: (_) => RemoteNetworkDetailsSheet(host: host),
 );
 
-/// Only route names and measured timings reach this surface. Candidate
-/// addresses, credentials and raw transport errors never belong in this sheet.
+/// Only route names, timings and IP/protocol enums reach this surface.
+/// Candidate addresses, credentials and raw errors never belong in this sheet.
 class RemoteNetworkDetailsSheet extends ConsumerStatefulWidget {
   const RemoteNetworkDetailsSheet({super.key, required this.host});
 
@@ -72,6 +72,11 @@ class _RemoteNetworkDetailsSheetState extends ConsumerState<RemoteNetworkDetails
         : '${material.formatCompactDate(observedAt)} ${material.formatTimeOfDay(TimeOfDay.fromDateTime(observedAt), alwaysUse24HourFormat: MediaQuery.alwaysUse24HourFormatOf(context))}';
     String timing(Duration? value) =>
         value == null ? l10n.remoteNetworkUnmeasured : l10n.remoteNetworkMilliseconds(value.inMilliseconds);
+    String ipVersion(NetworkIpVersion? value) => switch (value) {
+      NetworkIpVersion.ipv4 => 'IPv4',
+      NetworkIpVersion.ipv6 => 'IPv6',
+      null => l10n.remoteNetworkUnknownPath,
+    };
     return SafeArea(
       top: false,
       child: SingleChildScrollView(
@@ -102,6 +107,14 @@ class _RemoteNetworkDetailsSheetState extends ConsumerState<RemoteNetworkDetails
                 ),
                 _NetworkValue(label: l10n.remoteNetworkConnectDuration, value: timing(network?.connectDuration)),
                 _NetworkValue(label: l10n.remoteNetworkRoundTripTime, value: timing(network?.roundTripTime)),
+                if (relay && connected && path != null && path != RelayPath.relay) ...[
+                  _NetworkValue(label: l10n.remoteNetworkLocalIpVersion, value: ipVersion(network?.localIpVersion)),
+                  _NetworkValue(label: l10n.remoteNetworkRemoteIpVersion, value: ipVersion(network?.remoteIpVersion)),
+                  _NetworkValue(
+                    label: l10n.remoteNetworkIceProtocol,
+                    value: network?.iceProtocol?.name.toUpperCase() ?? l10n.remoteNetworkUnknownPath,
+                  ),
+                ],
                 if (observedLabel != null) _NetworkValue(label: l10n.remoteNetworkObservedAt, value: observedLabel),
                 if (network?.fallbackReason != null)
                   _NetworkValue(

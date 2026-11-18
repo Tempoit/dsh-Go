@@ -19,7 +19,7 @@ import 'network_route.dart';
 ///
 /// [direct] (直连优先) lets connections try LAN / P2P / TURN over
 /// [peerConnector] (flutter_webrtc) before the Server's relay.
-class DshRemoteRelayBackend implements RelayBackend, RelayNetworkBackend {
+class DshRemoteRelayBackend implements RelayBackend, RelayNetworkBackend, RelayPairingBackend {
   DshRemoteRelayBackend({
     required SecretStore secrets,
     Object? serverUrl,
@@ -28,6 +28,7 @@ class DshRemoteRelayBackend implements RelayBackend, RelayNetworkBackend {
     this.peerConnector,
     bool direct = true,
     Future<RemoteNetworkRoute> Function()? resolveNetworkRoute,
+    this._loadCompactHistory,
   }) : _resolveNetworkRoute = resolveNetworkRoute ?? resolveRemoteNetworkRoute,
        account =
            account ??
@@ -50,6 +51,7 @@ class DshRemoteRelayBackend implements RelayBackend, RelayNetworkBackend {
   }
 
   final remote.RemoteAccount account;
+  final Future<bool> Function()? _loadCompactHistory;
   final Future<RemoteNetworkRoute> Function() _resolveNetworkRoute;
   RemoteNetworkRoute _networkRoute = RemoteNetworkRoute.unknown;
   final _sessionRoutes = Expando<RemoteNetworkRoute>('remote route');
@@ -61,6 +63,9 @@ class DshRemoteRelayBackend implements RelayBackend, RelayNetworkBackend {
 
   /// Applies from the next (re)connect.
   set direct(bool enabled) => account.peerConnector = enabled ? peerConnector : null;
+
+  /// Applies to the next client, without disturbing live streams or its reconnects.
+  set compactHistory(bool enabled) => account.compactHistory = enabled;
 
   /// Reconnects back off to a minute: a sleeping computer isn't polled every
   /// few seconds (network changes and 重试 still connect at once).
@@ -257,6 +262,21 @@ class DshRemoteRelayBackend implements RelayBackend, RelayNetworkBackend {
     roundTripTime: snapshot.roundTripTime,
     fallbackReason: snapshot.fallbackReason?.name,
     observedAt: snapshot.observedAt,
+    localIpVersion: switch (snapshot.peerNetwork?.localIpVersion) {
+      remote.RemoteIpVersion.ipv4 => NetworkIpVersion.ipv4,
+      remote.RemoteIpVersion.ipv6 => NetworkIpVersion.ipv6,
+      null => null,
+    },
+    remoteIpVersion: switch (snapshot.peerNetwork?.remoteIpVersion) {
+      remote.RemoteIpVersion.ipv4 => NetworkIpVersion.ipv4,
+      remote.RemoteIpVersion.ipv6 => NetworkIpVersion.ipv6,
+      null => null,
+    },
+    iceProtocol: switch (snapshot.peerNetwork?.protocol) {
+      remote.RemoteIceProtocol.udp => NetworkIceProtocol.udp,
+      remote.RemoteIceProtocol.tcp => NetworkIceProtocol.tcp,
+      null => null,
+    },
   );
 
   @override
@@ -269,6 +289,8 @@ class DshRemoteRelayBackend implements RelayBackend, RelayNetworkBackend {
     if (target == null) {
       throw HostLinkError(HostLinkErrorKind.notLoggedIn, appL10n.remoteErrHostNotInAccount);
     }
+    final loadCompactHistory = _loadCompactHistory;
+    if (loadCompactHistory != null) account.compactHistory = await loadCompactHistory();
     return account.connectHost(
       target,
       muxOptions: _muxOptions,
@@ -281,6 +303,103 @@ class DshRemoteRelayBackend implements RelayBackend, RelayNetworkBackend {
   }, hostName: host.name);
 
   Future<void> close() => account.close();
+
+  // ---------------------------------------------------------------------------
+  // Scan-to-pair
+
+  @override
+  Future<bool> supportsPairing() async {
+    try {
+      return await account.supportsPairing();
+    } on Object {
+      return false;
+    }
+  }
+
+  @override
+  Future<RelayPairingOffer> resolvePairing(String scanned) => _pairing(() async {
+    final offer = await account.resolvePairing(remote.parsePairingScan(scanned));
+    return RelayPairingOffer(
+      server: offer.origin.toString(),
+      hostName: offer.host.name,
+      hostPlatform: offer.host.platform,
+      fingerprint: offer.host.fingerprint,
+      token: offer,
+    );
+  });
+
+  @override
+  Future<RelayPairingSession> claimPairing(RelayPairingOffer offer, {String? deepseekUserId}) => _pairing(() async {
+    final token = offer.token;
+    if (token is! remote.PairingOffer) throw ArgumentError.value(offer, 'offer');
+    final pairing = await account.claimPairing(token, deepseekUserId: deepseekUserId);
+    return RelayPairingSession(
+      code: pairing.verificationCode,
+      codeExpiresAt: pairing.codeExpiresAt,
+      phases: pairing.states.where((s) => s == remote.PairingState.approved).map((_) => RelayPairingPhase.approved),
+      completed: _pairing(() async {
+        final paired = await pairing.result;
+        // The paired Host is already pinned; list it with presence. The new
+        // membership can take a moment to show in the directory: look again
+        // briefly. Connecting lists once more and still checks the
+        // authorized descriptor and the pin.
+        for (var attempt = 0; attempt < 4; attempt++) {
+          if (attempt > 0) await Future<void>.delayed(Duration(milliseconds: 500 * attempt));
+          final hosts = await listHosts(refresh: true).catchError((Object _) => const <RelayHost>[]);
+          final listed = hosts.where((h) => h.id == paired.host.deviceId).firstOrNull;
+          if (listed != null) return listed;
+        }
+        return RelayHost(
+          id: paired.host.deviceId,
+          name: paired.host.name,
+          online: true,
+          platform: paired.host.platform,
+          fingerprint: remote.formatFingerprint(remote.identityFingerprint(paired.host.identityKey)),
+        );
+      }),
+      onPause: (paused) => pairing.paused = paused,
+      onCancel: pairing.cancel,
+    );
+  });
+
+  static Future<T> _pairing<T>(Future<T> Function() action) async {
+    try {
+      return await action();
+    } on remote.PairingException catch (e) {
+      throw describePairing(e.code, e.message, server: e.origin?.toString());
+    } on remote.RemoteConnectException catch (e) {
+      throw describePairing(e.failure.code, e.failure.message);
+    }
+  }
+
+  /// UI text for a pairing failure code (Server or local).
+  static RelayPairingError describePairing(String code, String message, {String? server}) {
+    RelayPairingError e(RelayPairingErrorKind kind, String text) =>
+        RelayPairingError(kind, text, server: server, detail: '$code: $message');
+    return switch (code) {
+      'PAIRING_SCAN_INVALID' => e(RelayPairingErrorKind.invalidCode, appL10n.remotePairErrInvalidCode),
+      'PAIRING_SERVER_MISMATCH' => e(RelayPairingErrorKind.otherServer, appL10n.remotePairErrOtherServer),
+      'PAIRING_UNSUPPORTED' ||
+      'PAIRING_REQUIRED' => e(RelayPairingErrorKind.unsupported, appL10n.remotePairErrUnsupported),
+      'PAIRING_NOT_FOUND' ||
+      'PAIRING_EXPIRED' ||
+      'PAIRING_CLOSED' => e(RelayPairingErrorKind.expired, appL10n.remotePairErrExpired),
+      'PAIRING_CODE_REJECTED' ||
+      'PAIRING_ATTEMPT_USED' => e(RelayPairingErrorKind.codeRejected, appL10n.remotePairErrCodeRejected),
+      'PAIRING_CANCELLED' => e(RelayPairingErrorKind.cancelled, appL10n.remotePairErrCancelled),
+      'PAIRING_ACCOUNT_CONFLICT' => e(RelayPairingErrorKind.accountConflict, appL10n.remotePairErrAccountConflict),
+      'PAIRING_IDENTITY_MISMATCH' ||
+      'PAIRING_PROOF_INVALID' ||
+      'PAIRING_SCAN_INVALID_PROOF' ||
+      'PAIRING_DEVICE_CONFLICT' => e(RelayPairingErrorKind.identityMismatch, appL10n.remotePairErrIdentity),
+      'HOST_DEVICE_LIMIT_REACHED' => e(RelayPairingErrorKind.other, appL10n.remotePairErrHostLimit),
+      'PAIRING_PIN_SAVE_FAILED' => e(RelayPairingErrorKind.other, appL10n.remotePairErrPinSave),
+      'RATE_LIMITED' || 'PAIRING_BUSY' => e(RelayPairingErrorKind.network, appL10n.remoteErrTooManyRequests),
+      'CONNECTION_FAILED' ||
+      'AUTHORIZATION_SYNC_PENDING' => e(RelayPairingErrorKind.network, appL10n.remotePairErrNetwork),
+      _ => e(RelayPairingErrorKind.other, appL10n.remotePairErrFailed),
+    };
+  }
 
   // ---------------------------------------------------------------------------
 
@@ -320,12 +439,43 @@ class DshRemoteRelayBackend implements RelayBackend, RelayNetworkBackend {
     }
   }
 
+  // The server supplies arbitrary text; only known protocol codes cross into diagnostics.
+  static HostLinkDiagnosticCode _diagnosticCode(String code) => switch (code) {
+    'HOST_OFFLINE' => HostLinkDiagnosticCode.remoteHostOffline,
+    'ACCOUNT_AUTH_REQUIRED' => HostLinkDiagnosticCode.remoteAccountAuthRequired,
+    'DEVICE_REVOKED' => HostLinkDiagnosticCode.remoteDeviceRevoked,
+    'TOKEN_EXPIRED' => HostLinkDiagnosticCode.remoteTokenExpired,
+    'PEER_IDENTITY_MISMATCH' => HostLinkDiagnosticCode.remotePeerIdentityMismatch,
+    'HOST_NOT_TRUSTED' => HostLinkDiagnosticCode.remoteHostNotTrusted,
+    'CONNECTION_REPLACED' => HostLinkDiagnosticCode.remoteConnectionReplaced,
+    'CONNECTION_REJECTED' => HostLinkDiagnosticCode.remoteConnectionRejected,
+    'MEMBERSHIP_REQUIRED' => HostLinkDiagnosticCode.remoteMembershipRequired,
+    'DEVICE_NOT_FOUND' => HostLinkDiagnosticCode.remoteDeviceNotFound,
+    'HARNESS_VERSION_INCOMPATIBLE' => HostLinkDiagnosticCode.remoteHarnessVersionIncompatible,
+    'PROTOCOL_MISMATCH' => HostLinkDiagnosticCode.remoteProtocolMismatch,
+    'UNSUPPORTED_VERSION' => HostLinkDiagnosticCode.remoteUnsupportedVersion,
+    'CAPABILITY_NOT_SUPPORTED' => HostLinkDiagnosticCode.remoteCapabilityNotSupported,
+    'FRAME_TOO_LARGE' => HostLinkDiagnosticCode.remoteFrameTooLarge,
+    'INVALID_MESSAGE' => HostLinkDiagnosticCode.remoteInvalidMessage,
+    'SECURE_CHANNEL_FAILED' => HostLinkDiagnosticCode.remoteSecureChannelFailed,
+    'RPC_TIMEOUT' => HostLinkDiagnosticCode.remoteRpcTimeout,
+    'CONNECTION_FAILED' => HostLinkDiagnosticCode.remoteConnectionFailed,
+    'RATE_LIMITED' => HostLinkDiagnosticCode.remoteRateLimited,
+    'HISTORY_MODE_CHANGED' => HostLinkDiagnosticCode.remoteHistoryModeChanged,
+    _ => HostLinkDiagnosticCode.unknown,
+  };
+
   /// Chinese UI text for a `RemoteFailure.code` (see dsh_remote `state.dart`).
   static HostLinkError describe(remote.RemoteFailure failure, [String? hostName]) {
     final name = hostName == null ? appL10n.remoteHostFallback : appL10n.remoteQuotedHostName(hostName);
     final detail = '${failure.code}: ${failure.message}';
-    HostLinkError e(HostLinkErrorKind kind, String message, {bool? retryable}) =>
-        HostLinkError(kind, message, detail: detail, retryable: retryable ?? failure.retryable);
+    HostLinkError e(HostLinkErrorKind kind, String message, {bool? retryable}) => HostLinkError(
+      kind,
+      message,
+      detail: detail,
+      retryable: retryable ?? failure.retryable,
+      diagnosticCode: _diagnosticCode(failure.code),
+    );
     return switch (failure.code) {
       'HOST_OFFLINE' => e(HostLinkErrorKind.hostOffline, appL10n.remoteErrHostOffline, retryable: true),
       'DEVICE_NOT_FOUND' => e(HostLinkErrorKind.other, appL10n.remoteErrHostRemoved(name)),
@@ -335,6 +485,7 @@ class DshRemoteRelayBackend implements RelayBackend, RelayNetworkBackend {
       'PEER_IDENTITY_MISMATCH' => e(HostLinkErrorKind.hostKeyMismatch, appL10n.remoteErrIdentityKeyChanged),
       'HOST_NOT_TRUSTED' => e(HostLinkErrorKind.hostKeyUnverified, appL10n.remoteErrIdentityUnconfirmed),
       'CONNECTION_REPLACED' => e(HostLinkErrorKind.other, appL10n.remoteErrConnectionReplaced),
+      'HISTORY_MODE_CHANGED' => e(HostLinkErrorKind.other, appL10n.remoteErrHistoryModeChanged, retryable: false),
       'CONNECTION_REJECTED' => e(HostLinkErrorKind.other, appL10n.remoteErrHostRejected),
       'MEMBERSHIP_REQUIRED' => e(HostLinkErrorKind.other, appL10n.remoteErrHostNotOwned),
       // Version and protocol mismatches fail the same way on every attempt:
@@ -363,7 +514,12 @@ class DshRemoteRelayBackend implements RelayBackend, RelayNetworkBackend {
 
 /// dsh_remote's secret-store interface over the app's (Keystore-backed) one.
 class _Secrets implements remote.SecretStore {
-  _Secrets(this._inner);
+  factory _Secrets(SecretStore inner) => _adapters[inner] ??= _Secrets._(inner);
+
+  _Secrets._(this._inner);
+
+  // Backend replacements still use the same package storage ownership scope.
+  static final _adapters = Expando<_Secrets>();
 
   final SecretStore _inner;
 

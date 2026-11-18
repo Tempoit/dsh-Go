@@ -12,7 +12,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 /**
- * Fixtures are built the way PRoot 5.1.107.98's link2symlink builds them
+ * Fixtures are built the way PRoot 5.1.107.102's link2symlink builds them
  * (src/extension/link2symlink/link2symlink.c, move_and_symlink_path and
  * decrement_link_count), matching what an emulator install showed: a name's
  * symlink and the intermediate both hold host-absolute paths into the store.
@@ -215,6 +215,41 @@ class L2sMigrationTest {
         assertTrue(regular("root/c") && regular("root/d"))
     }
 
+    @Test fun aStaleIntermediateKeepsTheRenamedBackingForRecovery() {
+        assertDamagedChainKeepsBacking(removeIntermediate = false)
+    }
+
+    @Test fun aMissingIntermediateKeepsTheRenamedBackingForRecovery() {
+        assertDamagedChainKeepsBacking(removeIntermediate = true)
+    }
+
+    private fun assertDamagedChainKeepsBacking(removeIntermediate: Boolean) {
+        file("root/staged", "recoverable")
+        link("root/staged", "root/published")
+        val intermediate = Files.readSymbolicLink(File(root, "root/published").toPath())
+        val backing = Files.readSymbolicLink(intermediate)
+        val renamedBacking = Paths.get(backing.toString().dropLast(4) + "0001")
+        // .98 decrements before unlink: the backing has moved, but updating
+        // the intermediate either has not happened or failed after its unlink.
+        Files.move(backing, renamedBacking)
+        if (removeIntermediate) Files.delete(intermediate)
+        assertFalse(Files.exists(File(root, "root/published").toPath()))
+        file("root/healthy", "healthy")
+        link("root/healthy", "root/healthy2")
+
+        assertEquals(L2sMigration.Result.Done(links = 2, removed = 0), migrate())
+        assertTrue(regular("root/healthy") && regular("root/healthy2"))
+        assertEquals("healthy", text("root/healthy2"))
+        assertEquals("recoverable", String(Files.readAllBytes(renamedBacking), Charsets.UTF_8))
+        assertTrue(symlink("root/staged") && symlink("root/published"))
+        assertEquals(!removeIntermediate, Files.isSymbolicLink(intermediate))
+        assertEquals(DirectLaunch.INCOMPATIBLE, DirectLaunch.compatibilityReason(root))
+        val beforeRetry = storeEntries()
+        assertEquals(L2sMigration.Result.Done(links = 0, removed = 0), migrate())
+        assertEquals(beforeRetry, storeEntries())
+        assertEquals("recoverable", String(Files.readAllBytes(renamedBacking), Charsets.UTF_8))
+    }
+
     @Test fun aLinkMadeToAStoredFileItselfNestsAndStillResolves() {
         file("root/a", "nested")
         link("root/a", "root/b")
@@ -244,6 +279,58 @@ class L2sMigrationTest {
         unlink("root/c")
         assertEquals(L2sMigration.Result.Done(1, 0), migrate(free = 0))
         assertTrue(regular("root/a"))
+    }
+
+    @Test fun aLimitedCopyIgnoresLaunchMarginAndLeavesOtherNamesAndStoreIntact() {
+        file("root/source", "kept")
+        link("root/source", "root/selected")
+        link("root/source", "root/unselected")
+        val before = storeEntries()
+
+        val result = L2sMigration(root, {}, { 0 }, within = File(root, "root/selected")).run()
+
+        assertEquals(L2sMigration.Result.Done(1, 0), result)
+        assertTrue(regular("root/selected"))
+        assertTrue(symlink("root/source") && symlink("root/unselected"))
+        assertEquals(before, storeEntries())
+        File(root, "root/selected").writeText("independent")
+        assertEquals("kept", text("root/source"))
+        assertEquals("kept", text("root/unselected"))
+    }
+
+    @Test fun limitedCopiesResumeAfterFlushOrPublicationInterruption() {
+        for (duringFlush in listOf(true, false)) {
+            base.listFiles()!!.forEach { it.deleteRecursively() }
+            Files.createDirectories(store)
+            file("root/source", "original")
+            link("root/source", "root/kept/a")
+            link("root/source", "root/kept/b")
+            val before = storeEntries()
+            var renames = 0
+            try {
+                L2sMigration(root, {
+                    if (duringFlush) throw java.io.IOException("flush interrupted")
+                }, { 0 }, within = File(root, "root/kept")).run(beforeRename = {
+                    if (renames++ == 1) throw java.io.IOException("publication interrupted")
+                })
+                fail("expected interruption")
+            } catch (e: java.io.IOException) {
+                assertEquals(if (duringFlush) "flush interrupted" else "publication interrupted", e.message)
+            }
+            assertEquals(before, storeEntries())
+            for (name in listOf("root/source", "root/kept/a", "root/kept/b")) assertEquals("original", text(name))
+            assertTrue(symlink("root/source"))
+            assertTrue(symlink("root/kept/b"))
+            assertEquals(!duringFlush, regular("root/kept/a"))
+            assertTrue(temps().isEmpty())
+
+            val result = L2sMigration(root, {}, { 0 }, within = File(root, "root/kept")).run()
+            assertEquals(L2sMigration.Result.Done(if (duringFlush) 2 else 1, 0), result)
+            assertTrue(regular("root/kept/a") && regular("root/kept/b"))
+            assertTrue(symlink("root/source"))
+            assertEquals("original", text("root/source"))
+            assertEquals(before, storeEntries())
+        }
     }
 
     @Test fun copiesAreFlushedBeforeAnyNameIsReplacedOncePerBatch() {

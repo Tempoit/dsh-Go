@@ -1,16 +1,18 @@
 // Counting downloads, update checks and the app's usage reports, and what is
 // (not) kept: src/stats.ts, src/usage.ts.
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import worker from '../src/index';
 import { CHANNEL_PREFIX, channelId, resetChannelMemo } from '../src/beta-auth';
 import { resetBetaCache } from '../src/beta';
 import type { Env } from '../src/env';
 import { addDays, deviceCode, hmacHex, nextDayStart, parseUpdaterAgent, resetStatsMemo, statsDay } from '../src/stats';
-import { COUNT_LIMITS, resetUsageMemo, validateReport } from '../src/usage';
+import { COUNT_LIMITS, COUNT_LIMITS_V3, resetUsageMemo, validateReport } from '../src/usage';
 import { FakeCache, makeCtx, makeEnv } from './fakes';
 
 const ORIGIN = 'https://go.dshtui.com';
+// Keep requests, per-day keys, and expected dates on the same test day.
+const testNow = Date.parse('2026-10-30T04:00:00Z');
 const VERSION = '0.9.8';
 const APK = `dsh-go-${VERSION}-arm64.apk`;
 const CN = 'https://dshgo-cn.oss-cn-hongkong.aliyuncs.com/';
@@ -30,6 +32,7 @@ const manifest = {
 };
 
 beforeEach(() => {
+  vi.spyOn(Date, 'now').mockReturnValue(testNow);
   resetBetaCache();
   resetChannelMemo();
   resetStatsMemo();
@@ -38,6 +41,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   delete (globalThis as { caches?: unknown }).caches;
 });
 
@@ -210,7 +214,7 @@ describe('daily device codes', () => {
 // ── The app's usage report ───────────────────────────────────────────────
 
 const IID = 'q1w2e3r4t5y6u7i8o9p0aQ';
-const today = statsDay();
+const today = statsDay(testNow);
 function report(over: Record<string, unknown> = {}) {
   return {
     v: 1, iid: IID, day: today, app: '0.9.9', build: 10301000, sdk: 34, abi: 'arm64-v8a', maker: 'vivo', lang: 'zh', engine: 'proot',
@@ -237,9 +241,73 @@ describe('usage reports', () => {
     expect(device).toMatch(/^[0-9a-f]{32}$/);
     expect(usage.points[0]).toEqual({
       indexes: [device],
-      blobs: [today, device, '0.9.9', 'arm64-v8a', 'vivo', 'zh', 'proot'],
-      doubles: [10301000, 34, 12, 1, 0, 2, 0, 3],
+      blobs: [today, device, '0.9.9', 'arm64-v8a', 'vivo', 'zh', 'proot', '', ''],
+      doubles: [10301000, 34, 12, 1, 0, 2, 0, 3, 1, 0, 0, 0, 0, 0],
     });
+  });
+
+  it('take v3 with the tavern, the room, calls and tokens', async () => {
+    const { env, usage } = await setup();
+    const counts = { turns: 12, voice: 1, phone: 0, share: 2, gen: 0, plugins: 3, tavern: 7, room: 2, call: 1, tok_in: 1_234_567, tok_out: 8_910 };
+    const res = await run(env, post(report({ v: 3, model: 'V2405A', rom: 'originos 5.0', counts })));
+    expect(res.status).toBe(204);
+    expect(usage.points[0].blobs.slice(7)).toEqual(['v2405a', 'originos 5.0']);
+    expect(usage.points[0].doubles).toEqual([10301000, 34, 12, 1, 0, 2, 0, 3, 3, 7, 2, 1, 1_234_567, 8_910]);
+  });
+
+  it('take exactly the counts of v3, and v3 counts only in v3', async () => {
+    const { env, usage } = await setup();
+    const base = { turns: 1, voice: 0, phone: 0, share: 0, gen: 0, plugins: 0 };
+    const extra = { tavern: 0, room: 0, call: 0, tok_in: 0, tok_out: 0 };
+    const v3 = (counts: Record<string, unknown>) => report({ v: 3, model: 'pjz110', rom: 'coloros v15.0.0', counts });
+    const bad: [Record<string, unknown>, string, string][] = [
+      [v3(base), 'missing_field', 'counts.tavern'],
+      [v3({ ...base, ...extra, tokens: 1 }), 'unknown_field', 'counts.tokens'],
+      [v3({ ...base, ...extra, tok_in: -1 }), 'invalid', 'counts.tok_in'],
+      [v3({ ...base, ...extra, tok_in: 1.5 }), 'invalid', 'counts.tok_in'],
+      [v3({ ...base, ...extra, tok_in: COUNT_LIMITS_V3.tok_in + 1 }), 'invalid', 'counts.tok_in'],
+      [v3({ ...base, ...extra, tok_out: COUNT_LIMITS_V3.tok_out + 1 }), 'invalid', 'counts.tok_out'],
+      [v3({ ...base, ...extra, call: COUNT_LIMITS_V3.call + 1 }), 'invalid', 'counts.call'],
+      [report({ v: 3, counts: { ...base, ...extra } }), 'missing_field', 'model'],
+      [report({ v: 2, model: 'pjz110', rom: 'coloros v15.0.0', counts: { ...base, ...extra } }), 'unknown_field', 'counts.tavern'],
+      [report({ counts: { ...base, tavern: 1 } }), 'unknown_field', 'counts.tavern'],
+    ];
+    for (const [body, error, field] of bad) {
+      const res = await run(env, post(body));
+      expect(res.status, JSON.stringify(body)).toBe(400);
+      expect(await res.json()).toEqual({ error, field });
+    }
+    expect(usage.points).toHaveLength(0);
+    expect((await run(env, post(v3({ ...base, ...COUNT_LIMITS_V3 })))).status).toBe(204);
+    expect(usage.points).toHaveLength(1);
+  });
+
+  it('take v2 with the model and system, stored in lower case', async () => {
+    const { env, usage } = await setup();
+    const res = await run(env, post(report({ v: 2, model: 'V2405A', rom: 'originos 5.0' })));
+    expect(res.status).toBe(204);
+    expect(usage.points[0].blobs.slice(7)).toEqual(['v2405a', 'originos 5.0']);
+  });
+
+  it('take exactly the fields of v2', async () => {
+    const { env, usage } = await setup();
+    const v2 = (over: Record<string, unknown>) => report({ v: 2, model: 'pjz110', rom: 'coloros v15.0.0', ...over });
+    const bad: [Record<string, unknown>, string, string][] = [
+      [report({ v: 2 }), 'missing_field', 'model'],
+      [report({ v: 2, model: 'pjz110' }), 'missing_field', 'rom'],
+      [report({ model: 'pjz110' }), 'unknown_field', 'model'],
+      [v2({ extra: 1 }), 'unknown_field', 'extra'],
+      [v2({ model: '' }), 'invalid', 'model'],
+      [v2({ model: 'x'.repeat(33) }), 'invalid', 'model'],
+      [v2({ rom: '<b>' }), 'invalid', 'rom'],
+      [v2({ rom: 5 }), 'invalid', 'rom'],
+    ];
+    for (const [body, error, field] of bad) {
+      const res = await run(env, post(body));
+      expect(res.status, JSON.stringify(body)).toBe(400);
+      expect(await res.json()).toEqual({ error, field });
+    }
+    expect(usage.points).toHaveLength(0);
   });
 
   it('count a device once a day', async () => {
@@ -261,7 +329,7 @@ describe('usage reports', () => {
       [{ ip: '1.2.3.4' }, 'unknown_field', 'ip'],
       [{ counts: { turns: 1, voice: 0, phone: 0, share: 0, gen: 0, plugins: 0, chats: 1 } }, 'unknown_field', 'counts.chats'],
       [{ counts: { turns: 1, voice: 0, phone: 0, share: 0, gen: 0 } }, 'missing_field', 'counts.plugins'],
-      [{ v: 2 }, 'invalid', 'v'],
+      [{ v: 4 }, 'invalid', 'v'],
       [{ v: '1' }, 'invalid', 'v'],
       [{ iid: 'short' }, 'invalid', 'iid'],
       [{ iid: 'q1w2e3r4t5y6u7i8o9p0aB' }, 'invalid', 'iid'],

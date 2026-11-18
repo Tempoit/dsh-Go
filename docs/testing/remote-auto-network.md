@@ -1,6 +1,6 @@
 # Remote 自动选路与网络详情
 
-本次对照李国宝的 [ds-harness-remote `0aacfcfe`](https://github.com/liguobao/ds-harness-remote/tree/0aacfcfe85cbd1ad43545115a05e52dd146f7587)（2026-10-31），重点参考 Android 的 `src/lib/network-route.ts`、`src/services/network-route.ts` 与共享 WebRTC transport。改动随 App 1.0.4 发布；1.0.3 使用旧的默认关闭行为。
+本次对照 [ds-harness-remote `0aacfcfe`](https://github.com/liguobao/ds-harness-remote/tree/0aacfcfe85cbd1ad43545115a05e52dd146f7587)（2026-10-31），重点核对 Android 的 `src/lib/network-route.ts`、`src/services/network-route.ts` 与共享 WebRTC transport。改动随 App 1.0.4 发布；1.0.3 使用旧的默认关闭行为。
 
 ## 行为
 

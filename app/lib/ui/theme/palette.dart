@@ -1,4 +1,6 @@
-// Portions derived from PiPilot (https://github.com/CikeSeven/pi_pilot), MIT, Copyright (c) 2026 CikeSeven. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 CikeSeven
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 
 import 'package:flutter/material.dart';
 
@@ -15,7 +17,7 @@ import 'surfaces.dart';
 ///
 /// - 浅色:晨雾蓝纸面。页面是一条极淡的竖向渐变(顶 `#EBF1FE` → 底 `#F6F7FC`),
 ///   彩度 ≤ 0.019。
-/// - 深色:深海石板。明度 0.23–0.25,与 Claude 深色同一档,**不是**纯黑科技风:
+/// - 深色:深海石板。明度 0.23–0.25,**不是**纯黑科技风:
 ///   纯黑底上的亮字长时间看会"晕"。
 /// - 浅深都**不用**纯白 / 纯黑做大面积面色;纯白只出现在玻璃的高光和主按钮字上。
 ///

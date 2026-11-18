@@ -143,11 +143,23 @@ const post = (path, body, headers = {}) => request("POST", path, { headers: { ..
 const invoke = (body, headers) => post("/dsh-go/v1/invoke", { v: 1, ...body }, headers);
 const contributions = async (q = CAPS, headers) => get(`/dsh-go/v1/contributions?${q}`, headers);
 
+section("bridge protocol capabilities");
+const bridgeCapabilities = await get("/dsh-go/v1/capabilities");
+check(bridgeCapabilities.status === 200 && bridgeCapabilities.json?.v === 1 && typeof bridgeCapabilities.json?.bridge === "string",
+  `capabilities -> ${bridgeCapabilities.status}, v=${bridgeCapabilities.json?.v}, bridge=${bridgeCapabilities.json?.bridge}`);
+check(["inventory", "native-ui", "native-stream", "native-media", "native-files"].every(name => bridgeCapabilities.json?.capabilities?.includes(name)),
+  "capabilities declare implemented native routes even without a plugin");
+const capabilitiesMethod = await post("/dsh-go/v1/capabilities", {});
+check(capabilitiesMethod.status === 405 && capabilitiesMethod.json?.error?.code === "method-not-allowed", "capabilities only accepts GET");
+const absentRoute = await get("/dsh-go/v1/unknown-route");
+check(absentRoute.status === 404 && absentRoute.json?.error?.code === "route-not-found", "unknown route has a distinct route-not-found code");
+
 if (EMPTY) {
   section("no plugin declares dshGo: nothing changes");
   const r = await contributions();
   check(r.status === 200 && Array.isArray(r.json?.plugins) && r.json.plugins.length === 0, `contributions -> ${r.status}, plugins ${JSON.stringify(r.json?.plugins)}`);
   check(r.json?.limits?.viewBytes === 32768 && r.json?.bridge, `limits and bridge ${r.json?.bridge} present`);
+  check(r.json?.bridge === bridgeCapabilities.json?.bridge, "capabilities and contributions use the same implementation version");
   const v = await get(`/dsh-go/v1/views/${USAGE}/usage?${CAPS}`);
   check(v.status === 404 && v.json?.error?.code === "not-found", `view of a missing plugin -> ${v.status} ${v.json?.error?.code}`);
   const ws = await wsConnect(C);
@@ -163,7 +175,7 @@ if (EMPTY) {
 
 // ------------------------------------------------------------------ guard
 section("guard: every native route needs the cookie");
-for (const [method, path] of [["GET", `/dsh-go/v1/contributions?${CAPS}`], ["GET", `/dsh-go/v1/views/${USAGE}/usage`], ["POST", "/dsh-go/v1/invoke"], ["GET", `/dsh-go/v1/assets/${STATIC}/img/dot.png`]]) {
+for (const [method, path] of [["GET", "/dsh-go/v1/capabilities"], ["GET", `/dsh-go/v1/contributions?${CAPS}`], ["GET", `/dsh-go/v1/views/${USAGE}/usage`], ["POST", "/dsh-go/v1/invoke"], ["GET", `/dsh-go/v1/assets/${STATIC}/img/dot.png`]]) {
   const anon = await request(method, path, method === "POST" ? { body: { v: 1 } } : {});
   check(anon.status === 401, `${method} ${path.split("?")[0]} without cookie -> ${anon.status}`);
   const evil = await request(method, path, { headers: { ...C, origin: "http://evil.example" }, ...(method === "POST" ? { body: { v: 1 } } : {}) });
@@ -179,6 +191,7 @@ section("contributions");
 await sleep(300);
 const c1 = await contributions();
 check(c1.status === 200 && c1.json?.v === 1 && typeof c1.json?.rev === "string", `GET contributions -> ${c1.status} rev=${c1.json?.rev} in ${c1.ms} ms`);
+check(c1.json?.bridge === bridgeCapabilities.json?.bridge, "capabilities and contributions use the same implementation version");
 check(c1.ms < 300, `local round trip ${c1.ms} ms < 300 ms`);
 const plugins = c1.json?.plugins ?? [];
 const pkgs = plugins.map((p) => p.pkg);
@@ -209,7 +222,7 @@ for (const want of ["unknown-field@/dshGo/future", "invalid-field@/dshGo/wants/1
   "invalid-field@/dshGo/contributes/composer.actions/2/id", "invalid-field@/dshGo/contributes/composer.actions/3/effect",
   "missing-field@/dshGo/contributes/message.actions/0/label", "invalid-field@/dshGo/contributes/composer.strip/0/panel",
   "invalid-field@/dshGo/contributes/panels/0/placement/1", "view-file@/dshGo/contributes/panels/1/view", "unknown-surface@/dshGo/contributes/pets",
-  "too-long@/dshGo/title", "no-handler@/dshGo/contributes/composer.actions/1"]) {
+  "too-long@/dshGo/title", "no-handler@/dshGo/contributes/composer.actions/3"]) {
   check(scodes.includes(want), `static issue ${want}`);
 }
 check(JSON.stringify(stat?.contributes["composer.actions"].map((a) => [a.id, a.ready])) === '[["hello",true],["weird",false]]', "static actions: hello ready (effect), weird not ready");

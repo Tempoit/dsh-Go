@@ -15,7 +15,7 @@
 #   DIRECT_ONLY=1 DIRECT_ROOTFS=/disposable/rootfs DIRECT_MANIFEST=/fixture/manifest.json \
 #     DIRECT_PROOT=/path/to/pinned-source-proot KOTLINC=kotlinc runtime/test-host.sh
 set -euo pipefail
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HERE="$(CDPATH= cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ABI=x86_64
 PORT="${1:-38080}"
 NETWORK="${NETWORK:-1}"
@@ -29,9 +29,24 @@ fi
 command -v bwrap >/dev/null || { echo "bwrap required" >&2; exit 1; }
 [[ "$(uname -m)" == x86_64 ]] || { echo "x86_64 host required" >&2; exit 1; }
 
-archive="$(dirname "$MANIFEST")/$(python3 -I -c 'import json,sys;print(json.load(open(sys.argv[1]))["rootfs"])' "$MANIFEST")"
+archive_names="$(python3 -I - "$MANIFEST" <<'PY'
+import json, sys
+manifest = json.load(open(sys.argv[1]))
+schema = manifest.get("schema", 1)
+if schema == 1:
+    print(manifest["rootfs"])
+elif schema == 2:
+    for layer in ("base", "engine"):
+        print(manifest["layers"][layer]["asset"])
+else:
+    sys.exit("unsupported runtime manifest schema: %s" % schema)
+PY
+)"
+mapfile -t archives <<< "$archive_names"
 rm -rf "$ROOT"; mkdir -p "$ROOT"
-tar -xf "$archive" -C "$ROOT"
+for archive in "${archives[@]}"; do
+  tar -xf "$(dirname "$MANIFEST")/$archive" -C "$ROOT"
+done
 
 mapfile -t GUEST < <(python3 -I - "$MANIFEST" "$PORT" <<'PY'
 import json, sys
@@ -56,20 +71,28 @@ run() {  # run [extra bwrap args...] -- argv...
 pass() { printf '  \033[32mPASS\033[0m %s\n' "$*"; }
 fail() { printf '  \033[31mFAIL\033[0m %s\n' "$*"; FAILED=1; }
 FAILED=0
+trap 'kill $(jobs -pr) 2>/dev/null || true; wait' EXIT
 
 echo "== versions"
-run -- "${GUEST[@]:0:${#GUEST[@]}-3}" /bin/sh -c 'node --version; npm --version; dsh --version 2>&1 | head -3; cat /etc/os-release | head -2' || fail versions
+run -- "${GUEST[@]:0:${#GUEST[@]}-3}" /bin/bash -c 'set -eo pipefail; node --version; npm --version; dsh --version 2>&1 | sed -n "1,3p"; head -2 /etc/os-release' || fail versions
 
 if [[ "$NETWORK" == 1 ]]; then
 echo "== python / pip / venv / git / certificates / dpkg consistency (network)"
 run --share-net -- "${GUEST[@]:0:${#GUEST[@]}-3}" /bin/bash -c '
-  set -e
+  set -eo pipefail
   python3 --version; pip --version | cut -d" " -f1-2; git --version
-  printf "print(sum(range(10)))\n" > /tmp/hello.py && python3 /tmp/hello.py
+  printf "print(sum(range(10)))\n" > /tmp/hello.py
+  python3 /tmp/hello.py
   python3 -c "import ssl, urllib.request; print(\"https via python:\", urllib.request.urlopen(\"https://pypi.org/simple/pip/\", timeout=20).status)"
-  python3 -m venv /tmp/venv && /tmp/venv/bin/pip install -q six && /tmp/venv/bin/python -c "import six; print(\"venv+pip install ok\", six.__version__)"
+  python3 -m venv /tmp/venv
+  /tmp/venv/bin/pip install -q six
+  /tmp/venv/bin/python -c "import six; print(\"venv+pip install ok\", six.__version__)"
   git ls-remote https://github.com/termux/proot HEAD | cut -c1-12 | sed "s/^/git https ok: /"
-  cd /tmp && git init -q demo && cd demo && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init && git log --oneline | head -1
+  cd /tmp
+  git init -q demo
+  cd demo
+  git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
+  git log --oneline | head -1
   apt-get check -q 2>&1 | tail -1
 ' && pass "python3, pip, venv, git, https and apt-get check" || fail "python/git checks"
 else echo "  (skipped: NETWORK=0)"; fi
@@ -120,7 +143,10 @@ else
 fi
 for _ in $(seq 1 40); do kill -0 "$BG" 2>/dev/null || break; sleep 0.25; done
 if kill -0 "$BG" 2>/dev/null; then fail "still running 10s after SIGTERM"; kill -KILL "$BG"
-else rc=0; wait "$BG" || rc=$?; pass "dsh exited after SIGTERM (rc=$rc)"; fi
+else
+  rc=0; wait "$BG" || rc=$?
+  [[ $rc == 0 ]] && pass "dsh exited after SIGTERM (rc=$rc)" || fail "dsh exited after SIGTERM (rc=$rc)"
+fi
 
 echo "== dsh web offline (no network namespace access)"
 LOG2="$HERE/.work/$ABI/dsh-web-offline.log"
@@ -136,12 +162,14 @@ import hashlib, json, os, sys
 root, pins, manifest = sys.argv[1:4]
 m = json.load(open(manifest))
 terminal = {}
-for name, versions in sorted(json.load(open(pins))["patches"].items()):
-    for rel, pin in versions[m["dshVersion"]].items():
+patches = json.load(open(pins))["patches"]
+assert set(patches) <= set(m["dshPatches"]), m["dshPatches"]
+# The build records the series application order in the manifest.
+for name in m["dshPatches"]:
+    for rel, pin in patches[name][m["dshVersion"]].items():
         if rel in terminal:
             assert terminal[rel] == pin["before"], (name, rel, 'broken ordered hash chain')
         terminal[rel] = pin["after"]
-    assert name in m["dshPatches"], m["dshPatches"]
 for rel, expected in terminal.items():
     got = hashlib.sha256(open(os.path.join(root, "opt/dsh", rel), "rb").read()).hexdigest()
     assert got == expected, (rel, got)
@@ -238,12 +266,14 @@ echo "== dsh home after runs"; ls -A "$ROOT/root/.dsh" | head -20
 echo "== direct glibc launch (Linux source build; Android permission/lifecycle still needs a device)"
 if [[ -n "${DIRECT_PROOT:-}" ]]; then
   # Earlier plugin/route tests exercise mutable profile state. Use another
-  # extraction of the same pinned archive for the direct/proot comparison.
+  # extraction of the same pinned archives for the direct/proot comparison.
   # The true non-root session gate must be able to traverse every ancestor.
   # Only this new disposable directory has its mode/ownership changed.
   DIRECT_ROOT="$(mktemp -d /tmp/dsh-direct-host.XXXXXX)"
   chmod 0755 "$DIRECT_ROOT"
-  tar -xf "$archive" -C "$DIRECT_ROOT"
+  for archive in "${archives[@]}"; do
+    tar -xf "$(dirname "$MANIFEST")/$archive" -C "$DIRECT_ROOT"
+  done
   if bash "$HERE/tests/direct/run-tests.sh" "$DIRECT_ROOT" "$MANIFEST" "$DIRECT_PROOT" \
     "${DIRECT_OUT:-$HERE/.work/$ABI/direct-evidence}" "$((PORT + 4))"; then
     pass "direct host gate"

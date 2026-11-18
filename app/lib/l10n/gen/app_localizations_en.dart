@@ -1102,6 +1102,15 @@ class L10nEn extends L10n {
   String get activitySlashEnterArgs => 'Enter arguments, then send';
 
   @override
+  String get activitySlashRunIntent => 'Command · Run';
+
+  @override
+  String get activitySlashInsertIntent => 'Command · Insert';
+
+  @override
+  String get activitySlashSkillIntent => 'Skill · Insert';
+
+  @override
   String get activityStepTitle => 'Step details';
 
   @override
@@ -1274,6 +1283,22 @@ class L10nEn extends L10n {
 
   @override
   String get activityUsageAfterMessage => 'Appears after you send a message';
+
+  @override
+  String get activityUsageWaiting => 'Waiting for context usage data';
+
+  @override
+  String get activityUsageProjected => 'Estimated next request';
+
+  @override
+  String get activityUsageLastRequest => 'Last request';
+
+  @override
+  String get activityUsageBreakdownEstimate =>
+      'Breakdown items are independent estimates and may differ from the total';
+
+  @override
+  String get activityUsageCumulativeInput => 'Total input';
 
   @override
   String get activityUsageContextFull => 'Context nearly full. Send /compact to compact it';
@@ -1616,7 +1641,280 @@ class L10nEn extends L10n {
   }
 
   @override
+  String get activityQuotaTitle => 'Subscription usage';
+
+  @override
+  String get activityQuotaRefresh => 'Refresh usage';
+
+  @override
+  String get activityQuotaPermissionDenied => 'This subscription does not have permission to access usage.';
+
+  @override
+  String get activityQuotaAuthError => 'Sign-in expired or access denied. Check your subscription sign-in.';
+
+  @override
+  String get activityQuotaNetworkError => 'Network error. Try again later.';
+
+  @override
+  String get activityQuotaRateLimited => 'Too many requests. Try again later.';
+
+  @override
+  String get activityQuotaLoading => 'Loading subscription usage…';
+
+  @override
+  String get activityQuotaUnavailable => 'Can\'t load subscription usage right now. Try again later.';
+
+  @override
+  String get activityQuotaUnsupported => 'This host does not support subscription usage';
+
+  @override
+  String get activityQuotaSignedOut => 'Subscription is signed out';
+
+  @override
+  String get activityQuotaPrimary => 'Primary limit';
+
+  @override
+  String get activityQuotaSecondary => 'Secondary limit';
+
+  @override
+  String get activityQuotaFiveHour => '5 hours';
+
+  @override
+  String get activityQuotaSevenDay => '7 days';
+
+  @override
+  String get activityQuotaSevenDaySonnet => '7 days · Sonnet';
+
+  @override
+  String get activityQuotaSevenDayOpus => '7 days · Opus';
+
+  @override
+  String activityQuotaUsed(String value) {
+    return '$value used';
+  }
+
+  @override
+  String activityQuotaReset(String time) {
+    return 'Resets: $time';
+  }
+
+  @override
   String get activityToolListSeparator => ', ';
+
+  @override
+  String get androidShellTitle => 'Android Shell';
+
+  @override
+  String get androidShellEntryHint => 'Separate system-command channel, off by default';
+
+  @override
+  String get androidShellSubtitle =>
+      'Run Android system commands on this phone through Shizuku or self-ADB, not bash inside Ubuntu.';
+
+  @override
+  String get androidShellEnable => 'Allow Android Shell';
+
+  @override
+  String get androidShellEnableHint =>
+      'A separate switch, independent of non-disruptive mode and screen confirmation settings.';
+
+  @override
+  String get androidShellConfirmationNote =>
+      'Every command needs confirmation and may change system settings and files.';
+
+  @override
+  String get androidShellMasterOff => 'Turn on Phone control on the previous page first.';
+
+  @override
+  String get androidShellRiskTitle => 'Allow Android system commands?';
+
+  @override
+  String get androidShellRiskBody =>
+      'Commands use the selected channel\'s actual UID and may change apps, system settings, and shared files. Screen app rules cannot fully protect against them. Every command still requires separate native confirmation. Only allow commands you understand and trust.';
+
+  @override
+  String get androidShellRiskAction => 'Allow Android Shell';
+
+  @override
+  String get androidShellBackend => 'Connection method';
+
+  @override
+  String get androidShellDetails => 'Details';
+
+  @override
+  String get androidShellReady => 'Connected';
+
+  @override
+  String get androidShellShizukuHint =>
+      'Use an installed, running Shizuku with explicit authorization. Android 14, accessibility, and non-disruptive mode are not required.';
+
+  @override
+  String get androidShellAdb => 'Self-ADB';
+
+  @override
+  String get androidShellAdbHint =>
+      'Connect to this phone\'s wireless debugging with the app\'s private ADB identity. Other devices are not contacted.';
+
+  @override
+  String get androidShellInstalled => 'Shizuku installed';
+
+  @override
+  String get androidShellRunning => 'Shizuku running';
+
+  @override
+  String get androidShellGranted => 'Shizuku authorized';
+
+  @override
+  String get androidShellPaired => 'ADB paired';
+
+  @override
+  String get androidShellConnected => 'ADB connected';
+
+  @override
+  String get androidShellAuthorize => 'Request Shizuku authorization';
+
+  @override
+  String get androidShellAuthorizeHint =>
+      'Install and start Shizuku, then press this button to authorize dsh-Go. Opening or refreshing this page never requests permission.';
+
+  @override
+  String get androidShellStatus => 'Execution status';
+
+  @override
+  String get androidShellUid => 'Actual UID';
+
+  @override
+  String get androidShellUidUnknown => 'Not reported yet';
+
+  @override
+  String get androidShellRefresh => 'Refresh status';
+
+  @override
+  String get androidShellStop => 'Stop Android Shell';
+
+  @override
+  String get androidShellStopHint =>
+      'Cancel current commands and stop separate Shell execution without turning off screen control.';
+
+  @override
+  String get androidShellPairingGuide =>
+      'In Developer options, enable Wireless debugging and choose Pair device with pairing code. The code is used only for this pairing and is not saved or logged.';
+
+  @override
+  String get androidShellStartPairing => 'Open pairing guidance';
+
+  @override
+  String get androidShellPair => 'Enter pairing code';
+
+  @override
+  String get androidShellPairSubmit => 'Pair';
+
+  @override
+  String get androidShellPairCode => 'Six-digit pairing code';
+
+  @override
+  String get androidShellPairPort => 'Pairing port (optional)';
+
+  @override
+  String get androidShellPairPortHint =>
+      'Use the port in the pairing dialog, not the connection port on the main Wireless debugging page. Leave blank for discovery.';
+
+  @override
+  String get androidShellConnect => 'Connect ADB';
+
+  @override
+  String get androidShellConnectChannel => 'Connect selected channel';
+
+  @override
+  String get androidShellConnectPort => 'Connection port (optional)';
+
+  @override
+  String get androidShellConnectPortHint =>
+      'Use the port under IP address & port on the main Wireless debugging page, not the pairing port. Only this phone is contacted. Leave blank for discovery.';
+
+  @override
+  String androidShellErrorCode(String code) {
+    return 'Error code: $code';
+  }
+
+  @override
+  String androidShellLimits(int seconds, int bytes) {
+    return 'Up to $seconds seconds and $bytes output bytes per command';
+  }
+
+  @override
+  String get androidShellErrorDisabled => 'Android Shell is off.';
+
+  @override
+  String get androidShellErrorNotConnected => 'The selected channel is not connected.';
+
+  @override
+  String get androidShellErrorShizukuMissing => 'Install Shizuku first.';
+
+  @override
+  String get androidShellErrorShizukuStopped => 'Start Shizuku, then refresh the status.';
+
+  @override
+  String get androidShellErrorPermissionRequired => 'Explicit authorization in Shizuku is required.';
+
+  @override
+  String get androidShellErrorAdbNotPaired => 'Pair this phone with wireless debugging, then connect ADB.';
+
+  @override
+  String get androidShellErrorConnectFailed =>
+      'Connection failed. Check the selected channel and current wireless-debugging connection port, then retry.';
+
+  @override
+  String get androidShellErrorIdentityChanged => 'The channel identity changed. Stop, then authorize or connect again.';
+
+  @override
+  String get androidShellErrorBusy => 'Another operation is still pending. Retry later or stop Android Shell first.';
+
+  @override
+  String get androidShellErrorInvalidArguments =>
+      'Invalid input. Use a six-digit pairing code and a port from 1 to 65535.';
+
+  @override
+  String get androidShellErrorCancelled => 'The operation was cancelled.';
+
+  @override
+  String get androidShellErrorTimeout =>
+      'The operation timed out. Verify its outcome first; never automatically retry a dispatched command.';
+
+  @override
+  String get androidShellErrorConfirmationDenied => 'The command was not approved.';
+
+  @override
+  String get androidShellErrorCleanupFailed =>
+      'Stop cleanup did not finish. Retry stopping before running new commands.';
+
+  @override
+  String get androidShellErrorLocked => 'The phone is locked. Unlock it and retry.';
+
+  @override
+  String get androidShellErrorConfirmationUnavailable =>
+      'Native confirmation cannot be shown. Return to the app and check notification permission.';
+
+  @override
+  String get androidShellErrorTransportLost =>
+      'The channel disconnected. Verify the outcome first; never automatically retry a dispatched command. Reconnect if needed.';
+
+  @override
+  String get androidShellErrorProtocolMismatch =>
+      'The native module does not support this Shell protocol. Update the app.';
+
+  @override
+  String get androidShellErrorNativeUnavailable => 'The Android Shell native module is unavailable in this build.';
+
+  @override
+  String get androidShellErrorInvalidResponse => 'No valid native status was received. Refresh or update the app.';
+
+  @override
+  String get androidShellErrorStopFailed => 'Stopping was not confirmed. Refresh the status and retry stopping.';
+
+  @override
+  String get androidShellErrorUnknown =>
+      'The outcome could not be confirmed. Verify it first; never automatically retry a dispatched command.';
 
   @override
   String get botsFolderGone => 'This folder is gone';
@@ -2675,6 +2973,51 @@ class L10nEn extends L10n {
   String get botsPetAlways => 'Always';
 
   @override
+  String get botsPetOverlayShows => 'Show in the floating window';
+
+  @override
+  String get botsPetOverlayPixel => 'Pixel pet';
+
+  @override
+  String get botsPetOverlayCompanion => 'Room companion';
+
+  @override
+  String botsPetOverlayCompanionNamed(String name) {
+    return '$name from the Room';
+  }
+
+  @override
+  String get botsPetOverlayNoPack => 'Invite a character in the Companion Room first';
+
+  @override
+  String get botsPetOverlayPackBroken => 'The character pack is incomplete. Import it again in the Companion Room';
+
+  @override
+  String get botsPetOverlayUnavailable => 'This phone can\'t show your companion right now';
+
+  @override
+  String get botsPetOverlayCompanionHint =>
+      'Tap to play with her, tap twice to open the chat. Uses more battery than the pixel pet. It stops when the screen is off or the window is hidden';
+
+  @override
+  String get botsPetOverlayLoading => 'Bringing your companion out…';
+
+  @override
+  String get botsPetOverlayFallback => 'Your companion couldn\'t come out. The pixel pet is filling in';
+
+  @override
+  String get botsPetOverlayFraming => 'Framing';
+
+  @override
+  String get botsPetOverlayFramingFull => 'Full body';
+
+  @override
+  String get botsPetOverlayFramingHalf => 'Half body';
+
+  @override
+  String get botsPetOverlayFramingHint => 'Changing the framing reloads the character';
+
+  @override
   String get botsPetSwitchDisabled => 'Switch disabled';
 
   @override
@@ -2711,7 +3054,115 @@ class L10nEn extends L10n {
   String get botsPetSource => 'From DSH-TUI';
 
   @override
+  String get botsPetImport => 'Import';
+
+  @override
+  String get botsPetImportHint =>
+      'Bring your own pixel pet: a zip with pack.json and PNG frame sheets; the format is in docs/design/pets.md in the repository. Long-press an imported pet to delete it.';
+
+  @override
+  String botsPetImportDone(String name) {
+    return '$name is here';
+  }
+
+  @override
+  String botsPetCodexTitle(String name) {
+    return '$name was converted from a Codex pet';
+  }
+
+  @override
+  String get botsPetCodexBody => 'Most of it carries over as it was. A few things differ:';
+
+  @override
+  String get botsPetCodexOk => 'Got it';
+
+  @override
+  String get botsPetCodexLoops =>
+      'Motions loop until the state changes, instead of settling back to idle after a few rounds as in Codex';
+
+  @override
+  String get botsPetCodexRoamLeft => 'Walking left mirrors the walking-right row';
+
+  @override
+  String get botsPetCodexDrag => 'Dragging always uses the facing-right row';
+
+  @override
+  String get botsPetCodexSleep => 'Sleeping shows the first idle frame';
+
+  @override
+  String get botsPetCodexLook => 'The look-in-each-direction cells are not used';
+
+  @override
+  String get botsPetCodexWebp => 'The WebP sheet was converted to PNG';
+
+  @override
+  String get botsPetCodexCustomTracks => 'Custom motion rows are not tied to any state';
+
+  @override
+  String get botsPetCodexFps => 'Frame rates were rounded to whole milliseconds';
+
+  @override
+  String get botsPetCodexOneShot => 'Where a play-once motion returns to is decided by DSH';
+
+  @override
+  String get botsPetCodexMissingAuthor => 'The pack names no author';
+
+  @override
+  String get botsPetCodexMissingLicense => 'The pack names no license';
+
+  @override
+  String get botsPetCodexMissingSource => 'The pack names no source';
+
+  @override
+  String botsPetImportReplaced(String name) {
+    return '$name was updated';
+  }
+
+  @override
+  String get botsPetImportNotZip => 'That isn\'t a zip file';
+
+  @override
+  String get botsPetImportNoPack => 'There\'s no pack.json in the zip';
+
+  @override
+  String botsPetImportBadPack(String detail) {
+    return 'pack.json has a problem: $detail';
+  }
+
+  @override
+  String botsPetImportMissingSheet(String name) {
+    return 'The zip is missing the sheet $name';
+  }
+
+  @override
+  String botsPetImportBadSheet(String name) {
+    return 'A sheet isn\'t right: $name (a complete PNG, at most 4096 pixels a side, every frame inside it)';
+  }
+
+  @override
+  String get botsPetImportTooLarge => 'This pet pack is too big';
+
+  @override
+  String get botsPetImportStorage => 'Couldn\'t save it on the phone. Try again';
+
+  @override
+  String botsPetRemoveTitle(String name) {
+    return 'Delete $name?';
+  }
+
+  @override
+  String get botsPetRemoveBody => 'You can import it again later.';
+
+  @override
+  String botsPetRemoveFailed(String name) {
+    return 'Couldn\'t delete $name. Try again';
+  }
+
+  @override
   String get botsPetSize => 'Size';
+
+  @override
+  String get botsPetCustomSize => 'Custom size';
 
   @override
   String get botsPetQuiet => 'Quiet mode';
@@ -2781,7 +3232,7 @@ class L10nEn extends L10n {
   String get botsTerminalUnsupported => 'Terminal isn’t available on this connection';
 
   @override
-  String get botsTerminalSupportedHosts => 'Available on this phone or an SSH host';
+  String get botsTerminalSupportedHosts => 'Available on this phone, an SSH host or a Remote computer';
 
   @override
   String get botsTerminalOpening => 'Opening terminal…';
@@ -3552,6 +4003,15 @@ class L10nEn extends L10n {
   String get chatAnswerHint => 'Type your answer…';
 
   @override
+  String get chatAnswerMode => 'Send text as an answer';
+
+  @override
+  String get chatMessageMode => 'Send a new message';
+
+  @override
+  String get chatQuestionAnswered => 'Answered';
+
+  @override
   String get chatStarting => 'Starting';
 
   @override
@@ -4245,7 +4705,7 @@ class L10nEn extends L10n {
   String get chatBranchHint => 'Continue in a new chat. The original stays as is.';
 
   @override
-  String get chatEditResendHint => 'Rewrite in a new chat. The original stays as is.';
+  String get chatEditResendHint => 'Rewrite in a new chat. Reattach images and files; the original stays as is.';
 
   @override
   String get chatSaveToPhotos => 'Save to Photos';
@@ -4403,6 +4863,43 @@ class L10nEn extends L10n {
   String get chatNoDetails => 'No details yet';
 
   @override
+  String chatOutputHiddenLines(int count, String shown) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$shown lines hidden',
+      one: '1 line hidden',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String chatOutputHiddenChars(String count) {
+    return '$count characters hidden';
+  }
+
+  @override
+  String chatOutputSummary(int count, String lines, String chars) {
+    String _temp0 = intl.Intl.pluralLogic(count, locale: localeName, other: '$lines lines', one: '1 line');
+    return '$_temp0 · $chars characters';
+  }
+
+  @override
+  String get chatOutputViewAll => 'View all';
+
+  @override
+  String get chatOutputCopyAll => 'Copy all';
+
+  @override
+  String get chatOutputCopied => 'Copied the full text';
+
+  @override
+  String get chatOutputToEnd => 'Jump to end';
+
+  @override
+  String get chatOutputToStart => 'Back to top';
+
+  @override
   String get chatErrApiKey => 'API key is invalid or expired';
 
   @override
@@ -4415,7 +4912,7 @@ class L10nEn extends L10n {
   String get chatErrRateLimit => 'Too many requests. Try again later.';
 
   @override
-  String get chatErrContextLength => 'Chat too long. Send /compact, then try again.';
+  String get chatErrContextLength => 'Chat too long. If /compact fails, try a new chat or model.';
 
   @override
   String get chatErrModelUnavailable => 'Model service temporarily unavailable';
@@ -4752,6 +5249,1018 @@ class L10nEn extends L10n {
   }
 
   @override
+  String get companionTitle => 'Companion room';
+
+  @override
+  String get companionEntrySubtitle => 'Spend some time with her';
+
+  @override
+  String get companionDefaultName => 'her';
+
+  @override
+  String companionInputHint(String name) {
+    return 'Say something to $name';
+  }
+
+  @override
+  String get companionMenu => 'More';
+
+  @override
+  String get companionVoice => 'Voice';
+
+  @override
+  String get companionStop => 'Ask her to stop';
+
+  @override
+  String get companionSend => 'Send';
+
+  @override
+  String get companionNotConnected => 'I can\'t reach the engine right now. Tell me again in a bit?';
+
+  @override
+  String get companionSendFailed => 'That didn\'t get through. Say it again?';
+
+  @override
+  String get companionLogTitle => 'Log';
+
+  @override
+  String get companionContextUnsupported =>
+      'This host can\'t take her context yet: her name, persona and what just happened won\'t reach her, only what you say. Update the host or switch to light mode.';
+
+  @override
+  String get companionLogEmpty => 'Nothing said yet.';
+
+  @override
+  String get companionLogYou => 'You';
+
+  @override
+  String get companionLogOpenChat => 'Open in chat';
+
+  @override
+  String get companionLogOlder => 'Load earlier messages';
+
+  @override
+  String get companionMenuHistory => 'View chat history';
+
+  @override
+  String get companionMenuRestart => 'Start over';
+
+  @override
+  String get companionMenuRestartHint => 'Begin a new conversation';
+
+  @override
+  String get companionMenuRestartConfirm =>
+      'She will forget this conversation. The old record stays on the host and is not deleted.';
+
+  @override
+  String get companionMenuRemovePack => 'Remove assets';
+
+  @override
+  String get companionMenuRemoveConfirm =>
+      'The character assets on this phone will be deleted. Chats aren\'t affected. You\'ll need to import them again next time.';
+
+  @override
+  String companionCreditAuthor(String name) {
+    return 'By $name';
+  }
+
+  @override
+  String get companionSetupTitle => 'Bring her home';
+
+  @override
+  String get companionSetupBody =>
+      'Character assets aren\'t part of the app and only land on your phone when you want them. Import an asset pack (zip) to meet her.';
+
+  @override
+  String get companionSetupImport => 'Import asset pack';
+
+  @override
+  String get companionFailedTitle => 'She couldn\'t come out';
+
+  @override
+  String companionFailedBody(String reason) {
+    return 'Loading failed on this phone ($reason). You can import the asset pack again and retry.';
+  }
+
+  @override
+  String get companionFailedBodyPlain =>
+      'Your companion didn\'t load just now. Try again first; if that doesn\'t help, import the asset pack again.';
+
+  @override
+  String get companionPackBroken => 'This file can\'t be opened. It may not be an asset pack, or it may be damaged.';
+
+  @override
+  String get companionPackRuntimeMismatch => 'The runtime in this pack doesn\'t match this version of the app.';
+
+  @override
+  String get companionPackNoRuntime =>
+      'This pack only has a character and there\'s no runtime on this phone yet. Import a full asset pack first.';
+
+  @override
+  String get companionPackNoModel =>
+      'No Live2D model (.model3.json) found in the pack. Zip the model\'s whole folder and try again.';
+
+  @override
+  String get companionPackUnsafe => 'The pack has files or paths that aren\'t allowed, so it wasn\'t imported.';
+
+  @override
+  String get companionPackTooLarge => 'This asset pack is too large.';
+
+  @override
+  String get companionPackStorage => 'Couldn\'t write the files. Check your phone\'s free storage.';
+
+  @override
+  String companionGreetFirst(String name) {
+    return 'Hi, I\'m $name. I live here now, nice to meet you.';
+  }
+
+  @override
+  String get companionGreetMorning => 'Morning! Don\'t skip breakfast today.';
+
+  @override
+  String get companionGreetNoon => 'It\'s noon already. Have you eaten?';
+
+  @override
+  String get companionGreetAfternoon => 'Good afternoon. I was just daydreaming.';
+
+  @override
+  String get companionGreetEvening => 'Good evening. How was your day?';
+
+  @override
+  String get companionGreetLate => 'Still up this late?';
+
+  @override
+  String get companionGreetLong => 'It\'s been a while! I thought you\'d forgotten me.';
+
+  @override
+  String get companionGreetBack => 'Hm? Back again.';
+
+  @override
+  String get companionWake => 'Mm... I wasn\'t asleep. Just resting my eyes.';
+
+  @override
+  String get companionPat1 => 'Hehe... you can keep going a little longer.';
+
+  @override
+  String get companionPat2 => 'Mmm, that\'s nice.';
+
+  @override
+  String get companionPat3 => 'You\'re messing up my hair.';
+
+  @override
+  String get companionTapHead1 => 'What\'s up?';
+
+  @override
+  String get companionTapHead2 => 'Hm?';
+
+  @override
+  String get companionTapFace1 => 'Don\'t poke my face.';
+
+  @override
+  String get companionTapFace2 => 'Whoa, your hands are cold.';
+
+  @override
+  String get companionTapFace3 => 'Is there something on my face?';
+
+  @override
+  String get companionTapBody1 => 'Oh! You startled me.';
+
+  @override
+  String get companionTapBody2 => 'What is it?';
+
+  @override
+  String get companionTapBody3 => 'I just washed this apron!';
+
+  @override
+  String get companionTapTail1 => 'Tails are not for touching!';
+
+  @override
+  String get companionTapTail2 => 'Eek, that tickles.';
+
+  @override
+  String get companionTapTail3 => 'This is a very important tail.';
+
+  @override
+  String get companionTapLegs1 => 'Is something on the floor?';
+
+  @override
+  String get companionTapLegs2 => 'Where are you looking?';
+
+  @override
+  String get companionTease1 => 'Stop it, I\'m getting dizzy.';
+
+  @override
+  String get companionTease2 => 'One more poke and I\'m ignoring you!';
+
+  @override
+  String get companionTease3 => 'Don\'t you have anything better to do?';
+
+  @override
+  String get companionShake1 => 'Whoa, stop shaking!';
+
+  @override
+  String get companionShake2 => 'I\'m so dizzy… the water\'s sloshing everywhere.';
+
+  @override
+  String get companionShake3 => 'Keep that up and I\'ll start blowing bubbles!';
+
+  @override
+  String get companionStatusIdle => 'Daydreaming';
+
+  @override
+  String get companionStatusListening => 'Listening';
+
+  @override
+  String get companionStatusThinking => 'Thinking';
+
+  @override
+  String get companionStatusSpeaking => 'Talking';
+
+  @override
+  String get companionStatusSleeping => 'Asleep';
+
+  @override
+  String get companionStatusAway => 'Away';
+
+  @override
+  String get companionListening => 'Listening…';
+
+  @override
+  String get companionTouchHint => 'Try patting her head';
+
+  @override
+  String get companionArriving => 'She\'s swimming over…';
+
+  @override
+  String get companionPrivacyLine => 'Assets stay on this phone. Chats go through the current host.';
+
+  @override
+  String get companionMemoryTitle => 'What she remembers';
+
+  @override
+  String companionMemoryScope(String host) {
+    return 'Kept on $host. She doesn\'t bring these up by herself yet; a later version will.';
+  }
+
+  @override
+  String get companionMemoryAdd => 'Add';
+
+  @override
+  String get companionMemoryEdit => 'Edit';
+
+  @override
+  String get companionMemorySave => 'Save';
+
+  @override
+  String get companionMemoryHint => 'For example: I like unsweetened tea and don\'t drink coffee';
+
+  @override
+  String get companionMemoryForget => 'Forget';
+
+  @override
+  String get companionMemoryForgetTitle => 'Have her forget this?';
+
+  @override
+  String get companionMemoryEmpty => 'Nothing saved yet';
+
+  @override
+  String get companionMemoryEmptyHint =>
+      'Write down what you\'d like her to remember. It stays on the current host, and you can edit or delete it anytime.';
+
+  @override
+  String get companionMemoryUnsupported => 'This host can\'t keep her memories yet';
+
+  @override
+  String get companionMemoryUnsupportedHint =>
+      'It isn\'t available over the DSH Remote relay, or this host\'s dsh-go bridge is older.';
+
+  @override
+  String get companionMemoryLoadFailed => 'Couldn\'t load';
+
+  @override
+  String get companionMemoryRetry => 'Retry';
+
+  @override
+  String get companionMemoryConflict => 'It was just changed elsewhere, so it\'s been refreshed';
+
+  @override
+  String get companionMemoryFull => 'The list is full. Delete some first';
+
+  @override
+  String get companionMemorySaveFailed => 'Couldn\'t save. Try again?';
+
+  @override
+  String get companionStatusSnacking => 'Having a snack';
+
+  @override
+  String get companionStatusPlaying => 'Playing with the bubble';
+
+  @override
+  String get companionStatusResting => 'Resting on the cushion';
+
+  @override
+  String get companionSnack1 => 'Nom! So good!';
+
+  @override
+  String get companionSnack2 => 'Seaweed flavour. Thank you.';
+
+  @override
+  String get companionSnack3 => 'Mm... can I have another?';
+
+  @override
+  String get companionPlay1 => 'Hey, got it!';
+
+  @override
+  String get companionPlay2 => 'The bubble is so squishy. Fun!';
+
+  @override
+  String get companionPlay3 => 'It floated back again.';
+
+  @override
+  String get companionRest1 => 'I\'ll lean here for a while, then.';
+
+  @override
+  String get companionRest2 => 'Go on, I\'m listening.';
+
+  @override
+  String get companionTouchHintHome => 'Tap the shell, the bubble and the cushion, or drag a snack to her mouth';
+
+  @override
+  String get companionMenuMode => 'How she talks';
+
+  @override
+  String get companionModeLight => 'Light';
+
+  @override
+  String get companionModeLightHint => 'Chat only. The phone talks to the model; no engine';
+
+  @override
+  String get companionModeFull => 'Full';
+
+  @override
+  String get companionModeFullHint => 'DSH on the host, with tools and phone control';
+
+  @override
+  String get companionLightNoKey => 'Light mode needs a DeepSeek API key. Add one in Settings and we can talk.';
+
+  @override
+  String get companionLightBadKey => 'The API key seems wrong, or it is no longer valid.';
+
+  @override
+  String get companionLightBusy => 'It is busy over there. Tell me again in a bit?';
+
+  @override
+  String get companionNotConnectedTryLight =>
+      'I can\'t reach the host right now. If you just want to chat, switch to Light in the menu at the top right.';
+
+  @override
+  String get companionMenuRestartLightHint => 'Clear the chat on this phone';
+
+  @override
+  String get companionMenuRestartLightConfirm =>
+      'She will forget this conversation, and the chat on this phone is deleted.';
+
+  @override
+  String get companionInviteRest => 'Rest on the cushion with me for a bit?';
+
+  @override
+  String get companionInviteAccept => 'Sure';
+
+  @override
+  String get companionInviteDecline => 'Not now';
+
+  @override
+  String get companionInviteYes1 => 'Hehe, just for a little while.';
+
+  @override
+  String get companionInviteYes2 => 'I\'ll get comfy. You relax too.';
+
+  @override
+  String get companionMenuPace => 'How often she speaks up';
+
+  @override
+  String get companionPaceHint =>
+      'She speaks up only while you sit quietly with her: asking you to rest together, or mentioning another conversation. Never late at night, and at most one invitation per visit.';
+
+  @override
+  String get companionPaceQuiet => 'Quiet';
+
+  @override
+  String get companionPaceQuietHint => 'Never unasked; she talks when you talk to her';
+
+  @override
+  String get companionPaceRare => 'Now and then';
+
+  @override
+  String get companionPaceRareHint => 'Up to 2 times a day, at least 6 hours apart';
+
+  @override
+  String get companionPaceOften => 'Often';
+
+  @override
+  String get companionPaceOftenHint => 'Up to 6 times a day, at least 2 hours apart';
+
+  @override
+  String get companionPaceChatty => 'Chatty';
+
+  @override
+  String get companionPaceChattyHint => 'Up to 12 times a day, at least half an hour apart';
+
+  @override
+  String get companionSetupBundled => 'Bring her home';
+
+  @override
+  String get companionSetupBodyBundled =>
+      'She comes with the app: one tap and she\'s here, unpacked only on this phone. You can also import another asset pack, or zip up a Live2D model\'s folder and import that.';
+
+  @override
+  String get companionSetupImportOther => 'Import another pack';
+
+  @override
+  String get companionMenuRemoveConfirmBundled =>
+      'The character assets unpacked on this phone will be deleted. Chats aren\'t affected. You can bring her back anytime.';
+
+  @override
+  String get companionHug1 => 'Mm... a hug.';
+
+  @override
+  String get companionHug2 => 'I feel safe like this.';
+
+  @override
+  String get companionHug3 => 'A little longer, just a little.';
+
+  @override
+  String get companionBondTitle => 'You two';
+
+  @override
+  String get companionBond0 => 'Just met';
+
+  @override
+  String get companionBond1 => 'Getting to know each other';
+
+  @override
+  String get companionBond2 => 'Close';
+
+  @override
+  String get companionBond3 => 'Very close';
+
+  @override
+  String get companionCloser1 => 'I think... I\'m not so nervous anymore.';
+
+  @override
+  String get companionCloser2 => 'Being with you feels easier and easier.';
+
+  @override
+  String get companionCloser3 => 'Keep coming back, okay? I\'ll miss you.';
+
+  @override
+  String get companionPatClose => 'I love it when you pat my head.';
+
+  @override
+  String get companionHugClose => 'You can hold me tighter, you know.';
+
+  @override
+  String get companionTaskDoneUntitled => 'Your task over there is done.';
+
+  @override
+  String get companionTaskFailedUntitled => 'Your task over there seems to have hit an error. Take a look?';
+
+  @override
+  String get companionTaskOpen => 'Take a look';
+
+  @override
+  String get companionMenuSignals => 'What she brings up';
+
+  @override
+  String get companionSignalsHint =>
+      'These are said only to you, here in her room; nothing goes to the model. How often follows How often she speaks up, shared with invitations, and never late at night. On Quiet she says nothing.';
+
+  @override
+  String get companionSignalState => 'Keep track of other conversations';
+
+  @override
+  String get companionSignalStateHint => 'She notices when another conversation on this host finishes or fails';
+
+  @override
+  String get companionSignalSpeech => 'Mention it';
+
+  @override
+  String get companionSignalSpeechHint => 'She says a short line while you\'re quiet';
+
+  @override
+  String get companionSignalVoice => 'Say it out loud';
+
+  @override
+  String get companionSignalVoiceHint => 'Reads the line aloud when her voice is on';
+
+  @override
+  String get companionSignalNight => 'Late-night reminder to rest';
+
+  @override
+  String get companionSignalNightHint => 'After a while in her room late at night, she gently reminds you once';
+
+  @override
+  String get companionSignalLateUse => 'It\'s so late and you\'re still here with me... maybe rest a little?';
+
+  @override
+  String get companionRecallTitle => 'Remember things in full mode';
+
+  @override
+  String get companionRecallHint => 'Turning it on starts a new conversation; changing what she remembers turns it off';
+
+  @override
+  String get companionRecallConfirm =>
+      'Once on, her confirmed memories (up to 12) go to the model along with each of her replies in full mode. A new conversation starts; the current one stays in the main chat list. Changing her memories turns this off, and you can turn it on again.';
+
+  @override
+  String get companionRecallTurnOn => 'Turn on';
+
+  @override
+  String get companionRecallOn => 'From this new conversation on, I\'ll keep in mind what you asked me to remember.';
+
+  @override
+  String get companionRecallBusy => 'Another conversation is already using automatic recall. Turn it off there first.';
+
+  @override
+  String get companionRecallUnsupported => 'This host can\'t turn on automatic recall right now';
+
+  @override
+  String get companionRecallFailed => 'Automatic recall didn\'t turn on. Try again.';
+
+  @override
+  String get companionRecallOff => 'Automatic recall is off. Your next message starts a new conversation.';
+
+  @override
+  String get companionRecallOffFailed => 'Automatic recall didn\'t turn off. Try again.';
+
+  @override
+  String get companionRecallStopped =>
+      'Automatic recall stopped (what she remembers changed), so a new conversation began. You can turn it on again from the menu.';
+
+  @override
+  String get companionMenuVoice => 'Her voice';
+
+  @override
+  String get companionMenuVoiceHint => 'Reads her words aloud with the phone\'s own voice';
+
+  @override
+  String get companionVoiceHello => 'Hi, this is my voice. Keep it on if you like it.';
+
+  @override
+  String get companionVoiceUnavailable =>
+      'This phone has no Chinese voice to use. You can add one under Text-to-speech in system settings.';
+
+  @override
+  String get companionWidgetWaiting => 'Waiting for you in the room';
+
+  @override
+  String get companionVoiceOn => 'Let her speak';
+
+  @override
+  String get companionVoiceOffHint => 'When you turn it on, she says hello in the chosen voice first.';
+
+  @override
+  String get companionVoiceOff => 'Off';
+
+  @override
+  String get companionVoiceSource => 'Voice';
+
+  @override
+  String get companionVoiceSystem => 'The phone\'s own';
+
+  @override
+  String get companionVoiceSystemHint => 'System text-to-speech, works offline';
+
+  @override
+  String get companionVoiceOpenai => 'OpenAI-compatible API';
+
+  @override
+  String get companionVoiceOpenaiHint =>
+      'OpenAI, SiliconFlow, and most self-hosted GPT-SoVITS, CosyVoice or edge-tts servers';
+
+  @override
+  String get companionVoiceCustom => 'Custom HTTP';
+
+  @override
+  String get companionVoiceCustomHint => 'Anything else: describe the request and the reply';
+
+  @override
+  String get companionVoiceApi => 'API';
+
+  @override
+  String get companionVoiceBase => 'Address';
+
+  @override
+  String get companionVoiceBaseHelper => 'Up to /v1; the app adds /audio/speech';
+
+  @override
+  String get companionVoiceKeyHelper => 'Kept in this phone\'s secure storage';
+
+  @override
+  String get companionVoiceModel => 'Model';
+
+  @override
+  String get companionVoiceVoice => 'Voice';
+
+  @override
+  String get companionVoiceVoiceHelper => 'The service\'s voice name, like alloy, or a speaker on your own server';
+
+  @override
+  String get companionVoiceRequest => 'Request';
+
+  @override
+  String get companionVoiceUrl => 'Request URL';
+
+  @override
+  String get companionVoiceUrlHelper => '{text} works in the URL too';
+
+  @override
+  String get companionVoiceMethod => 'Method';
+
+  @override
+  String get companionVoiceHeaders => 'Headers';
+
+  @override
+  String get companionVoiceHeadersHelper => 'One per line; kept in secure storage';
+
+  @override
+  String get companionVoiceBody => 'Body';
+
+  @override
+  String get companionVoiceBodyHelper => '{text} becomes what she says';
+
+  @override
+  String get companionVoiceField => 'Audio field';
+
+  @override
+  String get companionVoiceFieldHelper =>
+      'If the reply is JSON: where the audio is (base64 or a link), like data.audio. Leave empty when it returns audio';
+
+  @override
+  String get companionVoicePrivacy => 'What she says is sent to the service you enter.';
+
+  @override
+  String get companionVoicePreview => 'Preview';
+
+  @override
+  String get companionVoicePreviewing => 'Requesting…';
+
+  @override
+  String get companionVoicePreviewOk => 'It works. Did you hear her?';
+
+  @override
+  String companionVoicePreviewFailed(String reason) {
+    return 'Didn\'t work: $reason';
+  }
+
+  @override
+  String get companionVoiceNotSetUp => 'Fill in the address above first.';
+
+  @override
+  String get companionVoiceFallback => 'Couldn\'t reach her voice service, so the phone\'s own voice stood in';
+
+  @override
+  String get companionGreetFirstNameless => 'Hi, I live here now. Nice to meet you.';
+
+  @override
+  String companionRenamed(String name) {
+    return '\"$name\"... okay, that\'s my name from now on.';
+  }
+
+  @override
+  String get companionVoicePreset => 'Popular services';
+
+  @override
+  String get companionVoicePresetHint => 'Xiaomi MiMo, OpenAI, SiliconFlow, Alibaba Model Studio: just add a key';
+
+  @override
+  String get companionVoiceService => 'Service';
+
+  @override
+  String companionVoiceKeyWhere(String site) {
+    return 'Get one at $site; kept in this phone\'s secure storage';
+  }
+
+  @override
+  String get companionVoiceVoiceCustomHelper => 'Pick one, or type a voice ID the service gave you';
+
+  @override
+  String get companionVoiceStyle => 'Speaking style';
+
+  @override
+  String get companionVoiceStyleHelper =>
+      'Describe her tone and the service reads in it; leave empty for the default gentle girl\'s voice';
+
+  @override
+  String get companionVoiceFemale => 'female';
+
+  @override
+  String get companionVoiceMale => 'male';
+
+  @override
+  String get companionClonePreset => 'Preset voices';
+
+  @override
+  String get companionCloneMine => 'Clone a voice';
+
+  @override
+  String get companionVoicePresetVoice => 'Preset voice';
+
+  @override
+  String get companionCloneRecording => 'Recording';
+
+  @override
+  String get companionCloneHelper =>
+      '5–30 seconds of one person speaking with no background noise, mp3 or wav, up to 7 MB. Only use your own voice, or one whose owner agreed. Every line she says sends this recording to Xiaomi.';
+
+  @override
+  String get companionCloneNone => 'No recording yet';
+
+  @override
+  String companionCloneReady(String detail) {
+    return 'Uploaded · $detail';
+  }
+
+  @override
+  String companionCloneSeconds(int n) {
+    return '$n s';
+  }
+
+  @override
+  String get companionClonePick => 'Choose a recording';
+
+  @override
+  String get companionCloneReplace => 'Replace';
+
+  @override
+  String get companionCloneTooLarge => 'The recording is too large (7 MB at most). Trim it and try again.';
+
+  @override
+  String get companionCloneNotAudio => 'Only mp3 or wav recordings work.';
+
+  @override
+  String get companionCloneFailed => 'Couldn\'t read that recording.';
+
+  @override
+  String get companionMenuPersona => 'About her';
+
+  @override
+  String get companionPersonaName => 'Name';
+
+  @override
+  String get companionPersonaNameHelper => 'Leave empty for the pack\'s name';
+
+  @override
+  String get companionPersonaCallMe => 'What she calls you';
+
+  @override
+  String get companionPersonaCallMeHint => 'e.g. Sam';
+
+  @override
+  String get companionPersonaCallMeHelper => 'Leave empty for nothing in particular';
+
+  @override
+  String get companionPersonaText => 'Persona';
+
+  @override
+  String get companionPersonaTextLabel => 'Who she is and how she talks';
+
+  @override
+  String get companionPersonaTextHelper =>
+      'Her personality, who she is, how she talks, what she won\'t say: all yours to write or delete. Only the format of her expression marks is added by the app.';
+
+  @override
+  String get companionPersonaReset => 'Reset';
+
+  @override
+  String get companionPersonaFooter =>
+      'Light mode uses it from her next reply; full mode tells her with your next message.';
+
+  @override
+  String get companionMenuMoves => 'Moves and faces';
+
+  @override
+  String get companionMovesHint =>
+      'These come with the model. The ones switched on are offered to the AI (up to 24 expressions and 24 motions, in list order) and she uses them in her replies; tap a name to give it a clearer one, tap ▶ to try it on her.';
+
+  @override
+  String get companionMovesNone =>
+      'This model brings no expressions or motions of its own; she uses her built-in ones.';
+
+  @override
+  String get companionMovesRename => 'Rename';
+
+  @override
+  String get companionMovesTry => 'Try it';
+
+  @override
+  String get companionPackLegacyModel =>
+      'This is an old Cubism 2 model (.moc and model.json); the runtime on the phone only reads .moc3 from Cubism 3 on. Open it in Cubism Editor, export it as moc3 and import that.';
+
+  @override
+  String companionFailedMocVersion(String version, String latest) {
+    return 'This model was exported by a newer Cubism (moc version $version); the runtime on the phone reads up to $latest. Export it for an older version in Cubism Editor and import that.';
+  }
+
+  @override
+  String get companionMenuAdapt => 'Fit this model';
+
+  @override
+  String get companionAdaptHint =>
+      'Your own model (your key, billed per request) reads this character and matches up her head, eyes, expressions and where she can be touched. Sent: the model\'s name, its parameter list, the names of its expressions, motions and parts, what you write below and the current fitting. Never the model files or textures.';
+
+  @override
+  String get companionAdaptOffer =>
+      'This model needs fitting: your own model reads its parameter list and the names of its expressions and motions (never the model files), using your key once. New models after this are fitted on their own; you can turn that off in the menu.';
+
+  @override
+  String get companionAdaptOfferYes => 'Fit it';
+
+  @override
+  String get companionAdaptOfferNo => 'Not now';
+
+  @override
+  String get companionAdaptNote => 'What\'s off? (optional)';
+
+  @override
+  String get companionAdaptNoteHint =>
+      'For example: patting her head does nothing, her face goes dark when she\'s happy';
+
+  @override
+  String get companionAdaptRun => 'Let the AI fit it';
+
+  @override
+  String get companionAdaptUndo => 'Undo the fitting';
+
+  @override
+  String get companionAdaptAuto => 'Fit new models when they\'re imported';
+
+  @override
+  String get companionAdaptStart => 'Let me get used to this new body…';
+
+  @override
+  String get companionAdaptDone => 'There, I\'ve got the hang of this body.';
+
+  @override
+  String companionAdaptDoneNote(String note) {
+    return 'There, I\'ve got the hang of this body. $note';
+  }
+
+  @override
+  String get companionAdaptUndone => 'OK, back to how I was.';
+
+  @override
+  String get companionAdaptNoKey => 'To fit me with your model, add an API key in Settings first.';
+
+  @override
+  String companionAdaptFailed(String reason) {
+    return 'That didn\'t work ($reason). You can try again from Fit this model in the menu.';
+  }
+
+  @override
+  String get companionAdaptUnreadable => 'the model\'s answer made no sense';
+
+  @override
+  String get companionAdaptEmpty => 'the model found nothing to match';
+
+  @override
+  String get companionAdaptNetwork => 'no connection';
+
+  @override
+  String get automaticDiagnosticsRecover => 'Recover local records';
+
+  @override
+  String get automaticDiagnosticsRecoverHint =>
+      'Only recovers analysis records on this phone, skips retained failures, and never resends old requests.';
+
+  @override
+  String get automaticDiagnosticsTitle => 'Automatic failure analysis';
+
+  @override
+  String get automaticDiagnosticsHint =>
+      'Off by default. Local, foreground and engine-ready only. Same-version failures are merged for 24 hours. Disabling stops new requests; sent data cannot be retracted.';
+
+  @override
+  String get automaticDiagnosticsConsentTitle => 'Enable automatic failure analysis?';
+
+  @override
+  String get automaticDiagnosticsConsent =>
+      'On a failure, the app sends redacted versions, Android system facts, runtime state, error categories, voice stages and its own process exit reasons to the model provider configured on your local engine. Model charges may apply. No chat text, recordings, credentials or raw logs are included. Reports stay in a separate read-only analysis conversation without changing your current chat. No automatic repairs or GitHub publication. Disabling or switching hosts blocks new analyses and attempts to stop existing analysis; data already sent cannot be retracted.';
+
+  @override
+  String get automaticDiagnosticsEnable => 'Agree and enable';
+
+  @override
+  String get automaticDiagnosticsOff => 'Off';
+
+  @override
+  String get automaticDiagnosticsWaiting => 'Waiting for a local connection, foreground and ready engine';
+
+  @override
+  String get automaticDiagnosticsReady => 'Enabled; waiting for a new failure';
+
+  @override
+  String get automaticDiagnosticsCollecting => 'Collecting structured failure facts';
+
+  @override
+  String get automaticDiagnosticsAnalyzing => 'Analyzing in a separate conversation (up to 2 minutes)';
+
+  @override
+  String get automaticDiagnosticsComplete => 'Analysis complete';
+
+  @override
+  String get automaticDiagnosticsCancelled => 'Stopped or interrupted; no automatic retry';
+
+  @override
+  String get automaticDiagnosticsFailed => 'Analysis failed; this failure will not be retried automatically';
+
+  @override
+  String get automaticDiagnosticsStoreFailed => 'Cannot save diagnostics settings or state; automatic analysis stopped';
+
+  @override
+  String get automaticDiagnosticsCancelFailed => 'Stop request failed; check the report conversation and stop manually';
+
+  @override
+  String get automaticDiagnosticsViewReport => 'View latest analysis conversation';
+
+  @override
+  String get automaticDiagnosticsReportHint =>
+      'Opens only when tapped; never interrupts your current chat. The report may still be running or interrupted.';
+
+  @override
+  String get automaticDiagnosticsReportTitle => 'Automatic failure analysis report';
+
+  @override
+  String get systemImeTitle => 'System input-method diagnostics';
+
+  @override
+  String get systemImeCollect => 'Capture recent events';
+
+  @override
+  String get systemImePrivacy =>
+      'Reproduce first. Each attempt needs native confirmation: fixed events from the last 120 seconds, up to 64; no input contents or raw logs. Permissions are never requested automatically.';
+
+  @override
+  String get systemImeEvidenceLimits =>
+      'Show/hide requests do not prove keyboard visibility. Empty or failed capture does not mean the system behaved normally.';
+
+  @override
+  String get systemImeNotCollected => 'Not collected';
+
+  @override
+  String get systemImeCollecting => 'Awaiting this attempt’s consent or result';
+
+  @override
+  String get systemImeRetained => 'Evidence retained';
+
+  @override
+  String get systemImeNoEvents => 'No matching events found';
+
+  @override
+  String get systemImeUnavailable => 'No selected, live privileged channel';
+
+  @override
+  String get systemImeUnsupported => 'This version or channel does not support capture';
+
+  @override
+  String get systemImeDenied => 'This attempt was not approved';
+
+  @override
+  String get systemImeCancelled => 'This attempt was cancelled';
+
+  @override
+  String get systemImeBusy => 'Channel busy; try again later';
+
+  @override
+  String get systemImeTimeout => 'Capture timed out; try again';
+
+  @override
+  String get systemImeLimitExceeded => 'Capture limit exceeded; no events retained';
+
+  @override
+  String get systemImeFailed => 'Capture failed or response was invalid';
+
+  @override
+  String get systemImeEventCount => 'Retained events';
+
+  @override
+  String get systemImeCapturedAt => 'Captured at';
+
+  @override
+  String get systemImePermissions => 'Phone-control permissions (optional)';
+
+  @override
+  String get systemImePermissionsHint =>
+      'Configure a privileged channel only if you wish; it is not required for diagnostics. Existing phone permissions are not consent for this capture.';
+
+  @override
+  String get systemImeClear => 'Clear evidence and cancel capture';
+
+  @override
+  String get systemImeMemory =>
+      'Memory only; cleared on restart. A new capture replaces old evidence. Included only in manual AI diagnostics or ZIP exports. Clearing does not retract snapshots or files already exported.';
+
+  @override
   String get engineNewChatDefaultsLast => 'New chat defaults (last choice)';
 
   @override
@@ -5027,6 +6536,9 @@ class L10nEn extends L10n {
 
   @override
   String get engineGeneralWebSending => 'Web sending';
+
+  @override
+  String get engineGeneralWebOnlyHint => 'These settings only affect this host’s web app, not native chat.';
 
   @override
   String get engineGeneralData => 'Data';
@@ -5436,6 +6948,39 @@ class L10nEn extends L10n {
 
   @override
   String get engineProviderConnection => 'Connection';
+
+  @override
+  String get engineProviderHeaders => 'Request headers (optional)';
+
+  @override
+  String get engineProviderHeadersWarning =>
+      'Headers are stored as plain text and are not redacted from logs. Use API Key or a credential reference for sensitive credentials.';
+
+  @override
+  String get engineProviderHeaderName => 'Name';
+
+  @override
+  String get engineProviderHeaderValue => 'Value';
+
+  @override
+  String get engineProviderHeaderAdd => 'Add header';
+
+  @override
+  String get engineProviderHeaderInvalidName =>
+      'Use letters, digits or HTTP token symbols in header names; no spaces or colons';
+
+  @override
+  String get engineProviderHeaderReserved => 'User-Agent is set by the engine; remove this header';
+
+  @override
+  String get engineProviderHeaderLocked => 'Managed by the engine; the existing setting is preserved';
+
+  @override
+  String get engineProviderHeaderDuplicate => 'Header names must be unique (case-insensitive)';
+
+  @override
+  String get engineProviderHeaderInvalidValue =>
+      'Use single-line Latin-1 values without control characters (tabs are allowed)';
 
   @override
   String get engineProviderDefaultUrl => 'Default URL';
@@ -6587,6 +8132,9 @@ class L10nEn extends L10n {
   String get featuresRepeatAdvanced => 'Advanced';
 
   @override
+  String get featuresRepeatCustom => 'Custom';
+
+  @override
   String get featuresIntervalSeconds => 'Seconds';
 
   @override
@@ -7273,6 +8821,25 @@ class L10nEn extends L10n {
   String get fileChatFallback => 'chat';
 
   @override
+  String get fileUploadToHost => 'Send files to the computer';
+
+  @override
+  String get fileUploadToHostHint => 'Into this conversation’s workspace on the computer, uncompressed';
+
+  @override
+  String fileUploadProgress(int done, int total, String name) {
+    return 'Sending $done/$total: $name';
+  }
+
+  @override
+  String fileUploadDone(String names) {
+    return 'Sent to the computer: $names';
+  }
+
+  @override
+  String get fileUploadFailed => 'Couldn’t send to the computer';
+
+  @override
   String get hostDetailsConnectionType => 'Connection type';
 
   @override
@@ -7414,27 +8981,6 @@ class L10nEn extends L10n {
 
   @override
   String get hubSettingsPhoneFilesHint => 'AI can read and write phone storage';
-  @override
-  String get hubSettingsRoot => 'Root access';
-
-  @override
-  String get hubSettingsRootHint => 'AI can run system commands with su';
-  @override
-  String get hubSettingsRootProbing => 'Probing root (up to 40s)… Magisk may ask to allow it';
-
-
-  @override
-  String get hubSettingsRootUnavailable => 'No root daemon found. Check that the phone is rooted and DSH Go is allowed in the root manager';
-
-  @override
-  String get hubSettingsRootTitle => 'Let AI use root?';
-
-  @override
-  String get hubSettingsRootBody => 'The container mounts Magisk’s /.magisk, so AI can read and write the whole system as root, including other apps’ data. The engine restarts once.';
-
-  @override
-  String get hubSettingsRootAllow => 'Allow root';
-
 
   @override
   String get hubSettingsVisualReplies => 'Visual replies';
@@ -7905,6 +9451,9 @@ class L10nEn extends L10n {
 
   @override
   String get launchFitCenter => 'Center';
+
+  @override
+  String get launchFrame => 'Reposition';
 
   @override
   String get launchBackground => 'Background';
@@ -8812,6 +10361,130 @@ class L10nEn extends L10n {
   String get mediaSettingsEnabledHint => 'Turns this service off for generation';
 
   @override
+  String get mediaConfigKeySaved => 'Saved · not verified';
+
+  @override
+  String get mediaConfigKeyUnknown => 'Status unavailable';
+
+  @override
+  String get mediaConfigKeyNote =>
+      'Key presence is reported by the host. Saving a key does not verify authentication or model access.';
+
+  @override
+  String mediaConfigConsumers(String services) {
+    return 'Media services using this key: $services. Changing or removing it affects all of them; other host integrations may also use it.';
+  }
+
+  @override
+  String get mediaConfigCheck => 'Check saved configuration';
+
+  @override
+  String get mediaConfigCheckNote =>
+      'Local snapshot only; no provider request or generation charge. Does not verify the key, connectivity, balance, model access, or region. The host remains the authority on accepted settings.';
+
+  @override
+  String get mediaConfigCheckReady => 'No local configuration issues found';
+
+  @override
+  String get mediaConfigCheckMissingKey => 'The host has not reported a saved key.';
+
+  @override
+  String get mediaConfigCheckModels =>
+      'No selected models, or some selected models are missing or use a different protocol.';
+
+  @override
+  String get mediaConfigCheckDisabled => 'This service is switched off.';
+
+  @override
+  String get mediaConfigUrlInvalid =>
+      'Enter an HTTPS API root with a host, without credentials, query, fragment, or whitespace.';
+
+  @override
+  String get mediaConfigUrlEndpoint =>
+      'This looks like a request endpoint. Enter the API root instead; the host appends the request path.';
+
+  @override
+  String get mediaConfigUrlRoot => 'This protocol needs the origin only (https://host), without an API path.';
+
+  @override
+  String get mediaConfigUrlHint =>
+      'Enter the API root, not a generation endpoint. OpenAI-compatible roots keep their prefix (for example /v1).';
+
+  @override
+  String get mediaConfigPreview => 'Create request preview';
+
+  @override
+  String get mediaConfigPreviewNote =>
+      'Generation/create request only; edits and status requests may use different paths. Preview is not proof of connectivity or host acceptance.';
+
+  @override
+  String get mediaConfigPreviewUnavailable => 'Request path unavailable in this host catalogue.';
+
+  @override
+  String get mediaConfigTargetTitle => 'Reuse key at a different target?';
+
+  @override
+  String mediaConfigTargetBody(String before, String after) {
+    return 'Target changes from $before to $after. Future requests may send the referenced key to the new target. Only continue if you trust it. The host still validates the change.';
+  }
+
+  @override
+  String get mediaConfigTargetConfirm => 'Trust target and continue';
+
+  @override
+  String get mediaVideoLoading => 'Loading video…';
+
+  @override
+  String get mediaVideoCannotPlay => 'This video could not be played here. Retry or open it in another app.';
+
+  @override
+  String get mediaVideoPlay => 'Play';
+
+  @override
+  String get mediaVideoPause => 'Pause';
+
+  @override
+  String get mediaVideoSaveFailed => 'Couldn’t save the video. Try again.';
+
+  @override
+  String get mediaImageLoading => 'Loading image';
+
+  @override
+  String get mediaImageReload => 'Reload image';
+
+  @override
+  String get mediaImageReloadHint => 'Reads the file again; does not generate again or incur generation charges';
+
+  @override
+  String get mediaVideoNoPoster => 'Tap to play video';
+
+  @override
+  String mediaSavedFilesCount(int count) {
+    return 'Saved $count files to gallery';
+  }
+
+  @override
+  String get modeSheetTitle => 'Mode';
+
+  @override
+  String get modeKeyTooltip => 'Switch mode';
+
+  @override
+  String get modeWork => 'Work';
+
+  @override
+  String get modeWorkSubtitle => 'Get things done with DSH';
+
+  @override
+  String get modeCompanionShort => 'Companion';
+
+  @override
+  String get modeTavernSubtitle => 'Import a character card and start a story';
+
+  @override
+  String get modeStartup => 'Open on launch';
+
+  @override
   String get nearbyThisChat => 'This chat';
 
   @override
@@ -8874,6 +10547,13 @@ class L10nEn extends L10n {
 
   @override
   String get performanceSystemMotion => 'Also follows the system\'s remove animations setting';
+
+  @override
+  String get performanceFluid => 'Fluid motion';
+
+  @override
+  String get performanceFluidHint =>
+      'Springy releases, a soft glow under your finger, cards that open into pages. Costs almost no battery';
 
   @override
   String get performanceFollowMode => 'Follow the performance mode';
@@ -9041,6 +10721,10 @@ class L10nEn extends L10n {
 
   @override
   String get phoneEngineResetTitle => 'Reset the runtime?';
+
+  @override
+  String get phoneResetAlsoDeletes =>
+      'Anything else in the home folder (/root) goes too, including files in your workspaces, AGENTS.md and data that plugins store themselves, such as memories.';
 
   @override
   String get phoneEngineKeepUiSkills => 'Keep interface settings and skills';
@@ -9302,7 +10986,7 @@ class L10nEn extends L10n {
   String get phoneDndDirectAdb => 'Direct ADB';
 
   @override
-  String get phoneDndChannels => 'Channel';
+  String get phoneDndChannels => 'Connection';
 
   @override
   String get phoneDndShizukuFor => 'Phones with the Shizuku app';
@@ -9364,7 +11048,7 @@ class L10nEn extends L10n {
       'The Sui interface isn’t available. Check that the Sui module is enabled, restart the phone and try again.';
 
   @override
-  String get phoneDndSuiAllSet => 'Sui is ready.';
+  String get phoneDndSuiAllSet => 'Sui is running and authorized. Connect the background screen next.';
 
   @override
   String get phoneDndSuiPermissionFailed =>
@@ -9375,7 +11059,7 @@ class L10nEn extends L10n {
 
   @override
   String get phoneDndRootConnected =>
-      'Root is connected. If it drops, choose it here again; DSH Go asks for root on its own only with “Keep root channel” on above.';
+      'Root is connected. If it drops, choose it here again; DSH Go asks for root on its own only with “Keep root channel” enabled under More settings.';
 
   @override
   String get phoneDndRootConnectedKept =>
@@ -9385,8 +11069,7 @@ class L10nEn extends L10n {
   String get phoneDndRootRetry => 'Ask for root again';
 
   @override
-  String get phoneDndInstallShizuku =>
-      'Install Shizuku first (free and open source). If you use tools like Ice Box or Brevent, you may already have it.';
+  String get phoneDndInstallShizuku => 'Install Shizuku first (free and open source).';
 
   @override
   String get phoneDndOpenShizukuSite => 'Open Shizuku website';
@@ -9402,7 +11085,7 @@ class L10nEn extends L10n {
   String get phoneDndGrantShizuku => 'Allow DSH Go';
 
   @override
-  String get phoneDndShizukuAllSet => 'Shizuku is ready.';
+  String get phoneDndShizukuAllSet => 'Shizuku is running and authorized. Connect the background screen next.';
 
   @override
   String get phoneDndShizukuInstalled => 'Shizuku installed';
@@ -9547,7 +11230,23 @@ class L10nEn extends L10n {
   String get phoneControlFloatingBarHint => 'Pause or stop from the floating bar';
 
   @override
-  String get phoneControlAdvanced => 'Advanced';
+  String get phoneControlAdvanced => 'More settings';
+
+  @override
+  String get phoneDndMoreChannels => 'More connections (Root / Sui)';
+
+  @override
+  String get phoneDndChangeChannel => 'Change connection';
+
+  @override
+  String get phoneDndPairingHelp => 'Pairing help / manual entry';
+
+  @override
+  String get phoneDndConnectHelp => 'Cannot connect?';
+
+  @override
+  String get phoneDndPairNext =>
+      'Enable Wireless debugging in Developer options, then start pairing and enter the pairing code in the notification.';
 
   @override
   String get phoneControlKeepAliveHint => 'Prevent Android from turning off accessibility';
@@ -9961,6 +11660,14 @@ class L10nEn extends L10n {
   String get phoneSafeRestoreFailed => 'Couldn’t restore';
 
   @override
+  String get phoneSafeStopIncomplete =>
+      'Could not confirm that the engine has stopped. Configuration was not changed. Check the engine logs before trying again.';
+
+  @override
+  String get phoneSafeRestartIncomplete =>
+      'The configuration operation finished, but the engine has not stopped or restarted. Wait for it to stop before starting it again.';
+
+  @override
   String get phoneSafeRestoreIntro => 'DSH will restore the last working configuration:';
 
   @override
@@ -10337,6 +12044,31 @@ class L10nEn extends L10n {
   String get phoneDirectChangeFailed => 'Could not change the launch method. Stop the local engine and try again.';
 
   @override
+  String get phoneTawcEngine => 'tawcroot fast launch';
+
+  @override
+  String get phoneTawcHint =>
+      'Experimental and off by default; applies on the next start. Only one of this and direct launch can be on. Runs the local engine with tawcroot instead of compatible launch: it starts about three times faster, and package installs and apt get faster too. If it can’t start, the app goes back to compatible launch on its own. The first start after you turn it off first turns the hard links it made into ordinary files, which can take a little longer.';
+
+  @override
+  String get phoneTawcFailedHint =>
+      'tawcroot didn’t start on this phone, so compatible launch is used. Stop the engine and turn this on to try again.';
+
+  @override
+  String get phoneTawcUnavailable =>
+      'This build doesn’t include tawcroot, or the phone runs a version older than Android 10.';
+
+  @override
+  String get phoneLaunchTawcroot => 'tawcroot';
+
+  @override
+  String get phoneTawcLaunchFailed => 'tawcroot failed to start';
+
+  @override
+  String get phoneTawcUnsupported =>
+      'This start’s settings aren’t supported by tawcroot yet, compatible launch for now';
+
+  @override
   String get phoneActualLaunchMode => 'Current launch';
 
   @override
@@ -10389,6 +12121,393 @@ class L10nEn extends L10n {
   @override
   String get phoneDndConnectPortHint =>
       'On the main Wireless debugging settings page, find “IP address & port” and enter the port after the colon. Do not use the pairing-code dialog’s port.';
+
+  @override
+  String get phonePreviewTitle => 'Live background preview';
+
+  @override
+  String get phonePreviewDescription =>
+      'Frames are read only while the preview is visible and stay on this device. The preview is view-only.';
+
+  @override
+  String get phonePreviewOpen => 'View background screen';
+
+  @override
+  String phonePreviewTask(String taskId) {
+    return 'Preview task $taskId';
+  }
+
+  @override
+  String get phonePreviewInUse => 'Another task is being previewed';
+
+  @override
+  String get phonePreviewOff => 'The task ended or preview is off';
+
+  @override
+  String get phonePreviewUnavailable => 'Preview is unavailable or the screen is protected';
+
+  @override
+  String get phonePreviewWaiting => 'Waiting for a new background frame';
+
+  @override
+  String get phoneViewportTitle => 'Background viewport';
+
+  @override
+  String get phoneViewportDescription =>
+      'Applies when the next background screen is created. The current screen stays unchanged; recreating it after handoff uses the new setting. This does not force apps to rotate.';
+
+  @override
+  String get phoneViewportPortrait => 'Portrait';
+
+  @override
+  String get phoneViewportLandscape => 'Landscape';
+
+  @override
+  String get phoneResumeTask => 'Allow phone control again';
+
+  @override
+  String get phoneResumeTaskHint =>
+      'Allow future phone actions in this conversation. Finished actions will not be replayed.';
+
+  @override
+  String get phoneResumeTaskFailed => 'Could not resume. The previous action may still be finishing.';
+
+  @override
+  String phoneStoppedTask(int task) {
+    return 'Phone task $task stopped';
+  }
+
+  @override
+  String get phoneTaskDrainingHint => 'Waiting for the previous action and background screen cleanup to finish.';
+
+  @override
+  String get phoneTaskCleanupFailedHint =>
+      'Background screen cleanup could not be confirmed. Phone control remains blocked.';
+
+  @override
+  String phoneFinishingTask(int task) {
+    return 'Phone task $task is finishing';
+  }
+
+  @override
+  String get phoneCleanupRetry => 'Retry cleanup';
+
+  @override
+  String get phoneCleanupRetryFailed =>
+      'The previous background screen is still unconfirmed. Its screen access remains reserved.';
+
+  @override
+  String get phoneSelfCheckTitle => 'Check phone control';
+
+  @override
+  String get phoneSelfCheckTechnicalDetails => 'Technical details';
+
+  @override
+  String get phoneLocalOcrSummary =>
+      'On-device recognition; results may go to your model. The SDK collects usage statistics.';
+
+  @override
+  String get phoneLocalOcrPrivacyDetails => 'Privacy details';
+
+  @override
+  String get phoneSelfCheckPartial => 'Partial check — only observed items have results';
+
+  @override
+  String get phoneSelfCheckScope =>
+      'Uses the selected connected channel and a temporary presentation display. App launch, text input, screenshots, OCR and MAIN disturbance are not tested. Cleanup alone does not prove a display was created.';
+
+  @override
+  String get phoneSelfCheckStart => 'Start check';
+
+  @override
+  String get phoneSelfCheckCancel => 'Request cancellation';
+
+  @override
+  String get phoneSelfCheckRefresh => 'Refresh status';
+
+  @override
+  String get phoneSelfCheckSave => 'Save sanitized report';
+
+  @override
+  String get phoneSelfCheckSaving => 'Saving…';
+
+  @override
+  String get phoneSelfCheckSaved => 'Report saved to Downloads/DSH-Go.';
+
+  @override
+  String get phoneSelfCheckSaveFailed => 'Could not save the report.';
+
+  @override
+  String get phoneSelfCheckReportHint =>
+      'Save only when you choose. The local report contains fixed results, with no screenshots, recognized text, logs, account data or run identifier.';
+
+  @override
+  String phoneSelfCheckRunState(String state) {
+    String _temp0 = intl.Intl.selectLogic(state, {
+      'idle': 'Not started',
+      'running': 'Running partial check',
+      'cleaning': 'Cleaning up; cancellation does not undo sent input',
+      'done': 'Check ended; see Technical details for results',
+      'cancelled': 'Cancelled; observed actions remain recorded',
+      'other': 'Status unavailable',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String phoneSelfCheckStepState(String state) {
+    String _temp0 = intl.Intl.selectLogic(state, {
+      'not_run': 'Not run / no observation',
+      'running': 'Running',
+      'pass': 'Observed pass',
+      'fail': 'Failed',
+      'skipped': 'Skipped',
+      'unknown': 'Unconfirmed',
+      'cancelled': 'Cancelled',
+      'other': 'Unconfirmed',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String phoneSelfCheckStage(String stage) {
+    String _temp0 = intl.Intl.selectLogic(stage, {
+      'device': 'Device preconditions',
+      'channel': 'Selected channel',
+      'display': 'Temporary background display',
+      'input_probe': 'Touch receiver',
+      'launch': 'App launch',
+      'tree': 'Accessibility tree',
+      'tap': 'App button tap',
+      'scroll': 'App scrolling',
+      'back': 'App back action',
+      'text_ascii': 'Fixed ASCII input',
+      'text_zh': 'Fixed Chinese input',
+      'capture': 'Local pattern capture',
+      'continuity': 'Limited controlled refresh',
+      'main': 'Limited MAIN observations',
+      'ocr': 'Local OCR',
+      'cleanup': 'Strict cleanup',
+      'other': 'Unknown item',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String phoneSelfCheckReason(String reason) {
+    String _temp0 = intl.Intl.selectLogic(reason, {
+      'busy': 'The phone or channel is busy.',
+      'unsupported': 'This device or peer does not support this check.',
+      'cancelled': 'This request was cancelled or retired.',
+      'disabled': 'Phone control is turned off.',
+      'locked': 'The device is locked.',
+      'identity': 'The original run or channel no longer matches.',
+      'invalid': 'The request or result could not be verified.',
+      'display': 'The temporary display could not be verified.',
+      'input': 'Input acceptance or delivery was not confirmed. Sent input is not retried.',
+      'cleanup': 'Resource cleanup is unconfirmed. Reconnect the channel, then check again.',
+      'denied': 'The system denied the operation.',
+      'timeout': 'The operation timed out; sent work may still complete.',
+      'unavailable': 'The local status or selected channel is unavailable.',
+      'target_unavailable': 'The fixed target could not be verified. Finish cleanup before starting again.',
+      'target_changed': 'The original target changed. Continue only with cleanup.',
+      'target_cleanup': 'Target cleanup is unconfirmed. Reconnect the channel, then check again.',
+      'target_main': 'The target was observed on MAIN. Further steps stopped; complete cleanup.',
+      'target_readback': 'The fixed target count or text did not match. Do not repeat the action; complete cleanup.',
+      'tree_cleanup': 'Tree connection cleanup is unconfirmed. Reconnect the channel, then check again.',
+      'target_launch': 'Target launch was denied or unconfirmed. Check the device and complete cleanup.',
+      'frame_unavailable': 'No usable local pattern frame was observed. Complete cleanup before a new check.',
+      'frame_mismatch': 'The actual frame did not match this target and phase. Complete cleanup.',
+      'continuity': 'The limited controlled refresh sequence was not confirmed. This is not a frame-rate result.',
+      'main_changed':
+          'MAIN samples changed; this may include user actions. Complete cleanup. This does not establish the cause.',
+      'main_unchanged': 'No change was seen at these finite sampling points. Disturbance between them remains unknown.',
+      'main_incomplete': 'MAIN samples are incomplete. They cannot establish absence of disturbance.',
+      'not_installed': 'This self-check does not include OCR. OCR was not tested.',
+      'other': 'An unrecognized result was received.',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String get phoneSelfCheckTargetScope =>
+      'Uses an ordinary temporary display and a fixed local target for launch, tree reading and one button tap. Text, scrolling, screenshots and OCR are not tested. MAIN can only record an observed failure, never a pass. Cleanup alone does not prove a display was created.';
+
+  @override
+  String get phoneSelfCheckProfileChoice => 'Choose the next check (does not change the report below)';
+
+  @override
+  String phoneSelfCheckProfile(String profile) {
+    String _temp0 = intl.Intl.selectLogic(profile, {
+      'probe_b': 'Input receiver check (B)',
+      'target_c1': 'Fixed target check (C1)',
+      'target_c2': 'Fixed input and frames (C2)',
+      'other': 'Unknown profile',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String phoneSelfCheckReportProfile(String profile) {
+    String _temp0 = intl.Intl.selectLogic(profile, {
+      'probe_b': 'Report profile: input receiver (B)',
+      'target_c1': 'Report profile: fixed target (C1)',
+      'target_c2': 'Report profile: fixed input and frames (C2)',
+      'other': 'Report profile: unconfirmed',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String get phoneSelfCheckTargetC2Scope =>
+      'Uses a fixed local target for launch, tree reading, one button tap, ASCII and Chinese ACTION_SET_TEXT replacement/readback, local pattern capture and limited controlled refresh. This does not measure FPS or smoothness. Finite MAIN samples cannot prove there was no disturbance between samples. OCR, touch reception, scrolling and back are not tested. Cleanup alone does not prove a display was created.';
+
+  @override
+  String phoneTaskWaiting(int taskId) {
+    return 'Task $taskId · Waiting for resources';
+  }
+
+  @override
+  String phoneTaskWaitingApp(String packageName, int seconds) {
+    return 'Waiting for app $packageName · $seconds seconds elapsed.';
+  }
+
+  @override
+  String phoneTaskWaitingUnknown(int seconds) {
+    return 'Waiting for the interface (app identity unconfirmed) · $seconds seconds elapsed.';
+  }
+
+  @override
+  String phoneTaskWaitingScreen(String screen, int seconds) {
+    return 'Waiting for $screen · $seconds seconds elapsed.';
+  }
+
+  @override
+  String get phoneTaskMainResource => 'the main screen';
+
+  @override
+  String get phoneTaskBackgroundResource => 'the background screen';
+
+  @override
+  String get phoneInterruptionTitle => 'Previous phone tasks did not confirm completion';
+
+  @override
+  String get phoneInterruptionLoading => 'Reading interrupted task records…';
+
+  @override
+  String get phoneInterruptionStorageError =>
+      'Task completion records could not be saved or read. Retry; this does not mean background resources were released.';
+
+  @override
+  String phoneInterruptionHint(int count) {
+    return '$count tasks were interrupted or could not save completion. Actions may already have taken effect. Check first. Acknowledging only confirms you saw this notice; it does not resume actions or prove background resources were released.';
+  }
+
+  @override
+  String get phoneInterruptionAcknowledge => 'I checked the interruption notice';
+
+  @override
+  String get phoneInterruptionRetry => 'Retry saving or reading';
+
+  @override
+  String get phoneInterruptionActionFailed => 'Task records are not confirmed yet. Please retry.';
+
+  @override
+  String get phoneLocalOcrTitle => 'Text recognition';
+
+  @override
+  String get phoneLocalOcrUnknown => 'This setting could not be read. Refresh and try again.';
+
+  @override
+  String get phoneLocalOcrDisclosure =>
+      'Recognition runs on this device. Screenshots and text are not sent to Google; Google’s SDK collects usage statistics such as device model, app version and processing time.';
+
+  @override
+  String get phoneLocalOcrDetails =>
+      'Enabled by default. While off, text recognition requests do not trigger SDK loading or initialization. Remote pairing initializes the shared SDK separately when its scanner opens; it does not enable text recognition. Screenshots and recognized text may be sent to your configured model. Turning this off prevents new local recognition; work already started may still finish. It does not uninstall the SDK or promise to clear or stop sending previously accumulated SDK statistics.';
+
+  @override
+  String get phoneBackgroundParallelTitle => 'Background task limit';
+
+  @override
+  String phoneBackgroundParallelStatus(int configured, int effective, int held) {
+    return 'Configured: $configured · Available limit: $effective · Occupied: $held';
+  }
+
+  @override
+  String get phoneBackgroundParallelDescription =>
+      'A lower limit keeps existing tasks. New tasks still wait for apps and the main screen to become available.';
+
+  @override
+  String phoneBackgroundParallelChoice(int limit) {
+    return '$limit background task slots';
+  }
+
+  @override
+  String get phoneBackgroundParallelOff => 'The background channel is off. Saving this preference does not turn it on.';
+
+  @override
+  String get phoneBackgroundParallelUnsupported => 'Background operation is unavailable on this device.';
+
+  @override
+  String get phoneBackgroundParallelConnection => 'A connection is required before a new background task can start.';
+
+  @override
+  String get phoneBackgroundParallelBusy =>
+      'The background channel is being prepared or maintained. New tasks cannot start yet.';
+
+  @override
+  String get phoneGateRetest => 'Check this channel again';
+
+  @override
+  String get phoneBackgroundParallelSerial =>
+      'This connection supports one background slot. Your preference remains saved.';
+
+  @override
+  String get phoneSkillBundlePublishedUnverified =>
+      'The files were published, but full verification has not succeeded. Do not save again.';
+
+  @override
+  String get phoneSkillBundleUnknown =>
+      'The save result is not confirmed. Files may already have been written. Do not save again.';
+
+  @override
+  String phoneSkillBundleRevision(String revision) {
+    return 'Route revision: $revision';
+  }
+
+  @override
+  String get phoneSkillReplayReview => 'Review phone route';
+
+  @override
+  String get phoneSkillReplaySourceChanged =>
+      'The local session or connection changed. Select the route again from the current local conversation.';
+
+  @override
+  String get phoneSkillReplayUnavailable =>
+      'This route is not available for controlled execution on this phone. The ordinary skill template remains available.';
+
+  @override
+  String get phoneSkillReplayConfirm => 'I have reviewed this route and the app selected for this use.';
+
+  @override
+  String get phoneSkillReplayToComposer => 'Insert into this conversation';
+
+  @override
+  String phoneSkillReplayStartText(String request) {
+    return 'A phone route has been selected and reviewed locally. Call only mcp__phone__replay with $request. If unavailable or refused, hand back to the user/model; do not replay it as ordinary actions.';
+  }
+
+  @override
+  String get phoneSkillReplayQueue => 'Send route (queue)';
+
+  @override
+  String get phoneSkillReplayQueued =>
+      'The route message was accepted or queued. This does not mean the route has executed successfully.';
+
+  @override
+  String get phoneSkillReplaySendUncertain =>
+      'Delivery of the route message was not confirmed. It has not been prepared or replayed again. Check the original conversation.';
 
   @override
   String get phoneTaskResultReady => 'Task complete · View result';
@@ -10510,6 +12629,110 @@ class L10nEn extends L10n {
 
   @override
   String get phoneKeepFailed => 'Couldn’t reconnect. Tries again when you open the app or start a task.';
+
+  @override
+  String get phoneSkillSectionTitle => 'Completed tasks and skills';
+
+  @override
+  String get phoneSkillAskAfterSuccess => 'Ask to save a skill after a successful task';
+
+  @override
+  String get phoneSkillAskAfterSuccessHint =>
+      'Off by default. A newly completed task asks once while this page is visible. You can also choose a task manually.';
+
+  @override
+  String phoneSkillTask(int taskId, int steps) {
+    return 'Task $taskId · $steps steps';
+  }
+
+  @override
+  String get phoneSkillCandidateHint =>
+      'Check the actual result first; successful tool calls do not prove that your goal was achieved.';
+
+  @override
+  String get phoneSkillSaveAction => 'Save as a skill';
+
+  @override
+  String get phoneSkillConfirmGoal => 'Did this task achieve your goal?';
+
+  @override
+  String get phoneSkillConfirmGoalBody =>
+      'Check the actual result. Your confirmation creates a draft that you can review and edit before saving.';
+
+  @override
+  String get phoneSkillGoalDone => 'Goal achieved · Review draft';
+
+  @override
+  String get phoneSkillPrivacyHint =>
+      'The draft stays on this device. Do not enter passwords, keys, or verification codes. In this version, free text becomes parameters; removing or reordering steps is kept. Review the final preview.';
+
+  @override
+  String get phoneSkillGoal => 'Goal';
+
+  @override
+  String get phoneSkillPrerequisites => 'Requirements (app, version, sign-in state)';
+
+  @override
+  String phoneSkillStep(int number) {
+    return 'Original step $number';
+  }
+
+  @override
+  String get phoneSkillCheckpoint => 'What should appear after this step';
+
+  @override
+  String get phoneSkillMoveUp => 'Move step up';
+
+  @override
+  String get phoneSkillMoveDown => 'Move step down';
+
+  @override
+  String get phoneSkillUpdatePreview => 'Update the redacted preview';
+
+  @override
+  String get phoneSkillPreviewTitle => 'Complete content to be saved';
+
+  @override
+  String get phoneSkillParameterizedHint =>
+      'Free text has been replaced with parameters to fill in and check when using this skill.';
+
+  @override
+  String get phoneSkillFinalConfirmation =>
+      'I have reviewed the complete current preview and agree to save this version.';
+
+  @override
+  String get phoneSkillSavedBody =>
+      'The file was written to the local skills directory. The engine’s refreshed skill list has not been verified; check the Skills page.';
+
+  @override
+  String get phoneSkillWriting => 'Writing the skill';
+
+  @override
+  String get phoneSkillCannotCancel =>
+      'The write may have reached its commit stage and cannot be guaranteed to cancel. Closing only closes this page; a committed file will still be saved.';
+
+  @override
+  String get phoneSkillKeepWaiting => 'Keep viewing';
+
+  @override
+  String get phoneSkillCheckWrite => 'Check write result';
+
+  @override
+  String get phoneSkillStale => 'This draft is no longer current. Close it and choose the task again.';
+
+  @override
+  String get phoneSkillSensitive => 'The edit contains sensitive content. Remove it before updating the preview.';
+
+  @override
+  String get phoneSkillInvalid =>
+      'The edit or step order exceeds the limits. Shorten the text and keep at least one step.';
+
+  @override
+  String get phoneSkillWriteFailed =>
+      'The file could not be written. Check the local runtime and storage; edit and update the preview before confirming another save.';
+
+  @override
+  String get phoneSkillUnavailable => 'Skill drafts are unavailable. Check the local engine state and try again.';
 
   @override
   String get phoneModeTitle => 'How DSH confirms';
@@ -10952,6 +13175,24 @@ class L10nEn extends L10n {
 
   @override
   String get plugInputGestureRequired => 'This effect requires a user tap';
+
+  @override
+  String get seamsTitle => 'In-app interface';
+
+  @override
+  String get seamsOverlay => 'Chat overlay';
+
+  @override
+  String get seamsOverlayNote => 'Stays over the chat and yields when memory is tight';
+
+  @override
+  String get seamsSidebarPage => 'Sidebar entry';
+
+  @override
+  String get seamsSettingsPage => 'Plugin settings page';
+
+  @override
+  String get seamsDetailPage => 'Plugin detail extension';
 
   @override
   String get pluginsOperationHostChanged => 'Host changed — nothing was done';
@@ -12209,6 +14450,15 @@ class L10nEn extends L10n {
   String get pluginsLoadRemoteLogs => 'Check the engine logs on this host.';
 
   @override
+  String get plugslotsSurfaceComposerTools => 'Plus panel tools';
+
+  @override
+  String get plugslotsSurfaceSessionActions => 'Chat actions';
+
+  @override
+  String get plugslotsSurfaceTurnNote => 'Turn notes';
+
+  @override
   String get plugslotsSurfaceComposerActions => 'Composer buttons';
 
   @override
@@ -12678,6 +14928,61 @@ class L10nEn extends L10n {
   String get readListFailed => 'Not updated · previous results';
 
   @override
+  String get remoteDshMode => 'Instance management';
+
+  @override
+  String get remoteManaged => 'Managed';
+
+  @override
+  String get remoteAttachOnly => 'Attach only';
+
+  @override
+  String get remoteManagedHelp =>
+      'Start or reuse app-managed DSH. A live instance that cannot be reused is never replaced automatically.';
+
+  @override
+  String get remoteAttachOnlyHelp =>
+      'Forward only to a fixed port on remote 127.0.0.1. Never start, stop or restart DSH.';
+
+  @override
+  String get remoteDshPort => 'Remote DSH port';
+
+  @override
+  String get remoteDshToken => 'DSH launch token';
+
+  @override
+  String get remoteDshTokenHelp =>
+      'Enter the token from the existing instance’s launch URL. It stays in secure storage on this phone.';
+
+  @override
+  String get remoteAttachWorkingDirectoryHelp =>
+      'Existing instances are not probed for a home directory. Use a remote absolute path, or leave empty for DSH’s default.';
+
+  @override
+  String get remoteSshCompression => 'SSH compression';
+
+  @override
+  String get remoteSshCompressionHelp =>
+      'On by default. Negotiate compression after authentication; use uncompressed transport if unsupported.';
+
+  @override
+  String get remoteRestartManaged => 'Restart managed DSH';
+
+  @override
+  String get remoteRestartManagedWarning =>
+      'This stops the remote DSH recorded by the app and starts it again. Other clients and active chats may be interrupted. Continue only after checking nobody else is using it. Normal connection tests never do this.';
+
+  @override
+  String get remoteErrSharedInstance =>
+      'Remote managed DSH is still running, but its start command differs or its launch log is missing. To protect shared use, it was not restarted. Check the settings, use Attach only, or explicitly choose Restart managed DSH in Edit host.';
+
+  @override
+  String get remoteErrAttachSettings => 'Enter a valid remote DSH port and launch token';
+
+  @override
+  String get remoteDshAttached => 'Connected to existing DSH';
+
+  @override
   String get remoteStartupSection => 'On launch';
 
   @override
@@ -12848,7 +15153,8 @@ class L10nEn extends L10n {
   String get remoteDshStarted => 'Started DSH on the host';
 
   @override
-  String get remoteErrDshTokenRejected => 'Remote DSH rejected the sign-in token';
+  String get remoteErrDshTokenRejected =>
+      'Remote DSH rejected the token; it was not restarted. Check the token, or explicitly restart the managed instance in Edit host.';
 
   @override
   String get remoteErrDshSignIn => 'Couldn’t sign in to remote DSH';
@@ -13480,7 +15786,11 @@ class L10nEn extends L10n {
   String get remoteSelfHostedServer => 'Self-hosted server';
 
   @override
-  String get remoteSelfHostedSignInHelp => 'Sign in to your own liguobao/ds-harness-remote with email and password';
+  String get remoteSelfHostedSignInHelp =>
+      'Enter your server address. Sign in with email and password, or use this server to choose another sign-in method.';
+
+  @override
+  String get remoteUseServer => 'Use this server';
 
   @override
   String get remoteServerAddress => 'Server address';
@@ -14205,6 +16515,206 @@ class L10nEn extends L10n {
   String get remoteNetworkObservedAt => 'Last checked';
 
   @override
+  String get remoteNetworkLocalIpVersion => 'Phone ICE IP version';
+
+  @override
+  String get remoteNetworkRemoteIpVersion => 'Host ICE IP version';
+
+  @override
+  String get remoteNetworkIceProtocol => 'ICE protocol';
+
+  @override
+  String get remoteTransferSettings => 'Remote transfer';
+
+  @override
+  String get remoteCompactHistory => 'Compact history';
+
+  @override
+  String get remoteErrHistoryModeChanged =>
+      'The Host no longer supports compact history. Switch to another host and back, or restart the app, to reload history.';
+
+  @override
+  String get remoteCompactHistoryHint =>
+      'Reduces historical tool details on supporting DSH Remote Hosts; live replies and approvals stay unchanged. Switch hosts or restart the app to apply. Older Hosts keep full history.';
+
+  @override
+  String get searchKwRemoteCompactHistory => 'compact slim lite history tools transfer bandwidth remote';
+
+  @override
+  String get remotePairEntry => 'Pair a computer by scanning';
+
+  @override
+  String get remotePairEntryHint =>
+      'Scan the code the Remote plugin shows on your computer. No Remote account needed; sign in to DeepSeek first.';
+
+  @override
+  String get remotePairAddComputer => 'Add a computer by scanning';
+
+  @override
+  String get remotePairTitle => 'Pair a computer';
+
+  @override
+  String get remotePairSubtitle =>
+      'No Remote account needed. Your DeepSeek password and sign-in tokens are never sent.';
+
+  @override
+  String get remotePairNeedsDeepSeek => 'Sign in to DeepSeek first';
+
+  @override
+  String get remotePairNeedsDeepSeekBody =>
+      'Pairing needs the DeepSeek account signed in on DSH Go. Only its account ID goes along, to label this phone; no password, cookie or token.';
+
+  @override
+  String get remotePairScanHint => 'Point the camera at the pairing code the Remote plugin shows on your computer';
+
+  @override
+  String get remotePairPasteLink => 'Paste pairing link';
+
+  @override
+  String get remotePairPasteEmpty => 'No pairing link on the clipboard';
+
+  @override
+  String get remotePairScannerFailed => 'The QR reader is unavailable. Paste the pairing link to continue pairing.';
+
+  @override
+  String get remotePairFromImage => 'From photos';
+
+  @override
+  String get remotePairImageNoCode => 'No QR code found in that image';
+
+  @override
+  String get remotePairCameraDenied =>
+      'No camera access. Turn it on in system settings, or use From photos or Paste pairing link.';
+
+  @override
+  String get remotePairCameraFailed => 'The camera didn’t open. Use From photos or Paste pairing link.';
+
+  @override
+  String get remotePairReading => 'Reading the pairing code…';
+
+  @override
+  String get remotePairConfirmTitle => 'Connect to this computer?';
+
+  @override
+  String get remotePairComputer => 'Computer';
+
+  @override
+  String get remotePairServer => 'Server';
+
+  @override
+  String get remotePairFingerprint => 'Computer fingerprint';
+
+  @override
+  String get remotePairFingerprintHint =>
+      'Check that it matches the fingerprint in the Remote plugin on your computer before you continue.';
+
+  @override
+  String get remotePairConfirm => 'It’s this computer, pair';
+
+  @override
+  String get remotePairNotThis => 'Not this one, scan again';
+
+  @override
+  String get remotePairClaiming => 'Getting a verification code…';
+
+  @override
+  String get remotePairCodeTitle => 'Enter this 8-digit code on the computer';
+
+  @override
+  String remotePairCodeSemantics(String digits) {
+    return 'Verification code $digits';
+  }
+
+  @override
+  String get remotePairCodeHint =>
+      'Type it into the Remote plugin on your computer, then click Confirm binding. Nothing more to do on the phone.';
+
+  @override
+  String get remotePairOneAttempt =>
+      'One attempt only: a wrong code ends this pairing, and you’ll need a new code on the computer.';
+
+  @override
+  String remotePairWaiting(String countdown) {
+    return 'Waiting for the computer · $countdown left';
+  }
+
+  @override
+  String get remotePairApproved => 'The computer confirmed. Finishing…';
+
+  @override
+  String get remotePairCodeExpired => 'The code expired. Show a new pairing code on the computer.';
+
+  @override
+  String remotePairConnecting(String name) {
+    return 'Paired. Connecting to $name…';
+  }
+
+  @override
+  String get remotePairFailedTitle => 'Couldn’t pair';
+
+  @override
+  String remotePairOtherServerBody(String server) {
+    return 'This code is from $server, not the Remote server DSH Go uses now. Switch to it and continue? Each server keeps its own sign-in.';
+  }
+
+  @override
+  String get remotePairSwitchServer => 'Switch server and continue';
+
+  @override
+  String get remotePairScanAgain => 'Scan again';
+
+  @override
+  String get remotePairErrInvalidCode => 'That isn’t a DSH Go pairing code';
+
+  @override
+  String get remotePairErrOtherServer => 'This code is from another Remote server';
+
+  @override
+  String get remotePairErrUnsupported => 'This Remote server doesn’t support pairing by scanning yet';
+
+  @override
+  String get remotePairErrExpired => 'The code expired or was already used. Show a new pairing code on the computer.';
+
+  @override
+  String get remotePairErrCodeRejected =>
+      'The computer entered a wrong code, so this pairing is over. Show a new pairing code on the computer and scan again.';
+
+  @override
+  String get remotePairErrCancelled => 'Pairing cancelled';
+
+  @override
+  String get remotePairErrAccountConflict =>
+      'This phone is signed in to another Remote account than the computer’s. That sign-in is kept; to switch, sign out of Remote first.';
+
+  @override
+  String get remotePairErrIdentity =>
+      'The pairing no longer matches this computer or this phone, so it stopped. Show a new pairing code on the computer.';
+
+  @override
+  String get remotePairErrHostLimit => 'This account already has the maximum number of computers';
+
+  @override
+  String get remotePairErrNetwork => 'Can’t reach the Remote server. Check your network and try again.';
+
+  @override
+  String get remotePairErrFailed => 'Pairing didn’t finish. Scan again.';
+
+  @override
+  String remotePairSwitchFailedTitle(String name) {
+    return 'Paired with $name';
+  }
+
+  @override
+  String get remotePairSwitchFailedBody => 'But switching to it didn’t work. Try again, or pick it under Remote hosts.';
+
+  @override
+  String get remotePairDone => 'Done';
+
+  @override
+  String get remotePairErrPinSave =>
+      'Paired, but this phone couldn’t store the computer’s fingerprint. Show a new pairing code on the computer and scan it again.';
+
+  @override
   String get stateWorkspaceFilesHint => 'Files uploaded to the current workspace:';
 
   @override
@@ -14316,6 +16826,26 @@ class L10nEn extends L10n {
       'How do I connect my own computer or server, and how is that different from this phone?';
 
   @override
+  String get phoneRuntimeUpgradeBase =>
+      'The new engine cannot be confirmed compatible with your Linux environment, so the update stopped. Your environment and installed tools were not deleted. Make a full backup and contact the maintainer for migration; do not reset or uninstall the app.';
+
+  @override
+  String get phoneRuntimeUpgradeManifest =>
+      'The runtime update manifest could not be safely identified. The update stopped and your environment was kept. Check the APK and contact the maintainer; do not reset the environment.';
+
+  @override
+  String get phoneRuntimeUpgradeInterrupted =>
+      'The runtime upgrade is incomplete. Your data and recovery state were kept. Retry installation. If it still fails, export diagnostics and contact the maintainer; do not reset or delete recovery directories.';
+
+  @override
+  String get phoneRuntimeUpgradeSymlink =>
+      'A system path was replaced by a custom link, so the environment cannot be updated safely. Your environment was kept. Back it up and contact the maintainer.';
+
+  @override
+  String get phoneRuntimeUpgradeRunning =>
+      'The engine or a leftover process has not been confirmed stopped. The update has not started. Stop the local engine and wait for cleanup before retrying; do not reset the environment.';
+
+  @override
   String get schemaDocumentationTitle => 'Field descriptions';
 
   @override
@@ -14350,6 +16880,12 @@ class L10nEn extends L10n {
   String get searchNeedsEngineField => 'Available when the host has it';
 
   @override
+  String get searchNeedsAnimations => 'Available with animations on';
+
+  @override
+  String get searchNeedsWorkshop => 'This build doesn\'t include the Workshop';
+
+  @override
   String get searchNeedsChat => 'Available with a chat open';
 
   @override
@@ -14362,7 +16898,10 @@ class L10nEn extends L10n {
   String get searchKwPerformance => 'battery,smooth,lag,lite,full,speed';
 
   @override
-  String get searchKwVoice => 'speech recognition,dictation,microphone,mic,voice';
+  String get searchKwVoice => 'speech recognition,dictation,microphone,mic,voice,read aloud,voice call,call,TTS,speech';
+
+  @override
+  String get searchKwVoiceReading => 'read aloud,reading voice,TTS,voice,Stella,Tide,speech';
 
   @override
   String get searchKwNotifications => 'alerts,push,banner,sound';
@@ -14448,9 +16987,6 @@ class L10nEn extends L10n {
 
   @override
   String get searchKwPhoneFiles => 'storage,files,downloads,photos';
-  @override
-  String get searchKwRoot => 'root,superuser,magisk,privileges';
-
 
   @override
   String get searchKwVisualReplies => 'charts,cards,visual,options';
@@ -14522,10 +17058,22 @@ class L10nEn extends L10n {
   String get searchKwPetDisplayWhen => 'pet display,when to show';
 
   @override
+  String get searchKwPetOverlayShows => 'floating companion,room companion,pixel pet,live2d';
+
+  @override
+  String get searchKwPetOverlayFraming => 'framing,full body,half body';
+
+  @override
+  String get searchKwWorkshop => 'workshop,download pets,download companions,share pets,submit';
+
+  @override
   String get searchKwBlur => 'blur,glass,frosted';
 
   @override
   String get searchKwAnimations => 'animation,motion,reduce motion';
+
+  @override
+  String get searchKwFluidMotion => 'fluid,spring,bounce,glow,smooth';
 
   @override
   String get searchKwNotifyEnabled => 'notifications on,turn off notifications';
@@ -14572,6 +17120,9 @@ class L10nEn extends L10n {
 
   @override
   String get searchKwEngineUninstall => 'uninstall,remove,free space';
+
+  @override
+  String get searchKwWorkspaceRecovery => 'workspace,index,recovery,rescue,missing chats,chats won\'t open';
 
   @override
   String get searchKwAddProvider => 'add model,new provider,custom model,base url';
@@ -14670,6 +17221,104 @@ class L10nEn extends L10n {
   String get searchKwQuickPanel => 'swipe,left swipe,shortcuts,gesture,quick panel,quick access';
 
   @override
+  String get selfUpdateTransport => 'Installation route';
+
+  @override
+  String get selfUpdateSystem => 'Normal installation (default)';
+
+  @override
+  String get selfUpdateShizuku => 'Shizuku';
+
+  @override
+  String get selfUpdateAdb => 'Local ADB';
+
+  @override
+  String get selfUpdateSecurityNote =>
+      'Every route remains subject to APK signatures and Android/vendor security policies. Skipping scans is not guaranteed. Root is unsupported; routes never switch automatically after a failure.';
+
+  @override
+  String get selfUpdateNativeConfirm =>
+      'Only a verified update for this app is installed, with native confirmation still required. Authorizing Shizuku does not approve installation. Phone control and AI Shell can remain off.';
+
+  @override
+  String get selfUpdateAuthorize => 'Request Shizuku authorization for updates';
+
+  @override
+  String get selfUpdateRefresh => 'Refresh transport status';
+
+  @override
+  String selfUpdateShizukuStatus(String status) {
+    return 'Shizuku: $status';
+  }
+
+  @override
+  String get selfUpdateReady => 'Authorized';
+
+  @override
+  String get selfUpdatePermissionRequired => 'Install, start, and authorize Shizuku first';
+
+  @override
+  String get selfUpdateUnsupportedIdentity =>
+      'Only shell UID 2000 is supported; root and other identities are unsupported';
+
+  @override
+  String get selfUpdateAdbHint =>
+      'Use this phone\'s paired wireless-debugging identity; connection starts only when you press Install. If unpaired, open the existing Android Shell pairing page without enabling Phone control or AI Shell. Pairing codes and ports are not saved or logged.';
+
+  @override
+  String get selfUpdatePairing => 'Open Android Shell pairing guidance';
+
+  @override
+  String get selfUpdateAdbPaired => 'Local ADB paired';
+
+  @override
+  String get selfUpdateAdbNotPaired => 'Local ADB not paired';
+
+  @override
+  String get selfUpdatePendingTitle => 'Verifying installation outcome';
+
+  @override
+  String get selfUpdatePendingMessage =>
+      'The installation may still be running. There is no automatic retry or route switch. Check system prompts, then read the actual installed state.';
+
+  @override
+  String get selfUpdateUnknownTitle => 'Installation outcome unknown';
+
+  @override
+  String get selfUpdateUnknownMessage =>
+      'A timeout, lost connection, or exited process does not prove failure. There is no automatic retry or route switch. Read the actual installed state first.';
+
+  @override
+  String get selfUpdateReadResult => 'Read actual installed state';
+
+  @override
+  String get selfUpdateVerifiedTitle => 'Installed version verified';
+
+  @override
+  String selfUpdateVerifiedVersion(String version, int code) {
+    return 'Current version $version (build $code), verified by the native layer.';
+  }
+
+  @override
+  String get selfUpdateFailedTitle => 'Installation did not complete';
+
+  @override
+  String get selfUpdateFailedMessage =>
+      'The native layer reported this installation failed. Check system prompts and the error code, then explicitly choose an installation route.';
+
+  @override
+  String selfUpdateErrorCode(String code) {
+    return 'Error code: $code';
+  }
+
+  @override
+  String get selfUpdateEndWaiting => 'End this wait';
+
+  @override
+  String get selfUpdateEndWaitingNote =>
+      'End this wait only after confirming the system is no longer installing. Clearing the record does not cancel a system installation or retry/switch routes. Native confirmation is required again.';
+
+  @override
   String get shellDeletePermanently => 'Delete permanently';
 
   @override
@@ -14704,7 +17353,7 @@ class L10nEn extends L10n {
 
   @override
   String get shellDeleteWarning =>
-      'The selected chat history will be permanently deleted from this host. This cannot be undone and is not archive.\n\nWorking directories, generated files, forks, shared attachments and published cloud shares are kept. Cloud shares must be removed separately. Active or related chats may be refused by the host.';
+      'The selected chat history will be permanently deleted from this host. This cannot be undone and is not archive.\n\nWorking directories, generated files, forks, shared attachments and published cloud shares are kept. Cloud shares must be removed separately. Subagent chats are deleted along with the chat. The host refuses a running chat or one with scheduled tasks.';
 
   @override
   String get shellDeleteOwnerChanged =>
@@ -14741,7 +17390,7 @@ class L10nEn extends L10n {
       'Stop running work before deleting. The host also checks active tasks and schedules.';
 
   @override
-  String get shellDeleteRelated => 'This chat has related subagent work. The host refused deletion to protect it.';
+  String get shellDeleteRelated => 'This chat still has scheduled tasks. The host refused deletion to protect them.';
 
   @override
   String get shellDeleteWriterHeld => 'Another process is using this chat. Close it there and try again.';
@@ -15763,12 +18412,356 @@ class L10nEn extends L10n {
   }
 
   @override
+  String get shellPanelOverview => 'Info';
+
+  @override
+  String get shellPanelWorkspace => 'Workspace';
+
+  @override
+  String get shellPanelModel => 'Model';
+
+  @override
+  String get shellPanelHost => 'Host';
+
+  @override
+  String get shellPanelOpenFull => 'Open full page';
+
+  @override
+  String get shellPanelNoPlugins => 'No plugin panels for this chat yet';
+
+  @override
   String get shellQuickPanel => 'Shortcuts';
 
   @override
   String shellQuickPanelHint(String path) {
     return 'Change these in $path';
   }
+
+  @override
+  String get speechReadAloud => 'Read aloud';
+
+  @override
+  String get speechReadAloudStop => 'Stop reading';
+
+  @override
+  String get speechReadSection => 'Read aloud';
+
+  @override
+  String get speechReadFooter => 'Used by the read-aloud key under replies, the companion room and voice calls.';
+
+  @override
+  String get speechVoiceTitle => 'Reading voice';
+
+  @override
+  String get speechVoiceHello => 'Hello, this is the reading voice.';
+
+  @override
+  String get speechVoiceDeepseek => 'DeepSeek';
+
+  @override
+  String get speechVoiceDeepseekHint =>
+      'Paid by your signed-in DeepSeek account; the API key in Settings when signed out or when the account can\'t pay for speech. Nothing to set up';
+
+  @override
+  String get speechVoiceDeepseekFooter =>
+      'Billed by the number of characters read; see the DeepSeek platform for prices. Code blocks, tables and link addresses are left out.';
+
+  @override
+  String get speechVoiceStella => 'Stella (female)';
+
+  @override
+  String get speechVoiceTide => 'Tide (male)';
+
+  @override
+  String get speechVoiceStellaShort => 'Stella';
+
+  @override
+  String get speechVoiceTideShort => 'Tide';
+
+  @override
+  String get speechVoiceFollow => 'Same as read aloud';
+
+  @override
+  String get speechVoiceFollowHint => 'The reading voice in Settings › Voice';
+
+  @override
+  String get speechNotSetUp => 'The reading voice isn\'t set up yet. See Settings › Voice';
+
+  @override
+  String get speechNoCredential => 'Sign in to DeepSeek or add an API key in Settings first';
+
+  @override
+  String get speechAccountUnusable =>
+      'Your signed-in account can\'t pay for DeepSeek speech here: the DSH you\'re connected to is older (updating fixes it), or you\'re going through DSH Remote. Add a DeepSeek API key in Settings to use it';
+
+  @override
+  String get speechSignIn =>
+      'Your DeepSeek account can\'t pay for speech (sign-in expired, or speech takes only an API key). Sign in again, or add an API key in Settings';
+
+  @override
+  String get speechUnauthorized => 'The DeepSeek API key was refused. Check it in Settings';
+
+  @override
+  String get speechBalance => 'Not enough DeepSeek balance';
+
+  @override
+  String get speechRateLimited => 'Too many requests. Try again shortly';
+
+  @override
+  String get speechNothingToRead => 'This reply has no text to read';
+
+  @override
+  String get speechNotHeard => 'Didn\'t catch that. Say it again';
+
+  @override
+  String get speechTooLong => 'That recording is too long. Try shorter parts';
+
+  @override
+  String get speechBusy => 'The speech service is busy. Try again shortly';
+
+  @override
+  String get speechNetwork => 'Can\'t reach the speech service. Check the network';
+
+  @override
+  String get speechReadFailed => 'Couldn\'t read it aloud';
+
+  @override
+  String get speechListenFailed => 'Couldn\'t recognize it';
+
+  @override
+  String get speechCloudNotice =>
+      'Your voice is sent to DeepSeek to be recognized. To recognize on the phone, switch to the voice model.';
+
+  @override
+  String get speechCloudNotSetUp => 'No cloud recognition service is set up';
+
+  @override
+  String get speechCallTile => 'Voice call';
+
+  @override
+  String get speechCallSection => 'Voice calls';
+
+  @override
+  String get speechCallFooter =>
+      'In a call, pause after you speak and it is sent; the answer is read while it is written.';
+
+  @override
+  String get speechCallBargeIn => 'Interrupt by speaking';
+
+  @override
+  String get speechCallBargeInHint =>
+      'When you speak over the AI it goes quiet; a “yeah” lets it go on, anything else stops it';
+
+  @override
+  String get speechCallSpoken => 'Spoken answers';
+
+  @override
+  String get speechCallSpokenHint => 'The call\'s first message asks for short, conversational answers';
+
+  @override
+  String get speechCallSpeaker => 'Speakerphone by default';
+
+  @override
+  String get speechCallSpeakerHint => 'Headphones always win when connected';
+
+  @override
+  String get speechCallHint =>
+      '(This is a voice call; what I say comes through speech recognition. Please answer briefly and conversationally, without Markdown, lists, tables or code blocks.)';
+
+  @override
+  String speechCallCutNote(String heard) {
+    return '(I cut you off at “$heard”; I didn\'t hear the rest.)';
+  }
+
+  @override
+  String get speechCallCutEarly => '(I cut you off before you said anything; I didn\'t hear that answer.)';
+
+  @override
+  String get speechCallCue => 'Thinking sound';
+
+  @override
+  String get speechCallCueHint => 'A soft chime when an answer is slow to start';
+
+  @override
+  String get speechLiveSection => 'Live captions';
+
+  @override
+  String get speechLiveName => 'Streaming recognizer';
+
+  @override
+  String speechLiveAbsentNote(String mb) {
+    return 'Download it and calls show your words as you speak, and stop sooner when you cut in. About $mb; it runs on the phone';
+  }
+
+  @override
+  String speechLiveReadyNote(String mb) {
+    return 'Using $mb. Calls use it automatically';
+  }
+
+  @override
+  String get speechLiveBlocked => 'Off';
+
+  @override
+  String get speechLiveBlockedNote =>
+      'It crashed on this phone, so live captions are off; calls work as before. Delete it and download again to try once more.';
+
+  @override
+  String get speechLiveFooter =>
+      'Captions and cut-ins run on the phone; the text sent to the AI still comes from the recognition chosen above, and cloud recognition uploads the recording.';
+
+  @override
+  String get speechLiveDeleteTitle => 'Delete the streaming recognizer?';
+
+  @override
+  String get speechLiveDeleteBody => 'Calls will stop showing live captions. You can download it again any time.';
+
+  @override
+  String get speechCallStarting => 'Connecting';
+
+  @override
+  String get speechCallListening => 'Listening';
+
+  @override
+  String get speechCallHearing => 'You\'re speaking';
+
+  @override
+  String get speechCallThinking => 'Thinking';
+
+  @override
+  String get speechCallSpeaking => 'Speaking. Tap the light to skip';
+
+  @override
+  String get speechCallMuted => 'Muted';
+
+  @override
+  String get speechCallEnded => 'Call ended';
+
+  @override
+  String get speechCallEndPermission => 'No microphone permission';
+
+  @override
+  String get speechCallEndMicrophone => 'The microphone is busy or can\'t be opened';
+
+  @override
+  String get speechCallEndNoRecognizerSignedIn =>
+      'A call needs a way to recognize speech. Your signed-in account can\'t pay for DeepSeek speech here (the DSH you\'re connected to is older, or you\'re going through DSH Remote): add a DeepSeek API key in Settings, or download the voice model in Settings › Voice';
+
+  @override
+  String get speechCallEndNoRecognizer =>
+      'A call needs a recognizer that takes recordings: sign in to DeepSeek, add an API key, or download the voice model';
+
+  @override
+  String get speechCallEndBackground => 'Calls end when the app goes to the background';
+
+  @override
+  String get speechCallEndFailed => 'Recording failed; the call has ended';
+
+  @override
+  String get speechCallSendFailed => 'That didn\'t go through. Say it again';
+
+  @override
+  String get speechCallSkipHint => 'Skip this answer';
+
+  @override
+  String get speechCallTranscript => 'Captions';
+
+  @override
+  String get speechCallTranscriptHint => 'Everything said on this call';
+
+  @override
+  String get speechCallTranscriptEmpty => 'Nothing said yet. What you both say is written down here, line by line.';
+
+  @override
+  String get speechCallTranscriptCut => 'You cut in here';
+
+  @override
+  String get speechCallMute => 'Mute';
+
+  @override
+  String get speechCallUnmute => 'Unmute';
+
+  @override
+  String get speechCallHangUp => 'Hang up';
+
+  @override
+  String get speechCallSpeakerOn => 'Speaker';
+
+  @override
+  String get speechCallEarpiece => 'Earpiece';
+
+  @override
+  String get speechBackdropTitle => 'Call background';
+
+  @override
+  String get speechCallSettings => 'Call settings';
+
+  @override
+  String get speechCallPause => 'Pause before she answers';
+
+  @override
+  String get speechCallPauseQuick => 'Short';
+
+  @override
+  String get speechCallPauseNormal => 'Medium';
+
+  @override
+  String get speechCallPausePatient => 'Long';
+
+  @override
+  String get speechCallPauseHint => 'Pick Long if she cuts in while you pause; Short if she feels slow to answer.';
+
+  @override
+  String get speechCallSpeechSection => 'Voice and recognition';
+
+  @override
+  String get speechCallVoice => 'Her voice';
+
+  @override
+  String get speechCallSpeechHint => 'Changes apply from the next sentence.';
+
+  @override
+  String get speechBackdropSea => 'Deep sea';
+
+  @override
+  String get speechBackdropImage => 'My picture';
+
+  @override
+  String get speechBackdropImagePick => 'Pick a picture';
+
+  @override
+  String get speechBackdropCompanion => 'Companion';
+
+  @override
+  String get speechBackdropHint =>
+      'Pictures are softened and darkened so captions stay readable. With your companion, she speaks along with the voice.';
+
+  @override
+  String get speechBackdropHintChange =>
+      'Tap My picture again to change it. With your companion, she speaks along with the voice.';
+
+  @override
+  String get speechBackdropNoCompanion => 'Set her up in the companion room first to bring her into calls.';
+
+  @override
+  String get speechBackdropReplace => 'Change picture';
+
+  @override
+  String get speechBackdropPickFailed => 'That picture can\'t be used. Try another';
+
+  @override
+  String get speechCallVisual => 'Light';
+
+  @override
+  String get speechCallVisualRing => 'Ring';
+
+  @override
+  String get speechCallVisualMono => 'Line';
+
+  @override
+  String get speechCallVisualGlass => 'Orb';
+
+  @override
+  String get speechInsecure => 'That service\'s address isn\'t https; the key can\'t be sent that way';
 
   @override
   String starPromptTitle(int hours) {
@@ -15800,6 +18793,34 @@ class L10nEn extends L10n {
 
   @override
   String get starSettingsTitle => 'Star DSH Go on GitHub';
+
+  @override
+  String get hubStartPage => 'Start page';
+
+  @override
+  String get hubChatSuggestions => 'Chat suggestions';
+
+  @override
+  String get hubChatSuggestionsHint => 'Show chat suggestions on the start page';
+
+  @override
+  String get searchKwChatSuggestions => 'start page,empty page,new chat,chat suggestions,suggestion cards';
+
+  @override
+  String get phoneStartupFailureStopping => 'Startup failed; stopping';
+
+  @override
+  String phoneStartupFailureStoppingDetail(String reason) {
+    return 'Startup failed; stopping. $reason';
+  }
+
+  @override
+  String get phoneStartupTokenTimeout =>
+      'Startup timed out: no startup token arrived within 180 seconds. Check the logs.';
+
+  @override
+  String get phoneStartupPortNotReady =>
+      'The startup token arrived, but the local service port did not become ready. Check the logs.';
 
   @override
   String get stateDiagnosticsSubject => 'DSH Go diagnostics bundle';
@@ -15923,6 +18944,9 @@ class L10nEn extends L10n {
 
   @override
   String get stateSizeLarge => 'Large';
+
+  @override
+  String get stateSizeCustom => 'Custom';
 
   @override
   String get statePetDone => 'Done';
@@ -16311,7 +19335,19 @@ class L10nEn extends L10n {
   String get stateChatMissing => 'This chat is gone';
 
   @override
+  String get stateChatFormatUnsupported =>
+      'This engine cannot read this chat\'s log format. Export diagnostics to investigate.';
+
+  @override
   String get stateEngineUnsupported => 'Not supported by this engine version';
+
+  @override
+  String get stateEngineServiceUnavailable =>
+      'The required engine service is not ready. Check the engine logs or export diagnostics.';
+
+  @override
+  String get stateEngineOperationUnavailable =>
+      'The engine cannot run this operation right now. Check the engine logs.';
 
   @override
   String get stateSettingsRefreshed => 'Changed elsewhere. Refreshed.';
@@ -16719,6 +19755,10 @@ class L10nEn extends L10n {
   String get stateTerminalStartFailed => 'Couldn’t start terminal';
 
   @override
+  String get stateTerminalDisabledOnHost =>
+      'This computer turned off the remote terminal. Turn on “Terminal” in Remote settings on the computer, then try again.';
+
+  @override
   String get stateTileDuotone => 'Duotone';
 
   @override
@@ -17088,6 +20128,3859 @@ class L10nEn extends L10n {
   String get appSlogan => 'Anytime, anywhere. Just Go!';
 
   @override
+  String get tavernTitle => 'Tavern';
+
+  @override
+  String get tavernImport => 'Import';
+
+  @override
+  String get tavernEmptyTitle => 'No characters yet';
+
+  @override
+  String get tavernEmptyMessage => 'Import a character card: PNG, JSON or CHARX';
+
+  @override
+  String get tavernContinue => 'Continue';
+
+  @override
+  String get tavernCharacters => 'Characters';
+
+  @override
+  String tavernImported(String name) {
+    return 'Imported “$name”';
+  }
+
+  @override
+  String get tavernImportLorebook => 'This is a lorebook, not a character card';
+
+  @override
+  String get tavernImportFailed => 'Couldn\'t read this card';
+
+  @override
+  String get tavernCharacterGone => 'This character is gone';
+
+  @override
+  String get tavernDeleteCharacter => 'Delete character';
+
+  @override
+  String tavernDeleteCharacterTitle(String name) {
+    return 'Delete “$name”?';
+  }
+
+  @override
+  String get tavernDeleteCharacterMessage => 'Its chats are deleted too.';
+
+  @override
+  String get tavernGreeting => 'Greeting';
+
+  @override
+  String tavernGreetingOf(int index, int count) {
+    return 'Greeting $index/$count';
+  }
+
+  @override
+  String get tavernStart => 'Start';
+
+  @override
+  String get tavernContinueLast => 'Continue where you left off';
+
+  @override
+  String get tavernStartNew => 'New chat from this greeting';
+
+  @override
+  String get tavernChats => 'Chats';
+
+  @override
+  String tavernMessageCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(count, locale: localeName, other: '$count messages', one: '1 message');
+    return '$_temp0';
+  }
+
+  @override
+  String get tavernCreatorNotes => 'Creator\'s notes';
+
+  @override
+  String get tavernDefinition => 'Definition';
+
+  @override
+  String tavernComposerHint(String name) {
+    return 'Say something to $name…';
+  }
+
+  @override
+  String get tavernReplying => 'Replying…';
+
+  @override
+  String get tavernReady => 'Ready';
+
+  @override
+  String get tavernPreviewStatus => 'Preview · sample replies, no model yet';
+
+  @override
+  String get tavernRegenerate => 'Regenerate';
+
+  @override
+  String get tavernContinueReply => 'Continue writing';
+
+  @override
+  String get tavernDeleteFrom => 'Delete this and everything after';
+
+  @override
+  String get tavernPrevious => 'Previous reply';
+
+  @override
+  String get tavernNext => 'Next reply';
+
+  @override
+  String get tavernErrorNoKey => 'Add a DeepSeek API key in Settings first';
+
+  @override
+  String get tavernKeyMissing => 'Add your DeepSeek API key, and the story can start.';
+
+  @override
+  String get tavernKeyMissingAction => 'Add key';
+
+  @override
+  String get tavernErrorBadKey => 'The API key was refused; check it in Settings';
+
+  @override
+  String get tavernErrorBusy => 'The model is busy; try again in a moment';
+
+  @override
+  String get tavernErrorNetwork => 'Can\'t connect; check the network and retry';
+
+  @override
+  String get tavernErrorTooLong => 'The chat is longer than the model\'s context';
+
+  @override
+  String get tavernCutShort =>
+      'The reply reached the reply limit and stopped here. Continue it, or raise the limit in Tavern settings › Generation.';
+
+  @override
+  String get tavernFiltered => 'The model\'s content filter stopped part of this reply.';
+
+  @override
+  String get tavernErrorBalance => 'Your DeepSeek balance is too low. Top up, then try again';
+
+  @override
+  String get tavernErrorParameters => 'The model didn\'t accept this request\'s parameters';
+
+  @override
+  String tavernErrorParametersDetail(String detail) {
+    return 'The model didn\'t accept this request\'s parameters: $detail';
+  }
+
+  @override
+  String tavernErrorDetail(String detail) {
+    return 'Something went wrong: $detail';
+  }
+
+  @override
+  String get tavernSettings => 'Tavern settings';
+
+  @override
+  String get tavernSettingsModel => 'Model';
+
+  @override
+  String get tavernModelFlash => 'Flash';
+
+  @override
+  String get tavernModelPro => 'V4 Pro';
+
+  @override
+  String get tavernThinking => 'Thinking';
+
+  @override
+  String get tavernThinkingSubtitle => 'Think before replying';
+
+  @override
+  String get tavernApiKey => 'DeepSeek API key';
+
+  @override
+  String get tavernApiKeySet => 'Set';
+
+  @override
+  String get tavernApiKeyMissing => 'Not set';
+
+  @override
+  String get tavernDeleteChat => 'Delete chat';
+
+  @override
+  String get tavernDeleteChatTitle => 'Delete this chat?';
+
+  @override
+  String get tavernDeleteChatMessage => 'It can\'t be brought back.';
+
+  @override
+  String tavernDeleteFromTitle(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Delete these $count messages?',
+      one: 'Delete this message?',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get tavernDeleteFromMessage =>
+      'From this one to the latest, with their alternative replies and branches. They can\'t be brought back.';
+
+  @override
+  String get tavernSwitchedBranch => 'Switched to another branch';
+
+  @override
+  String get tavernUndo => 'Undo';
+
+  @override
+  String get tavernSettingsDisplay => 'Display';
+
+  @override
+  String get tavernPresets => 'Presets';
+
+  @override
+  String get tavernPresetImport => 'Import preset';
+
+  @override
+  String get tavernPresetStDefault => 'SillyTavern default';
+
+  @override
+  String get tavernPresetStDefaultNote => 'Used when no preset is chosen';
+
+  @override
+  String get tavernPresetDefault => 'Default';
+
+  @override
+  String get tavernPresetSetDefault => 'Make default';
+
+  @override
+  String get tavernPresetUnsetDefault => 'Stop using as default';
+
+  @override
+  String get tavernPresetExport => 'Export preset';
+
+  @override
+  String get tavernPresetDelete => 'Delete preset';
+
+  @override
+  String tavernPresetDeleteTitle(String name) {
+    return 'Delete the preset “$name”?';
+  }
+
+  @override
+  String get tavernPresetDeleteMessage => 'Chats that use it switch to the default preset. It can\'t be brought back.';
+
+  @override
+  String tavernPresetImported(String name) {
+    return 'Imported “$name”';
+  }
+
+  @override
+  String tavernPresetImportedWithIssues(String name, int count) {
+    return 'Imported “$name”, with $count notes';
+  }
+
+  @override
+  String tavernPresetImportFailed(String reason) {
+    return 'Couldn\'t import: $reason';
+  }
+
+  @override
+  String get tavernPresetNotText => 'This file isn\'t text';
+
+  @override
+  String get tavernPresetsEmpty => 'No presets yet';
+
+  @override
+  String get tavernPresetsEmptyMessage =>
+      'Presets exported from SillyTavern as JSON, and dsh-preset-enhance share packages, can be imported.';
+
+  @override
+  String get tavernPresetEnvelope => 'Share package';
+
+  @override
+  String tavernPresetCount(int count) {
+    return '$count';
+  }
+
+  @override
+  String get tavernRegex => 'Regex';
+
+  @override
+  String get tavernRegexImport => 'Import regex';
+
+  @override
+  String get tavernRegexOn => 'On';
+
+  @override
+  String get tavernRegexOff => 'Off';
+
+  @override
+  String get tavernRegexEnable => 'Turn on';
+
+  @override
+  String get tavernRegexDisable => 'Turn off';
+
+  @override
+  String get tavernRegexExport => 'Export regex';
+
+  @override
+  String get tavernRegexDelete => 'Delete regex';
+
+  @override
+  String tavernRegexDeleteTitle(String name) {
+    return 'Delete the regex “$name”?';
+  }
+
+  @override
+  String tavernRegexImported(int count) {
+    return 'Imported $count regex scripts';
+  }
+
+  @override
+  String get tavernRegexIncompatible => 'Can\'t run here; skipped';
+
+  @override
+  String get tavernRegexEmpty => 'No global regex yet';
+
+  @override
+  String get tavernRegexEmptyMessage =>
+      'Regex JSON exported from SillyTavern, one script or a list, can be imported. Global regex applies to every chat; the regex a card or preset brings goes with it.';
+
+  @override
+  String get tavernRegexUnnamed => 'Untitled';
+
+  @override
+  String tavernRegexCount(int count) {
+    return '$count';
+  }
+
+  @override
+  String get tavernLorebooks => 'Lorebooks';
+
+  @override
+  String get tavernLorebookImport => 'Import lorebook';
+
+  @override
+  String get tavernLorebookGlobal => 'Global';
+
+  @override
+  String get tavernLorebookBindGlobal => 'Use in every chat';
+
+  @override
+  String get tavernLorebookUnbindGlobal => 'Stop using in every chat';
+
+  @override
+  String get tavernLorebookExport => 'Export lorebook';
+
+  @override
+  String get tavernLorebookDelete => 'Delete lorebook';
+
+  @override
+  String tavernLorebookDeleteTitle(String name) {
+    return 'Delete the lorebook “$name”?';
+  }
+
+  @override
+  String get tavernLorebookDeleteMessage => 'Wherever it is bound, it is skipped. It can\'t be brought back.';
+
+  @override
+  String tavernLorebookImported(String name, int count) {
+    return 'Imported “$name”, $count entries';
+  }
+
+  @override
+  String get tavernLorebooksEmpty => 'No standalone lorebooks yet';
+
+  @override
+  String get tavernLorebooksEmptyMessage =>
+      'Lorebook JSON exported from SillyTavern can be imported. Made global, it applies to every chat; a card\'s own lorebook goes with the card.';
+
+  @override
+  String tavernLorebookCount(int count) {
+    return '$count';
+  }
+
+  @override
+  String get tavernPresetEdit => 'Edit preset';
+
+  @override
+  String get tavernPresetParams => 'Numbers';
+
+  @override
+  String get tavernPresetPrompts => 'Prompts, in the order they\'re sent';
+
+  @override
+  String get tavernPresetMarker => 'Placeholder';
+
+  @override
+  String get tavernPresetPromptsEmpty => 'This preset sets no prompt order; SillyTavern\'s default order is used.';
+
+  @override
+  String get tavernReport => 'Import check';
+
+  @override
+  String get tavernVerdictUsable => 'Works';
+
+  @override
+  String get tavernVerdictPartial => 'Partly works';
+
+  @override
+  String get tavernVerdictPreserve => 'Kept, not run';
+
+  @override
+  String tavernReportChecked(String time) {
+    return 'Checked $time';
+  }
+
+  @override
+  String get tavernReportStale => 'Changed since this check';
+
+  @override
+  String get tavernReportRecheck => 'Check again';
+
+  @override
+  String get tavernReportNone => 'Not checked yet';
+
+  @override
+  String get tavernReportNoneMessage => 'This was imported before checks existed; check it now.';
+
+  @override
+  String get tavernReportCheckNow => 'Check now';
+
+  @override
+  String get tavernReportRender0 => 'Suggested display: native';
+
+  @override
+  String get tavernReportRender1 => 'Suggested display: a web view in the message';
+
+  @override
+  String get tavernReportRender2 => 'Suggested display: a whole-page canvas';
+
+  @override
+  String get tavernReportCounts => 'Contains';
+
+  @override
+  String get tavernReportFindings => 'Not run, or worth a look';
+
+  @override
+  String get tavernReportNoFindings => 'Nothing to look at';
+
+  @override
+  String get tavernPresetForChat => 'This chat\'s preset';
+
+  @override
+  String get tavernPresetFollow => 'Default';
+
+  @override
+  String tavernPresetFollowDefault(String name) {
+    return 'Default ($name)';
+  }
+
+  @override
+  String get tavernPresetPickerEmpty => 'Import presets in Library › Presets to give this chat another.';
+
+  @override
+  String get tavernSectionShelf => 'Shelf';
+
+  @override
+  String get tavernSectionChats => 'Chats';
+
+  @override
+  String get tavernSectionLibrary => 'Library';
+
+  @override
+  String get tavernSectionMe => 'Me';
+
+  @override
+  String get tavernNoChats => 'No chats yet';
+
+  @override
+  String get tavernNoChatsMessage => 'Open a character on the shelf to start your first chat.';
+
+  @override
+  String get tavernSettingsGeneration => 'Generation';
+
+  @override
+  String get tavernMaxContext => 'Context limit';
+
+  @override
+  String get tavernMaxReply => 'Reply limit';
+
+  @override
+  String get tavernTemperature => 'Temperature';
+
+  @override
+  String get tavernGenerationNote =>
+      'A longer context remembers more and costs more each turn; numbers are tokens. This changes the default preset; a chat that brought its own preset keeps it.';
+
+  @override
+  String get tavernLayout => 'Layout';
+
+  @override
+  String get tavernLayoutBubble => 'Bubbles';
+
+  @override
+  String get tavernLayoutNovel => 'Novel';
+
+  @override
+  String get tavernYou => 'You';
+
+  @override
+  String get tavernSearchHint => 'Search characters, creators, tags';
+
+  @override
+  String get tavernAllTags => 'All';
+
+  @override
+  String get tavernNoMatch => 'No matching characters';
+
+  @override
+  String get tavernLayoutVisualNovel => 'Visual novel';
+
+  @override
+  String get tavernCharacterDetails => 'Character details';
+
+  @override
+  String get tavernChatLayout => 'Layout for this chat';
+
+  @override
+  String get tavernFollowSettings => 'Follow tavern settings';
+
+  @override
+  String get tavernLog => 'Backlog';
+
+  @override
+  String get tavernEditCharacter => 'Edit character';
+
+  @override
+  String get tavernNameNeeded => 'A name is needed';
+
+  @override
+  String get tavernFieldsBasics => 'Basics';
+
+  @override
+  String get tavernFieldNickname => 'Nickname';
+
+  @override
+  String get tavernFieldNicknameHelp => 'If set, chats call the character this';
+
+  @override
+  String get tavernFieldTags => 'Tags';
+
+  @override
+  String get tavernFieldTagsHelp => 'Separate with commas';
+
+  @override
+  String get tavernFieldCreator => 'Creator';
+
+  @override
+  String get tavernFieldVersion => 'Version';
+
+  @override
+  String get tavernFieldDescription => 'Description';
+
+  @override
+  String get tavernFieldPersonality => 'Personality';
+
+  @override
+  String get tavernFieldScenario => 'Scenario';
+
+  @override
+  String tavernGreetingNumber(int n) {
+    return 'Greeting $n';
+  }
+
+  @override
+  String get tavernFieldGreetingsNote => 'A new chat can start from any of these.';
+
+  @override
+  String get tavernAddGreeting => 'Add a greeting';
+
+  @override
+  String get tavernMoreFields => 'More fields';
+
+  @override
+  String get tavernMoreFieldsSubtitle => 'Example dialogue, system prompt, post-history instructions';
+
+  @override
+  String get tavernFieldExamples => 'Example dialogue';
+
+  @override
+  String get tavernFieldExamplesHelp => 'Start each example with a <START> line';
+
+  @override
+  String get tavernFieldPrompts => 'Prompts';
+
+  @override
+  String get tavernFieldPromptsNote =>
+      'When set, these replace the matching part of the preset; leave empty to use the preset\'s.';
+
+  @override
+  String get tavernFieldSystemPrompt => 'System prompt';
+
+  @override
+  String get tavernFieldPostHistory => 'Post-history instructions';
+
+  @override
+  String get tavernFieldNotesNote => 'For people reading the card; not sent to the model.';
+
+  @override
+  String tavernEditKeeps(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'This card has $count more items you can\'t edit here (lorebook, extensions…). Saving keeps them as they are, and existing chats don\'t change.',
+      one: 'This card has 1 more item you can\'t edit here (lorebook, extensions…). Saving keeps it as it is, and existing chats don\'t change.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get tavernEditKeepsChats => 'Saving doesn\'t change existing chats.';
+
+  @override
+  String get tavernPersonas => 'Personas';
+
+  @override
+  String get tavernPersona => 'Persona';
+
+  @override
+  String get tavernPersonaNew => 'New persona';
+
+  @override
+  String get tavernPersonasEmpty => 'No personas yet';
+
+  @override
+  String get tavernPersonasEmptyMessage =>
+      'A persona is who you play in chats: a name and a few lines, so characters know who you are.';
+
+  @override
+  String get tavernPersonasNote =>
+      'Long-press to make one the default or delete it. Chats without their own persona use the default.';
+
+  @override
+  String get tavernPersonaUnsetDefault => 'Stop using as default';
+
+  @override
+  String get tavernPersonaSetDefault => 'Use as default';
+
+  @override
+  String tavernPersonaDeleteTitle(String name) {
+    return 'Delete “$name”?';
+  }
+
+  @override
+  String get tavernPersonaDeleteMessage =>
+      'Chats that use it switch to the default persona; what\'s already written stays.';
+
+  @override
+  String get tavernPersonaEdit => 'Edit persona';
+
+  @override
+  String get tavernPersonaPickAvatar => 'Change picture';
+
+  @override
+  String get tavernPersonaRemoveAvatar => 'Remove picture';
+
+  @override
+  String get tavernPersonaAvatarFailed => 'Couldn\'t use that picture';
+
+  @override
+  String get tavernPersonaNameHint => 'What characters call you';
+
+  @override
+  String get tavernPersonaDescriptionHelp =>
+      'The model reads this: who you are, what you\'re like, how you know the character.';
+
+  @override
+  String get tavernPersonaDescriptionHint => 'e.g. The town\'s new doctor: quiet, always carrying an old leather case.';
+
+  @override
+  String get tavernPersonaDefaultSubtitle => 'New chats, and chats without their own persona, use it';
+
+  @override
+  String get tavernPersonaDelete => 'Delete persona';
+
+  @override
+  String get tavernPersonaNone => 'No persona';
+
+  @override
+  String tavernPersonaAs(String name) {
+    return 'As $name';
+  }
+
+  @override
+  String get tavernPersonaForChat => 'In this chat you are';
+
+  @override
+  String get tavernPersonaFollowDefault => 'Use the default';
+
+  @override
+  String get tavernPersonasManage => 'Manage personas';
+
+  @override
+  String get tavernSettingsYou => 'You';
+
+  @override
+  String get tavernDefaultPersona => 'Default persona';
+
+  @override
+  String get tavernPersonaNotSet => 'Not set';
+
+  @override
+  String get tavernFieldName => 'Name';
+
+  @override
+  String get tavernOpenFailed => 'The tavern couldn\'t open';
+
+  @override
+  String get tavernOpenFailedMessage =>
+      'The data for characters and chats couldn\'t be opened. Try again; if it still fails, restart the app.';
+
+  @override
+  String get tavernExportPng => 'Export card (PNG)';
+
+  @override
+  String get tavernExportPngSubtitle =>
+      'The card rides inside the picture; SillyTavern and other taverns can import it';
+
+  @override
+  String get tavernExportJson => 'Export as JSON';
+
+  @override
+  String get tavernExportFailed => 'Couldn\'t export this card';
+
+  @override
+  String get tavernInspectTitle => 'What this turn sent';
+
+  @override
+  String get tavernInspectMenu => 'See what was sent';
+
+  @override
+  String get tavernInspectLatest => 'What the last turn sent';
+
+  @override
+  String get tavernInspectNone => 'Nothing recorded';
+
+  @override
+  String get tavernInspectNoneMessage =>
+      'Greetings, messages from before the engine and sample replies have no record.';
+
+  @override
+  String get tavernInspectSummary => 'Summary';
+
+  @override
+  String get tavernInspectKind => 'Type';
+
+  @override
+  String get tavernTurnSend => 'Send';
+
+  @override
+  String get tavernTurnImpersonate => 'Write for me';
+
+  @override
+  String get tavernInspectStatus => 'Result';
+
+  @override
+  String get tavernInspectPreparing => 'Preparing';
+
+  @override
+  String get tavernInspectReady => 'Sent';
+
+  @override
+  String get tavernInspectCompleted => 'Done';
+
+  @override
+  String get tavernInspectFailed => 'Failed';
+
+  @override
+  String get tavernInspectPrompt => 'Prompt';
+
+  @override
+  String tavernTokens(int count) {
+    return '$count tokens';
+  }
+
+  @override
+  String tavernTokensAbout(int count) {
+    return 'about $count tokens';
+  }
+
+  @override
+  String get tavernInspectBudget => 'Context budget left';
+
+  @override
+  String get tavernInspectUsage => 'Usage the model reported';
+
+  @override
+  String get tavernInspectNoUsage => 'Not reported';
+
+  @override
+  String tavernInspectUsageValue(int prompt, int hit, int completion) {
+    return 'In $prompt (cached $hit) · out $completion';
+  }
+
+  @override
+  String get tavernInspectCost => 'Estimated cost';
+
+  @override
+  String get tavernInspectCostPeak => 'At DeepSeek\'s list prices, peak hours';
+
+  @override
+  String get tavernInspectCostOffPeak => 'At DeepSeek\'s list prices, off-peak (half price)';
+
+  @override
+  String tavernInspectSegments(int count) {
+    String _temp0 = intl.Intl.pluralLogic(count, locale: localeName, other: '$count parts sent', one: '1 part sent');
+    return '$_temp0';
+  }
+
+  @override
+  String get tavernInspectSegmentsNote => 'In the order sent. Tap for the full text; long-press to copy.';
+
+  @override
+  String tavernInspectWorld(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count lorebook entries matched',
+      one: '1 lorebook entry matched',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String tavernInspectWorldKey(String key) {
+    return 'key “$key”';
+  }
+
+  @override
+  String tavernInspectExcluded(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count parts left out',
+      one: '1 part left out',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get tavernExcludeDisabled => 'Turned off';
+
+  @override
+  String get tavernExcludeTrigger => 'Not for this kind of turn';
+
+  @override
+  String get tavernExcludeHidden => 'Hidden from the model';
+
+  @override
+  String get tavernExcludeSystem => 'System message';
+
+  @override
+  String get tavernExcludeHistoryBudget => 'Over the context budget';
+
+  @override
+  String get tavernExcludeExampleBudget => 'Examples over budget';
+
+  @override
+  String get tavernRoleSystem => 'System';
+
+  @override
+  String get tavernRoleUser => 'You';
+
+  @override
+  String get tavernRoleCharacter => 'Character';
+
+  @override
+  String get tavernSourcePreset => 'Preset';
+
+  @override
+  String get tavernSourceCard => 'Card';
+
+  @override
+  String get tavernSourceWorld => 'Lorebook';
+
+  @override
+  String get tavernSourcePersona => 'Persona';
+
+  @override
+  String get tavernSourceHistory => 'Chat';
+
+  @override
+  String get tavernSourceControl => 'Control';
+
+  @override
+  String get tavernWriteForMe => 'Write it for me';
+
+  @override
+  String get tavernHide => 'Hide from the model';
+
+  @override
+  String get tavernUnhide => 'Show to the model';
+
+  @override
+  String get tavernHiddenFromModel => 'The model can\'t see this';
+
+  @override
+  String get tavernTrySample => 'Try the sample card';
+
+  @override
+  String get tavernImportChats => 'Import chats';
+
+  @override
+  String get tavernImportChatsSubtitle => 'SillyTavern .jsonl files, one or several';
+
+  @override
+  String get tavernOnlyJsonl => 'Only .jsonl chat files can be imported';
+
+  @override
+  String tavernImportChatsFailed(String detail) {
+    return 'Couldn\'t import: $detail';
+  }
+
+  @override
+  String tavernImportedChats(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Imported $count chats',
+      one: 'Imported 1 chat',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get tavernImportNoticesTitle => 'Notes from the import';
+
+  @override
+  String get tavernExportChat => 'Export chat';
+
+  @override
+  String get tavernExportChatFailed => 'Couldn\'t export this chat';
+
+  @override
+  String get tavernLorebook => 'Lorebook';
+
+  @override
+  String get tavernLorebookSubtitle => 'The entries this card carries';
+
+  @override
+  String tavernLorebookEntries(int count) {
+    String _temp0 = intl.Intl.pluralLogic(count, locale: localeName, other: '$count entries', one: '1 entry');
+    return '$_temp0';
+  }
+
+  @override
+  String get tavernLorebookNote =>
+      'When a key comes up in the chat, its entry goes into the prompt; \'Always\' entries go in every time.';
+
+  @override
+  String tavernLorebookKeys(String keys) {
+    return 'Keys: $keys';
+  }
+
+  @override
+  String get tavernLorebookConstant => 'Always';
+
+  @override
+  String get tavernLorebookOff => 'Off';
+
+  @override
+  String get tavernLorebookEmpty => 'This card has no lorebook';
+
+  @override
+  String get tavernImportFromFile => 'From a file';
+
+  @override
+  String get tavernImportFromFileSubtitle =>
+      'Cards, presets, lorebooks, regex, quick replies or chats, told apart for you';
+
+  @override
+  String get tavernImportFromLink => 'From a link';
+
+  @override
+  String get tavernImportFromLinkSubtitle => 'A character page on Chub or RisuRealm, or a direct link to the card file';
+
+  @override
+  String get tavernLinkInvalid => 'That isn\'t a web address';
+
+  @override
+  String get tavernLinkFailed => 'Couldn\'t download it; check the connection or the link';
+
+  @override
+  String tavernLinkStatus(int status) {
+    return 'Couldn\'t download it (HTTP $status)';
+  }
+
+  @override
+  String get tavernLinkIsPage =>
+      'That\'s a web page, not a card file. Character pages on Chub and RisuRealm work as they are; elsewhere, find the download link to the .png or .json and try that.';
+
+  @override
+  String get tavernLinkSiteMissing => 'The site has no such character; it may be deleted or private';
+
+  @override
+  String get tavernQuickReplies => 'Quick replies';
+
+  @override
+  String get tavernQuickRepliesEmpty => 'No quick replies yet';
+
+  @override
+  String get tavernQuickRepliesNote =>
+      'They sit above the input in every chat: tap to send, long-press to put it in the box first.';
+
+  @override
+  String get tavernQuickReplyAdd => 'Add one';
+
+  @override
+  String get tavernQuickReplyHint => 'e.g. *looks around for anyone else*';
+
+  @override
+  String tavernQuickReplyCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(count, locale: localeName, other: '$count lines', one: '1 line');
+    return '$_temp0';
+  }
+
+  @override
+  String get tavernEditMessage => 'Edit message';
+
+  @override
+  String get tavernBackground => 'Background picture';
+
+  @override
+  String get tavernBackgroundNone => 'None';
+
+  @override
+  String get tavernBackgroundChange => 'Change';
+
+  @override
+  String get tavernBackgroundRemove => 'Remove the picture';
+
+  @override
+  String get tavernDice => 'Roll dice';
+
+  @override
+  String get tavernDiceCount => 'Dice';
+
+  @override
+  String get tavernDiceModifier => 'Modifier';
+
+  @override
+  String get tavernDiceFewer => 'One die fewer';
+
+  @override
+  String get tavernDiceMore => 'One more die';
+
+  @override
+  String get tavernDiceModifierDown => 'Modifier −1';
+
+  @override
+  String get tavernDiceModifierUp => 'Modifier +1';
+
+  @override
+  String get tavernDiceRoll => 'Roll';
+
+  @override
+  String get tavernDiceAgain => 'Roll again';
+
+  @override
+  String get tavernDiceUse => 'Put it in the box';
+
+  @override
+  String tavernDiceLine(String notation, int total, String working) {
+    return '🎲 $notation rolled $total$working';
+  }
+
+  @override
+  String tavernDiceWorking(String working) {
+    return ' ($working)';
+  }
+
+  @override
+  String get tavernStorybook => 'Storybook';
+
+  @override
+  String get tavernStorybookMenu => 'Export as a storybook';
+
+  @override
+  String get tavernStorybookTitle => 'Title';
+
+  @override
+  String tavernStorybookDefaultTitle(String name) {
+    return 'A story with $name';
+  }
+
+  @override
+  String tavernStorybookByline(String character, String you) {
+    return '$character and $you';
+  }
+
+  @override
+  String get tavernStorybookWhole => 'The whole story';
+
+  @override
+  String tavernStorybookWholeNote(int count) {
+    String _temp0 = intl.Intl.pluralLogic(count, locale: localeName, other: '$count lines', one: '1 line');
+    return '$_temp0; hidden messages are left out. The EPUB opens in Apple Books and most reading apps.';
+  }
+
+  @override
+  String get tavernStorybookEpub => 'E-book (EPUB)';
+
+  @override
+  String get tavernStorybookText => 'Plain text (TXT)';
+
+  @override
+  String get tavernStorybookImage => 'Long image';
+
+  @override
+  String get tavernStorybookLatest => 'The latest';
+
+  @override
+  String tavernStorybookLines(int count) {
+    String _temp0 = intl.Intl.pluralLogic(count, locale: localeName, other: '$count lines', one: '1 line');
+    return '$_temp0';
+  }
+
+  @override
+  String get tavernStorybookSave => 'Save to photos';
+
+  @override
+  String get tavernStorybookShare => 'Share the image';
+
+  @override
+  String tavernStorybookEarlier(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count earlier lines are',
+      one: '1 earlier line is',
+    );
+    return '$_temp0 left out of the image; export the e-book for all of it.';
+  }
+
+  @override
+  String tavernStorybookEarlierShort(int count) {
+    String _temp0 = intl.Intl.pluralLogic(count, locale: localeName, other: '$count lines', one: '1 line');
+    return '… $_temp0 before this …';
+  }
+
+  @override
+  String get tavernStorybookMadeWith => 'Written in the DSH Go tavern';
+
+  @override
+  String get tavernStorybookContents => 'Contents';
+
+  @override
+  String tavernStorybookChapter(int n) {
+    return 'Chapter $n';
+  }
+
+  @override
+  String get tavernStorybookSaved => 'Saved to photos';
+
+  @override
+  String get tavernStorybookFailed => 'Couldn’t export it; try again';
+
+  @override
+  String get tavernLive2d => 'Live2D model';
+
+  @override
+  String get tavernLive2dSubtitle => 'Stands in for the card picture in the visual novel layout, moving as she talks';
+
+  @override
+  String get tavernLive2dNone => 'None';
+
+  @override
+  String get tavernLive2dSet => 'Imported';
+
+  @override
+  String get tavernLive2dImported => 'Imported. Switch the chat to the visual novel layout to see her.';
+
+  @override
+  String get tavernLive2dReplace => 'Replace it';
+
+  @override
+  String get tavernLive2dRemove => 'Remove the model';
+
+  @override
+  String get tavernLive2dNoRuntime =>
+      'There’s no Live2D runtime on this phone yet: set one up in the companion room first, or import a whole pack.';
+
+  @override
+  String get tavernTextSize => 'Text size';
+
+  @override
+  String get tavernTextSmall => 'S';
+
+  @override
+  String get tavernTextMedium => 'M';
+
+  @override
+  String get tavernTextLarge => 'L';
+
+  @override
+  String get tavernTextHuge => 'XL';
+
+  @override
+  String get tavernLineHeight => 'Line spacing';
+
+  @override
+  String get tavernLineTight => 'Tight';
+
+  @override
+  String get tavernLineNormal => 'Normal';
+
+  @override
+  String get tavernLineLoose => 'Loose';
+
+  @override
+  String get tavernReadingSample =>
+      '*She pushes a clay cup across to you; the firelight jumps in her eyes.*\n\n\"Still on the road this late? The snow won\'t stop tonight. If you\'re travelling, wait for daylight.\"';
+
+  @override
+  String get tavernPalette => 'Colours';
+
+  @override
+  String get tavernPalettePlain => 'Plain';
+
+  @override
+  String get tavernPaletteEmber => 'Warm';
+
+  @override
+  String get tavernPaletteOcean => 'Cool';
+
+  @override
+  String get tavernPaletteRose => 'Rose';
+
+  @override
+  String get tavernTextSpeed => 'Text speed';
+
+  @override
+  String get tavernTextSlow => 'Slow';
+
+  @override
+  String get tavernTextNormal => 'Medium';
+
+  @override
+  String get tavernTextFast => 'Fast';
+
+  @override
+  String get tavernTextInstant => 'Instant';
+
+  @override
+  String get tavernVnAuto => 'Auto';
+
+  @override
+  String get tavernVnSkip => 'Skip';
+
+  @override
+  String get tavernStage => 'Stage';
+
+  @override
+  String get tavernStageSession => 'This chat';
+
+  @override
+  String get tavernSessionUsing => 'In use';
+
+  @override
+  String get tavernSessionLook => 'Look';
+
+  @override
+  String get tavernSessionMore => 'More';
+
+  @override
+  String get tavernAudio => 'Music and sound';
+
+  @override
+  String get tavernAudioBgm => 'Music';
+
+  @override
+  String get tavernAudioAmbient => 'Sound effects';
+
+  @override
+  String get tavernAudioNothing => 'Not playing';
+
+  @override
+  String get tavernAudioPlay => 'Play';
+
+  @override
+  String get tavernAudioPause => 'Pause';
+
+  @override
+  String get tavernAudioMode => 'Play mode';
+
+  @override
+  String get tavernAudioModeOne => 'One';
+
+  @override
+  String get tavernAudioModeAll => 'All';
+
+  @override
+  String get tavernAudioModeShuffle => 'Shuffle';
+
+  @override
+  String get tavernAudioModeOnce => 'Once';
+
+  @override
+  String get tavernAudioVolume => 'Volume';
+
+  @override
+  String get tavernAudioAllow => 'Let the card play';
+
+  @override
+  String get tavernAudioAdd => 'Add background music';
+
+  @override
+  String get tavernAudioAddTitle => 'Link to the music';
+
+  @override
+  String get tavernAudioAddNote =>
+      'The web address of an audio file (mp3, ogg…). It joins this chat\'s music list, with the card\'s own.';
+
+  @override
+  String get tavernAudioAddConfirm => 'Add';
+
+  @override
+  String get tavernAudioAddInvalid => 'Starts with http:// or https://';
+
+  @override
+  String get tavernStageState => 'State';
+
+  @override
+  String get tavernStageDirector => 'Director';
+
+  @override
+  String get tavernStageTurn => 'This turn';
+
+  @override
+  String get tavernStageStateEmpty => 'This card keeps no state yet';
+
+  @override
+  String get tavernStageStateNote =>
+      'Once a card defines its state, relations, numbers, belongings and the time and place show here, each turn\'s changes marked (\"+5\"), and you can change them yourself. An older card without one lists its variables here.';
+
+  @override
+  String get tavernStageDirectorEmpty => 'No director yet';
+
+  @override
+  String get tavernStageDirectorNote =>
+      'With the director on, it reads the story in the background after each turn: it leaves the next turn an unseen hint, keeps its own notes (hidden by default, they may spoil), and puts three suggested replies over the box. It never speaks for you or writes the story.';
+
+  @override
+  String get tavernStageTurnNone => 'No turn to look at yet';
+
+  @override
+  String get tavernStageTokensIn => 'Prompt';
+
+  @override
+  String get tavernStageCache => 'Cache hit';
+
+  @override
+  String get tavernStageTokensOut => 'Reply';
+
+  @override
+  String get tavernStageWorld => 'Lorebook entries this turn';
+
+  @override
+  String get tavernStageWorldNone => 'No entry came up this turn';
+
+  @override
+  String get tavernStageInspect => 'See the whole inspection';
+
+  @override
+  String get tavernLorebookNone => 'None';
+
+  @override
+  String get tavernLorebooksBound => 'Bound lorebooks';
+
+  @override
+  String get tavernLorebooksBoundCharacter => 'Used in every chat with this character';
+
+  @override
+  String get tavernLorebooksBoundPersona => 'Used in every chat where you\'re this persona';
+
+  @override
+  String get tavernLorebookForChat => 'Lorebooks for this chat';
+
+  @override
+  String tavernLorebookForCharacter(String name) {
+    return 'Lorebooks for $name';
+  }
+
+  @override
+  String tavernLorebookForPersona(String name) {
+    return 'Lorebooks as $name';
+  }
+
+  @override
+  String get tavernLorebookChatNote => 'Used only in this chat. The ones marked Global are on in every chat anyway.';
+
+  @override
+  String get tavernLorebookCharacterNote =>
+      'Every chat with this character uses these, along with the card\'s own lorebook.';
+
+  @override
+  String get tavernLorebookPersonaNote => 'Every chat where you\'re this persona uses these.';
+
+  @override
+  String get tavernLorebookPickEmpty => 'No lorebooks in the library yet';
+
+  @override
+  String get tavernLorebookOpenLibrary => 'Import one in the library';
+
+  @override
+  String get tavernLorebookMissing => 'A deleted lorebook';
+
+  @override
+  String get tavernLorebookMissingSubtitle => 'Still bound and skipped when replying; turn off to unbind';
+
+  @override
+  String get tavernPresetOrder => 'Reorder';
+
+  @override
+  String get tavernPresetOrderNote =>
+      'Drag by the handle on the right. Prompts go to the model in this order; the ones switched off keep their place.';
+
+  @override
+  String get tavernPresetPromptOff => 'Off';
+
+  @override
+  String get tavernPrefill => 'Prefill';
+
+  @override
+  String get tavernPrefillOn => 'Start the reply with this';
+
+  @override
+  String get tavernPrefillOnSubtitle => 'The model writes on from it';
+
+  @override
+  String get tavernPrefillText => 'Opening text';
+
+  @override
+  String get tavernPrefillTextEmpty => 'Not written yet';
+
+  @override
+  String get tavernPrefillTarget => 'Goes in';
+
+  @override
+  String get tavernPrefillContent => 'Reply';
+
+  @override
+  String get tavernPrefillReasoning => 'Thinking';
+
+  @override
+  String get tavernPrefillNote =>
+      'When on, this goes to the model as the start of the reply, and it writes on from there. In Thinking it applies only with thinking on; otherwise it goes in the reply. Continuing a reply doesn\'t use it.';
+
+  @override
+  String get tavernPresetPromptEmpty => 'Empty';
+
+  @override
+  String tavernThinkingSeconds(int seconds) {
+    return '${seconds}s';
+  }
+
+  @override
+  String tavernDeletedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Deleted $count messages',
+      one: 'Deleted 1 message',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get tavernDeleteFromUndoable =>
+      'From this one to the latest, with their alternatives and branches. You can undo for a few seconds after.';
+
+  @override
+  String get tavernUndoFailed => 'Couldn\'t undo';
+
+  @override
+  String get tavernShowUsage => 'Show usage and cost under each reply';
+
+  @override
+  String get tavernShowUsageSubtitle =>
+      'Input and output tokens as the model reports them; for DeepSeek models, a cost at their list prices, peak and off-peak hours apart';
+
+  @override
+  String tavernUsageLine(int input, int output) {
+    final intl.NumberFormat inputNumberFormat = intl.NumberFormat.decimalPattern(localeName);
+    final String inputString = inputNumberFormat.format(input);
+    final intl.NumberFormat outputNumberFormat = intl.NumberFormat.decimalPattern(localeName);
+    final String outputString = outputNumberFormat.format(output);
+
+    return 'In $inputString · out $outputString';
+  }
+
+  @override
+  String tavernUsageLineCached(int input, int cached, int output) {
+    final intl.NumberFormat inputNumberFormat = intl.NumberFormat.decimalPattern(localeName);
+    final String inputString = inputNumberFormat.format(input);
+    final intl.NumberFormat cachedNumberFormat = intl.NumberFormat.decimalPattern(localeName);
+    final String cachedString = cachedNumberFormat.format(cached);
+    final intl.NumberFormat outputNumberFormat = intl.NumberFormat.decimalPattern(localeName);
+    final String outputString = outputNumberFormat.format(output);
+
+    return 'In $inputString ($cachedString cached) · out $outputString';
+  }
+
+  @override
+  String tavernUsageCost(String usd) {
+    return 'about $usd';
+  }
+
+  @override
+  String tavernUsageCostUnder(String usd) {
+    return 'under $usd';
+  }
+
+  @override
+  String get tavernCostAlert => 'Per-turn cost reminder';
+
+  @override
+  String get tavernCostAlertSubtitle =>
+      'When a turn costs more than this at DeepSeek\'s list prices, say so over the composer; other models aren\'t estimated';
+
+  @override
+  String get tavernCostAlertOff => 'Off';
+
+  @override
+  String tavernCostAlertNotice(String cost, String line) {
+    return 'This turn cost $cost, over your reminder line of $line';
+  }
+
+  @override
+  String get tavernSearchChat => 'Search this chat';
+
+  @override
+  String get tavernSearchChatHint => 'A line, a word';
+
+  @override
+  String get tavernSearchChatIdle =>
+      'Searches every branch of this chat, hidden messages too, but not the thinking. Tap a hit to read it whole.';
+
+  @override
+  String tavernSearchChatNone(String query) {
+    return 'Nothing found for “$query”';
+  }
+
+  @override
+  String tavernSearchChatFound(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count found, newest first',
+      one: '1 found',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get tavernDeleteOne => 'Delete just this one';
+
+  @override
+  String get tavernDeleteOneTitle => 'Delete just this message?';
+
+  @override
+  String get tavernDeleteOneMessage =>
+      'The messages after it stay, joined to the one before it. This can\'t be undone.';
+
+  @override
+  String get tavernLorebookAdd => 'Add an entry';
+
+  @override
+  String get tavernLorebookStart =>
+      'This card has no lorebook of its own. Add an entry: when a chat mentions one of its keys, its text goes into the prompt.';
+
+  @override
+  String get tavernLorebookEntryNew => 'New entry';
+
+  @override
+  String get tavernLorebookEntryEdit => 'Edit entry';
+
+  @override
+  String get tavernLorebookFieldName => 'Entry name';
+
+  @override
+  String get tavernLorebookFieldNameHelp => 'Only for you, to find it by; not sent to the model.';
+
+  @override
+  String get tavernLorebookFieldKeys => 'Keys';
+
+  @override
+  String get tavernLorebookFieldKeysHelp =>
+      'When a chat mentions any of these, the text goes into the prompt. Separate with commas.';
+
+  @override
+  String get tavernLorebookFieldSecondary => 'Secondary keys';
+
+  @override
+  String get tavernLorebookFieldSecondaryHelp => 'If filled, the entry is also checked against them as set below.';
+
+  @override
+  String get tavernLorebookFieldContent => 'Text';
+
+  @override
+  String get tavernLorebookFieldConstantSubtitle => 'Always included, keys or not';
+
+  @override
+  String get tavernLorebookFieldEnabled => 'On';
+
+  @override
+  String get tavernLorebookFieldPosition => 'Goes';
+
+  @override
+  String get tavernLorebookBeforeChar => 'Before the character';
+
+  @override
+  String get tavernLorebookAfterChar => 'After the character';
+
+  @override
+  String get tavernLorebookFieldOrder => 'Order';
+
+  @override
+  String get tavernLorebookFieldOrderHelp => 'Higher numbers come first, and go in first.';
+
+  @override
+  String get tavernLorebookEntryDelete => 'Delete this entry';
+
+  @override
+  String tavernLorebookEntryDeleteTitle(String name) {
+    return 'Delete the entry “$name”?';
+  }
+
+  @override
+  String get tavernLorebookEntryDeleteMessage => 'It goes from the card for good.';
+
+  @override
+  String get tavernNarrator => 'Narrator';
+
+  @override
+  String get tavernSendOptions => 'Other ways to send';
+
+  @override
+  String get tavernSendOnly => 'Send without a reply';
+
+  @override
+  String get tavernSendOnlySubtitle => 'It goes into the story; no one answers yet';
+
+  @override
+  String get tavernNarrate => 'Send as narration';
+
+  @override
+  String get tavernNarrateSubtitle => 'It goes into the story as narration, not as your line';
+
+  @override
+  String get tavernSendFailed => 'Couldn\'t send';
+
+  @override
+  String get tavernStateVariables => 'Variables';
+
+  @override
+  String get tavernStateVariablesNote =>
+      'What macros like {{setvar}} saved in the card and this chat, as of the current message. Tap one to see it whole or change it.';
+
+  @override
+  String get tavernData => 'Data';
+
+  @override
+  String get tavernBackup => 'Back up the whole tavern';
+
+  @override
+  String get tavernBackupSubtitle => 'Cards, chats, presets, lorebooks, personas and settings, in one zip';
+
+  @override
+  String get tavernBackingUp => 'Backing up…';
+
+  @override
+  String tavernBackedUp(int count, String size) {
+    return 'Backed up: $count files, $size';
+  }
+
+  @override
+  String tavernBackupFailed(String error) {
+    return 'Couldn\'t back up: $error';
+  }
+
+  @override
+  String get tavernRestore => 'Restore from a backup';
+
+  @override
+  String get tavernRestoreSubtitle => 'Replace this tavern with a backup';
+
+  @override
+  String get tavernRestoreTitle => 'Replace this tavern with this backup?';
+
+  @override
+  String get tavernRestoreMessage =>
+      'The cards, chats, presets and settings here are all replaced by the backup\'s. To keep what is here, back it up first. A wrong or damaged backup changes nothing.';
+
+  @override
+  String get tavernRestoreAction => 'Restore';
+
+  @override
+  String get tavernRestoring => 'Restoring…';
+
+  @override
+  String tavernRestored(int count) {
+    return 'Restored: $count files';
+  }
+
+  @override
+  String tavernRestoreFailed(String error) {
+    return 'Couldn\'t restore; nothing here changed: $error';
+  }
+
+  @override
+  String get tavernLoreTest => 'Try it';
+
+  @override
+  String get tavernLoreTestTitle => 'Try the lorebook';
+
+  @override
+  String get tavernLoreTestInput => 'Say something';
+
+  @override
+  String get tavernLoreTestHint => 'A line you\'d expect to bring an entry in';
+
+  @override
+  String get tavernLoreTestNote =>
+      'Only this line, plus the always-on entries; earlier messages, sticky and cooldown don\'t count. No model is called.';
+
+  @override
+  String tavernLoreTestHits(int count) {
+    return 'Goes into the prompt ($count)';
+  }
+
+  @override
+  String get tavernLoreTestNone => 'This line brings in no entry.';
+
+  @override
+  String get tavernLoreTestOverflow => 'Over the lorebook budget; the later entries were left out.';
+
+  @override
+  String tavernLoreTestFailed(String error) {
+    return 'Couldn\'t try it: $error';
+  }
+
+  @override
+  String tavernLoreReasonKeys(String keys) {
+    return 'Keyword $keys';
+  }
+
+  @override
+  String get tavernLoreReasonSticky => 'Sticky, still on';
+
+  @override
+  String get tavernLoreReasonDecorator => 'Decorator';
+
+  @override
+  String tavernLoreAtDepth(int depth) {
+    return 'At depth $depth';
+  }
+
+  @override
+  String get tavernLoreNearNote => 'By the author\'s note';
+
+  @override
+  String get tavernLoreNearExamples => 'By the example dialogue';
+
+  @override
+  String get tavernLoreOutlet => 'Outlet';
+
+  @override
+  String tavernLoreOrder(String order) {
+    return 'Order $order';
+  }
+
+  @override
+  String get tavernBranches => 'Branches';
+
+  @override
+  String get tavernBranchesNote =>
+      'Each row is a stretch with no fork. An indented row is another way out of the end of the row above. Tap a row to switch to it or name it; one the story is not on can also be deleted.';
+
+  @override
+  String get tavernBranchesEmpty => 'No messages in this chat yet.';
+
+  @override
+  String tavernBranchCount(int count) {
+    return '$count messages';
+  }
+
+  @override
+  String tavernBranchUntil(String text) {
+    return 'to “$text”';
+  }
+
+  @override
+  String get tavernBranchCurrent => 'Current';
+
+  @override
+  String get tavernBranchSwitch => 'Switch to this branch';
+
+  @override
+  String get tavernBranchSwitchSubtitle => 'Carries on where it last left off';
+
+  @override
+  String get tavernBranchName => 'Name this branch';
+
+  @override
+  String get tavernBranchRename => 'Rename';
+
+  @override
+  String get tavernBranchNameHint => 'e.g. The cellar route';
+
+  @override
+  String get tavernBranchNameCaption => 'Only for you, to find it again; leave empty to remove it.';
+
+  @override
+  String get tavernBranchSwitched => 'Switched to this branch';
+
+  @override
+  String tavernBranchFailed(String error) {
+    return 'Couldn\'t do that: $error';
+  }
+
+  @override
+  String get tavernCardTheme => 'Use the card\'s own look';
+
+  @override
+  String get tavernCardThemeSubtitle =>
+      'The accent, name colours, layout and background a card sets; off, this page decides';
+
+  @override
+  String get tavernShelfSort => 'Sort';
+
+  @override
+  String get tavernShelfOrderRecent => 'Recently played';
+
+  @override
+  String get tavernShelfOrderName => 'Name';
+
+  @override
+  String get tavernShelfOrderImported => 'Recently imported';
+
+  @override
+  String get tavernFavorite => 'Favorite';
+
+  @override
+  String get tavernUnfavorite => 'Remove from favorites';
+
+  @override
+  String get tavernFavorited => 'Favorite';
+
+  @override
+  String get tavernChatSearchHint => 'Search chats: who, title, last line';
+
+  @override
+  String get tavernNoChatMatch => 'No matching chats';
+
+  @override
+  String get tavernCharacterTabChats => 'Chats';
+
+  @override
+  String get tavernCharacterTabCard => 'Card';
+
+  @override
+  String get tavernCharacterTabSetup => 'Setup';
+
+  @override
+  String get tavernCharacterNoDefinition => 'This card has no definition or notes.';
+
+  @override
+  String get tavernNovelIndent => 'Indent paragraphs in 小说';
+
+  @override
+  String get tavernNovelIndentSubtitle => 'Each paragraph opens two characters in, as in a book';
+
+  @override
+  String get tavernShelfSelect => 'Select';
+
+  @override
+  String tavernShelfPicked(int count) {
+    return '$count selected';
+  }
+
+  @override
+  String get tavernShelfExport => 'Export the selected cards';
+
+  @override
+  String tavernDeleteCharactersTitle(int count) {
+    return 'Delete these $count characters?';
+  }
+
+  @override
+  String get tavernQuickRepliesAll => 'All';
+
+  @override
+  String get tavernQuickRepliesManage => 'Manage quick replies';
+
+  @override
+  String tavernSpeakNext(String name) {
+    return 'Let $name go on';
+  }
+
+  @override
+  String get tavernSettingsConnection => 'Model & connection';
+
+  @override
+  String get tavernDefaultPreset => 'Default preset';
+
+  @override
+  String get tavernDefaultPresetPick => 'The preset new chats use';
+
+  @override
+  String tavernGenerationInPreset(String name) {
+    return 'Change $name\'s settings';
+  }
+
+  @override
+  String tavernGenerationPresetNote(String name) {
+    return 'New chats use $name: change context, reply length and temperature in that preset. A chat with a preset of its own keeps to it.';
+  }
+
+  @override
+  String get tavernStorage => 'Storage';
+
+  @override
+  String get tavernStorageCounting => 'Counting…';
+
+  @override
+  String get tavernStorageCharacters => 'Character cards';
+
+  @override
+  String get tavernStorageChats => 'Chats, presets and personas';
+
+  @override
+  String get tavernStorageLive2d => 'Live2D figures';
+
+  @override
+  String get tavernStorageOther => 'Backgrounds, lorebooks, regex and settings';
+
+  @override
+  String get tavernStorageNote =>
+      'All of it lives on this device only; before you change phones or uninstall, back up the whole tavern.';
+
+  @override
+  String get tavernDefaultPresetEmpty => 'Import presets in Library › Presets to pick another.';
+
+  @override
+  String tavernQuickRepliesAdded(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Added $count quick replies',
+      one: 'Added 1 quick reply',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String tavernQuickRepliesAddedSkipped(int count, int skipped) {
+    return 'Added $count quick replies; $skipped were ST slash commands and left out';
+  }
+
+  @override
+  String get tavernImportChatNoName => 'This chat doesn\'t say whose it is; import it from the character\'s page';
+
+  @override
+  String tavernImportChatNoCharacter(String name) {
+    return 'No single “$name” on the shelf; import this chat from the character\'s page';
+  }
+
+  @override
+  String tavernImportedChatsTo(int count, String name) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Imported $count chats to “$name”',
+      one: 'Imported 1 chat to “$name”',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String tavernImportUnknown(String name) {
+    return 'Can\'t tell what $name is';
+  }
+
+  @override
+  String tavernImportFileFailed(String name, String reason) {
+    return 'Couldn\'t import $name: $reason';
+  }
+
+  @override
+  String get tavernIslands => 'Web pages in messages';
+
+  @override
+  String get tavernIslandsSubtitle =>
+      'HTML and styles a card writes in its messages (status bars, panels) show in a web page of their own; off, as text';
+
+  @override
+  String get tavernSettingsSafety => 'Safety';
+
+  @override
+  String get tavernIslandNoScripts => 'No card scripts in those pages';
+
+  @override
+  String get tavernIslandNoScriptsSubtitle =>
+      'The card\'s own JavaScript doesn\'t run; status bars that need it stay still';
+
+  @override
+  String get tavernIslandOffline => 'Keep those pages offline';
+
+  @override
+  String get tavernIslandOfflineSubtitle =>
+      'Only pictures and fonts inside the card; nothing is loaded from the internet';
+
+  @override
+  String get tavernSessionUsage => 'This chat\'s usage';
+
+  @override
+  String tavernSessionUsageNote(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count replies on the current line',
+      one: '1 reply on the current line',
+    );
+    return '$_temp0, added up; replaced alternatives aren\'t counted';
+  }
+
+  @override
+  String get tavernSessionUsageNone => 'The model hasn\'t reported any usage yet';
+
+  @override
+  String tavernSessionUsageCost(String usd) {
+    return 'About $usd at DeepSeek\'s list prices, peak and off-peak hours apart; China\'s public holidays are off-peak all day, so those days come out a little high here';
+  }
+
+  @override
+  String tavernSessionUsageUnpriced(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count replies used a model not on the price list and aren\'t in the cost',
+      one: '1 reply used a model not on the price list and isn\'t in the cost',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get tavernComposerNoKey => 'Add a key to begin';
+
+  @override
+  String get tavernWriteOwn => 'Write your own character';
+
+  @override
+  String get tavernWriteOwnSubtitle => 'Start from a blank card and fill in the name, setting and greeting';
+
+  @override
+  String get tavernNewCharacterName => 'New character';
+
+  @override
+  String get tavernSearchGoTo => 'Go to it in the chat';
+
+  @override
+  String get tavernBookmarks => 'Bookmarks';
+
+  @override
+  String get tavernBookmarkAdd => 'Bookmark';
+
+  @override
+  String get tavernBookmarkRemove => 'Remove bookmark';
+
+  @override
+  String get tavernBookmarkAdded => 'Bookmarked; find it in Stage › This chat › Bookmarks';
+
+  @override
+  String get tavernBookmarkRemoved => 'Bookmark removed';
+
+  @override
+  String get tavernBookmarksEmpty => 'No bookmarks yet';
+
+  @override
+  String get tavernBookmarksEmptyMessage => 'Long-press a message and choose Bookmark';
+
+  @override
+  String get tavernBookmarkGone => 'That line is gone; its bookmark was removed';
+
+  @override
+  String get tavernUsageStats => 'Usage';
+
+  @override
+  String get tavernUsageStatsSubtitle => 'How many tokens each chat has taken, and about what it cost';
+
+  @override
+  String get tavernUsageAllNote =>
+      'Replies on every chat\'s current line, added up; replaced alternatives aren\'t counted';
+
+  @override
+  String tavernUsageChatReplies(int count, String completion) {
+    return '$count replies · $completion out';
+  }
+
+  @override
+  String get tavernSlashNoReply => 'There\'s no reply to do that to yet';
+
+  @override
+  String get tavernRegexTest => 'Try it';
+
+  @override
+  String get tavernRegexTestFind => 'Find';
+
+  @override
+  String get tavernRegexTestReplace => 'Replace with';
+
+  @override
+  String get tavernRegexTestInput => 'Some text';
+
+  @override
+  String get tavernRegexTestHint => 'Paste a reply to try it on';
+
+  @override
+  String get tavernRegexTestNote =>
+      'Only this rule, on this device, with no model call; it runs here whatever it applies to and whether or not it is on.';
+
+  @override
+  String get tavernRegexTestMacros => 'Macros like {{char}} are not filled in here; they are taken as written.';
+
+  @override
+  String get tavernRegexTestNone => 'No match; the text stays as it is';
+
+  @override
+  String tavernRegexTestResult(int count) {
+    return 'After ($count replaced)';
+  }
+
+  @override
+  String tavernRegexTestFailed(String reason) {
+    return 'Could not try it: $reason';
+  }
+
+  @override
+  String get tavernStateNote =>
+      'The card\'s own state, as of the current message. What changed this turn is marked (like +5); tap one to see it whole or change it. A change is kept on this message, so swiping or switching branches takes it back with the rest.';
+
+  @override
+  String get tavernStatePreview => 'Nothing is saved yet; these are the card\'s starting values.';
+
+  @override
+  String get tavernStateChanged => 'changed';
+
+  @override
+  String get tavernStateHidden => 'Spoiler · tap to see';
+
+  @override
+  String get tavernStateWhole => 'All of it';
+
+  @override
+  String get tavernStateEdit => 'Change';
+
+  @override
+  String get tavernStateEditText => 'The text is kept as written';
+
+  @override
+  String get tavernStateEditJson => 'Write JSON: a number, true / false, \"quoted text\", […], {…}';
+
+  @override
+  String get tavernStateEditBad => 'That is not valid JSON; nothing changed';
+
+  @override
+  String get tavernStateEditSaved => 'Changed';
+
+  @override
+  String get tavernStateEditSame => 'It was already that';
+
+  @override
+  String tavernStateEditRefused(String reason) {
+    return 'Not changed: $reason';
+  }
+
+  @override
+  String get tavernDirectorAuto => 'Director runs on its own';
+
+  @override
+  String get tavernDirectorAutoNote =>
+      'For this chat only. Every few turns, after a reply, the model is asked once more: where the next beat goes, and three things you might do. Each time uses a little more.';
+
+  @override
+  String get tavernDirectorRun => 'Ask the director now';
+
+  @override
+  String get tavernDirectorRunning => 'The director is thinking…';
+
+  @override
+  String get tavernDirectorBeat => 'The next beat';
+
+  @override
+  String get tavernDirectorSuggestions => 'You might…';
+
+  @override
+  String get tavernDirectorSuggestionsNote => 'Tap one to put it in the box; changing and sending it is up to you.';
+
+  @override
+  String get tavernDirectorNotes => 'The director\'s notes';
+
+  @override
+  String get tavernDirectorStale =>
+      'This was thought out for an earlier moment and may not fit now; it is kept to read.';
+
+  @override
+  String tavernDirectorFailed(String reason) {
+    return 'The last try did not work: $reason';
+  }
+
+  @override
+  String tavernDirectorRunFailed(String reason) {
+    return 'Could not do that: $reason';
+  }
+
+  @override
+  String get tavernBranchHere => 'Branch from here';
+
+  @override
+  String get tavernBranchedHere => 'Back to this message; what came after is kept in Branches';
+
+  @override
+  String get tavernBranchHereFailed => 'Could not go back to this message';
+
+  @override
+  String tavernStateItems(int count) {
+    return '$count items';
+  }
+
+  @override
+  String get tavernStateSearch => 'Search the values';
+
+  @override
+  String get tavernStateNoMatch => 'Nothing matches';
+
+  @override
+  String get tavernRuns => 'Background log';
+
+  @override
+  String get tavernRunsNote =>
+      'Every change to the state by you, the model or the card\'s rules, and every run of the director, card events and the story; newest first, up to 100. Tap one for the raw record.';
+
+  @override
+  String get tavernRunsEmpty => 'Nothing yet';
+
+  @override
+  String get tavernRunsEmptyMessage => 'Changes to the state and director runs show up here.';
+
+  @override
+  String get tavernRunUser => 'You';
+
+  @override
+  String get tavernRunModel => 'The model';
+
+  @override
+  String get tavernRunRules => 'Card rules';
+
+  @override
+  String get tavernRunStopped => 'Turn cut off';
+
+  @override
+  String get tavernRunDirector => 'Director';
+
+  @override
+  String get tavernRunDirectorFailed => 'Director failed';
+
+  @override
+  String get tavernRunEvent => 'Card event';
+
+  @override
+  String get tavernRunStory => 'Story';
+
+  @override
+  String get tavernRunSecret => 'Secret';
+
+  @override
+  String get tavernRunNotKept => 'Not kept';
+
+  @override
+  String get tavernRunGone => 'Its message is gone';
+
+  @override
+  String tavernRunMore(int count) {
+    return 'and $count more';
+  }
+
+  @override
+  String get tavernInspectCache => 'Cache';
+
+  @override
+  String get tavernInspectCacheKept => 'Same start as the last turn';
+
+  @override
+  String tavernInspectCacheBroken(int index) {
+    return 'Changed from part $index';
+  }
+
+  @override
+  String tavernInspectCacheMiss(int tokens) {
+    return 'This part and about $tokens tokens after it miss the cache; the parts before match the last turn. Usually a lorebook entry near the top changed this turn.';
+  }
+
+  @override
+  String get tavernInspectCacheBreak => 'The cache breaks here';
+
+  @override
+  String get tavernPaletteSt => 'ST';
+
+  @override
+  String tavernStTheme(String name) {
+    return 'ST theme: $name';
+  }
+
+  @override
+  String get tavernStThemeNote =>
+      'With 「ST」 as the colours, quotes and *actions* take its colours; one too faint to read here is adjusted until it reads.';
+
+  @override
+  String get tavernStThemeImport => 'Import an ST theme';
+
+  @override
+  String get tavernStThemeImportNote =>
+      'Takes the quote and italics colours, and its custom CSS, from a theme file exported from SillyTavern.';
+
+  @override
+  String get tavernStThemeCss => 'Use its custom CSS';
+
+  @override
+  String get tavernStThemeCssSubtitle =>
+      'With 「ST」 as the colours, it goes into the whole-story canvas and overrides the default look, as in ST. Turn it off if the page comes apart; the colours stay.';
+
+  @override
+  String get tavernStThemeRemove => 'Remove';
+
+  @override
+  String tavernStThemeImported(String name) {
+    return 'Now using the colours of the ST theme “$name”';
+  }
+
+  @override
+  String tavernStThemeNoColors(String name) {
+    return '“$name” has no quote or italics colour or custom CSS to use';
+  }
+
+  @override
+  String get tavernPromptContent => 'Content';
+
+  @override
+  String get tavernPromptRole => 'Spoken as';
+
+  @override
+  String get tavernPromptRoleSystem => 'System';
+
+  @override
+  String get tavernPromptRoleUser => 'User';
+
+  @override
+  String get tavernPromptRoleAssistant => 'Assistant';
+
+  @override
+  String get tavernPromptPosition => 'Position';
+
+  @override
+  String get tavernPromptRelative => 'In order';
+
+  @override
+  String get tavernPromptInChat => 'In chat';
+
+  @override
+  String get tavernPromptDepth => 'Depth';
+
+  @override
+  String tavernPromptDepthNote(int depth) {
+    return 'Goes into the chat history, $depth messages up from the end (0 is the very end), as ST\'s In-Chat does.';
+  }
+
+  @override
+  String get tavernPromptRelativeNote => 'Sent where the preset\'s order puts it, as ST\'s Relative does.';
+
+  @override
+  String tavernPromptPlace(int depth) {
+    return 'In chat · depth $depth';
+  }
+
+  @override
+  String get tavernPromptOrder => 'Order at this depth';
+
+  @override
+  String get tavernPromptOrderNote => 'When several sit at one depth, the smaller number comes first (100 by default).';
+
+  @override
+  String get tavernPromptForbid => 'Keep the card from replacing it';
+
+  @override
+  String get tavernPromptForbidMain => 'A card\'s own system prompt won\'t replace this one.';
+
+  @override
+  String get tavernPromptForbidJailbreak => 'A card\'s own post-history instructions won\'t replace this one.';
+
+  @override
+  String get tavernLoreCommon => 'Common';
+
+  @override
+  String get tavernLoreMore => 'More';
+
+  @override
+  String get tavernLorePosAnTop => 'Before author\'s note';
+
+  @override
+  String get tavernLorePosAnBottom => 'After author\'s note';
+
+  @override
+  String get tavernLorePosExampleTop => 'Before examples';
+
+  @override
+  String get tavernLorePosExampleBottom => 'After examples';
+
+  @override
+  String get tavernLorePosOutlet => 'Outlet';
+
+  @override
+  String get tavernLoreLogic => 'How secondary keys count';
+
+  @override
+  String get tavernLoreLogicAndAny => 'Any';
+
+  @override
+  String get tavernLoreLogicAndAll => 'All';
+
+  @override
+  String get tavernLoreLogicNotAny => 'None';
+
+  @override
+  String get tavernLoreLogicNotAll => 'Not all';
+
+  @override
+  String get tavernLoreProbability => 'Chance';
+
+  @override
+  String get tavernLoreCase => 'Case-sensitive';
+
+  @override
+  String get tavernLoreWhole => 'Whole words';
+
+  @override
+  String get tavernLoreDefault => 'Default';
+
+  @override
+  String get tavernLoreYes => 'Yes';
+
+  @override
+  String get tavernLoreNo => 'No';
+
+  @override
+  String get tavernLorePosDepth => 'At depth';
+
+  @override
+  String get tavernLibraryBookOpen => 'Entries';
+
+  @override
+  String get tavernLibraryBookNote =>
+      'Changes are written back to this book; wherever it is bound uses them from the next turn.';
+
+  @override
+  String get tavernBranchDelete => 'Delete this branch';
+
+  @override
+  String get tavernBranchDeleteTitle => 'Delete this branch?';
+
+  @override
+  String tavernBranchDeleteMessage(int count) {
+    return 'Its $count messages, and every branch that grew from it, will go; you can take it back for a few seconds. The way the story is on now is not touched.';
+  }
+
+  @override
+  String tavernLetterFrom(String from) {
+    return 'A letter from $from';
+  }
+
+  @override
+  String get tavernLetter => 'A letter';
+
+  @override
+  String get tavernComponentMore => 'Show all';
+
+  @override
+  String get tavernComponentLess => 'Show less';
+
+  @override
+  String get tavernItemTaken => 'Got';
+
+  @override
+  String get tavernClue => 'Clue';
+
+  @override
+  String tavernPhoneFrom(String from) {
+    return 'Message from $from';
+  }
+
+  @override
+  String get tavernPhoneMessage => 'A message';
+
+  @override
+  String tavernRollCheck(String skill) {
+    return 'Check: $skill';
+  }
+
+  @override
+  String get tavernRoll => 'Roll';
+
+  @override
+  String get tavernRollSuccess => 'Success';
+
+  @override
+  String get tavernRollFailure => 'Failure';
+
+  @override
+  String get tavernGameHere => 'A mini-game goes here; it can\'t be played here yet';
+
+  @override
+  String tavernCanvasReplied(String name) {
+    return '$name replied';
+  }
+
+  @override
+  String get tavernRegexEdit => 'Edit rule';
+
+  @override
+  String get tavernRegexFieldName => 'Name';
+
+  @override
+  String get tavernRegexFieldFindHelp => 'SillyTavern\'s form: /pattern/flags, e.g. /(hi|bye)/gi';
+
+  @override
+  String get tavernRegexFieldReplaceHelp => '\$1 is the first group; {{match}} is the whole match';
+
+  @override
+  String get tavernRegexFieldTrim => 'Trim out first';
+
+  @override
+  String get tavernRegexFieldTrimHelp => 'One per line, cut from the match before it is replaced';
+
+  @override
+  String get tavernRegexPlacement => 'Applies to';
+
+  @override
+  String get tavernRegexPlaceUser => 'Your messages';
+
+  @override
+  String get tavernRegexPlaceAi => 'Replies';
+
+  @override
+  String get tavernRegexPlaceSlash => 'Slash commands';
+
+  @override
+  String get tavernRegexPlaceWorld => 'World info';
+
+  @override
+  String get tavernRegexPlaceReasoning => 'Reasoning';
+
+  @override
+  String get tavernRegexPhase => 'Changes';
+
+  @override
+  String get tavernRegexPhaseWrite => 'The text';
+
+  @override
+  String get tavernRegexPhaseDisplay => 'Display';
+
+  @override
+  String get tavernRegexPhasePrompt => 'Prompt';
+
+  @override
+  String get tavernRegexPhaseBoth => 'Both';
+
+  @override
+  String get tavernRegexPhaseNote =>
+      'The text: rewrites the saved message. Display: the saved text stays; only what you see changes. Prompt: only what is sent to the model.';
+
+  @override
+  String get tavernRegexMinDepth => 'From depth';
+
+  @override
+  String get tavernRegexMaxDepth => 'To depth';
+
+  @override
+  String get tavernRegexDepthHelp => 'Empty means any; 0 is the newest message';
+
+  @override
+  String get tavernRegexSubstitute => 'Macros in the pattern';
+
+  @override
+  String get tavernRegexSubstituteNone => 'Leave';
+
+  @override
+  String get tavernRegexSubstituteRaw => 'Expand';
+
+  @override
+  String get tavernRegexSubstituteEscaped => 'Expand escaped';
+
+  @override
+  String get tavernRegexRunOnEdit => 'Also when a message is edited';
+
+  @override
+  String get tavernRegexFieldEnabled => 'Use this rule';
+
+  @override
+  String get tavernRegexSavedIncompatible => 'Saved. This rule can\'t run here, so it is skipped';
+
+  @override
+  String get tavernRegexGone => 'This rule is gone; go back to the list';
+
+  @override
+  String get tavernRegexDeferred => 'It uses macros; whether it runs is known only when it does';
+
+  @override
+  String get tavernRegexTryDraft => 'Try it as filled in';
+
+  @override
+  String get tavernRegexDepthAny => 'Any';
+
+  @override
+  String get tavernCanvas => 'Whole-page canvas (trial)';
+
+  @override
+  String tavernCardScriptsHint(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'This card has $count scripts; they run only with Whole-page canvas (trial) on',
+      one: 'This card has a script; it runs only with Whole-page canvas (trial) on',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get tavernCardScriptsHintAction => 'Turn on';
+
+  @override
+  String get tavernRender => 'How it shows';
+
+  @override
+  String get tavernRenderSubtitle =>
+      'Only this character\'s own chats: a card\'s status bars and styling need pages or the canvas, and its scripts run only on the canvas';
+
+  @override
+  String get tavernRenderText => 'Text';
+
+  @override
+  String get tavernRenderIslands => 'Pages';
+
+  @override
+  String get tavernRenderCanvas => 'Canvas';
+
+  @override
+  String get tavernCanvasSubtitle =>
+      'The whole chat in one web page laid out as SillyTavern does, so a card\'s ST styles reach across messages. Card scripts run here; turn on \"No card scripts in those pages\" to stop them. Not for visual novel.';
+
+  @override
+  String get tavernCanvasReloaded => 'The page reloaded';
+
+  @override
+  String tavernGroupSpeaking(String name) {
+    return '$name is speaking';
+  }
+
+  @override
+  String tavernGroupThen(String names) {
+    return 'then $names';
+  }
+
+  @override
+  String get tavernGroupNoSpeakers => 'No one took this turn. Tap a name above to have them speak.';
+
+  @override
+  String get tavernGroupSpeakNext => 'Let them go on';
+
+  @override
+  String get tavernGroupNew => 'New group chat';
+
+  @override
+  String get tavernGroupMembers => 'Who\'s in it';
+
+  @override
+  String get tavernGroupMembersNote =>
+      'In the order picked; the first hosts it, and the story\'s shared state lives on that card.';
+
+  @override
+  String get tavernGroupHost => 'Host';
+
+  @override
+  String get tavernGroupTitle => 'Name';
+
+  @override
+  String get tavernGroupActivation => 'Taking turns';
+
+  @override
+  String get tavernGroupNatural => 'Natural';
+
+  @override
+  String get tavernGroupListOrder => 'In order';
+
+  @override
+  String get tavernGroupRandom => 'Random';
+
+  @override
+  String get tavernGroupManual => 'Manual';
+
+  @override
+  String get tavernGroupDirector => 'Director';
+
+  @override
+  String get tavernGroupNaturalNote =>
+      'As SillyTavern does: whoever is named speaks first, the rest by how talkative each is; the most per turn is in the group\'s settings.';
+
+  @override
+  String get tavernGroupListOrderNote => 'Each turn goes down the list from the top (the muted are skipped).';
+
+  @override
+  String get tavernGroupRandomNote => 'Each turn picks one who hasn\'t spoken since your last line.';
+
+  @override
+  String get tavernGroupManualNote => 'No one speaks on their own; tap a name above the box to have them speak.';
+
+  @override
+  String get tavernGroupDirectorNote => 'The director picks who speaks next, as the story goes.';
+
+  @override
+  String get tavernGroupPickTwo => 'Pick at least two';
+
+  @override
+  String tavernGroupCreate(int count) {
+    return 'Create ($count)';
+  }
+
+  @override
+  String tavernGroupCreateFailed(String reason) {
+    return 'Couldn\'t create the group: $reason';
+  }
+
+  @override
+  String get tavernGroupTag => 'Group';
+
+  @override
+  String tavernGroupMemberCount(int count) {
+    return '$count members';
+  }
+
+  @override
+  String get tavernGroupSettings => 'Group settings';
+
+  @override
+  String get tavernGroupMaxSpeakers => 'Most to speak each turn';
+
+  @override
+  String get tavernGroupSelfResponses => 'May answer themselves';
+
+  @override
+  String get tavernGroupSelfResponsesNote => 'Whoever spoke last may still go first this turn.';
+
+  @override
+  String tavernGroupHostNote(String name) {
+    return 'Hosted by $name: the story\'s shared state, director and secrets live on that card; the host need not be among the speakers.';
+  }
+
+  @override
+  String get tavernGroupMuted => 'Muted';
+
+  @override
+  String get tavernGroupMutedNote => 'Won\'t speak on their own; still speaks when named.';
+
+  @override
+  String get tavernGroupTalkativeness => 'Talkativeness';
+
+  @override
+  String get tavernGroupTalkativenessNote => 'In natural turns, the higher, the likelier to speak.';
+
+  @override
+  String get tavernGroupHelperModel => 'Helper model';
+
+  @override
+  String get tavernGroupHelperModelNote =>
+      'Speaks with the helper model (automatic: flash without thinking on DeepSeek, the main model elsewhere): for side characters.';
+
+  @override
+  String get tavernGroupMoveUp => 'Move up';
+
+  @override
+  String get tavernGroupMoveDown => 'Move down';
+
+  @override
+  String get tavernGroupRemove => 'Remove from the group';
+
+  @override
+  String get tavernGroupAdd => 'Add a character';
+
+  @override
+  String get tavernGroupNoOthers => 'Everyone on the shelf is in it';
+
+  @override
+  String get tavernGroupUnavailable => 'Card missing';
+
+  @override
+  String tavernGroupSaveFailed(String reason) {
+    return 'Couldn\'t save: $reason';
+  }
+
+  @override
+  String get tavernGroupErrorNotGroup => 'This is no longer a group chat';
+
+  @override
+  String get tavernGroupErrorCharacterNotFound => 'That character\'s card is gone';
+
+  @override
+  String get tavernGroupErrorMemberExists => 'That character is already in the group';
+
+  @override
+  String get tavernGroupErrorMemberNotFound => 'That character is no longer in the group';
+
+  @override
+  String get tavernGroupErrorInvalidMembers => 'Members can\'t repeat, and a group needs at least one character';
+
+  @override
+  String get tavernGroupErrorInvalidTalkativeness => 'Talkativeness goes from 0 to 1';
+
+  @override
+  String get tavernGroupErrorInvalidLimit => 'At least one member speaks each round';
+
+  @override
+  String get tavernGroupErrorInvalidOrder => 'That order doesn\'t match the members; open it again and reorder';
+
+  @override
+  String get tavernGroupErrorHostInUse => 'This character hosts a group chat; delete that chat first';
+
+  @override
+  String get tavernGroupErrorInvalidTitle => 'A group chat\'s name can\'t be blank';
+
+  @override
+  String tavernToolRollUnsettled(String dice) {
+    return '🎲 $dice: result not confirmed yet';
+  }
+
+  @override
+  String tavernToolRollNotDone(String dice) {
+    return '🎲 $dice: not rolled';
+  }
+
+  @override
+  String tavernToolRollPass(int target) {
+    return 'target $target, passed';
+  }
+
+  @override
+  String tavernToolRollFail(int target) {
+    return 'target $target, missed';
+  }
+
+  @override
+  String tavernToolMemory(String text) {
+    return 'Wants to remember: \"$text\"';
+  }
+
+  @override
+  String get tavernToolMemoryAccept => 'Remember';
+
+  @override
+  String get tavernToolMemoryReject => 'No';
+
+  @override
+  String get tavernToolMemoryStaged => 'Decided once this turn is written';
+
+  @override
+  String tavernToolMemoryIneligible(String reason) {
+    return 'Can\'t be decided now: $reason';
+  }
+
+  @override
+  String get tavernToolMemoryAccepted => 'Remembered';
+
+  @override
+  String get tavernToolMemoryAuto => 'Remembered by the automatic setting';
+
+  @override
+  String get tavernToolMemoryRejected => 'Not remembered';
+
+  @override
+  String get tavernToolMemoryInactive => 'This turn didn\'t finish normally; not remembered';
+
+  @override
+  String get tavernToolMemoryWaiting => 'Your last decision hasn\'t gone through yet';
+
+  @override
+  String tavernToolMemoryNotApplied(String reason) {
+    return 'Not remembered: $reason';
+  }
+
+  @override
+  String tavernToolMemoryFailed(String detail) {
+    return 'Didn\'t go through: $detail';
+  }
+
+  @override
+  String get tavernToolReasonRevision => 'it has changed; refresh and decide again';
+
+  @override
+  String get tavernToolReasonResolved => 'already decided';
+
+  @override
+  String get tavernToolReasonContext => 'the chat has changed';
+
+  @override
+  String get tavernToolReasonDeleted => 'that reply was deleted';
+
+  @override
+  String get tavernToolReasonChanged => 'that reply was edited';
+
+  @override
+  String get tavernToolReasonBranch => 'not on the current branch';
+
+  @override
+  String get tavernToolReasonInactive => 'no longer active';
+
+  @override
+  String get tavernToolReasonUnknown => 'reason unknown';
+
+  @override
+  String get tavernToolPolicy => 'Tools';
+
+  @override
+  String get tavernToolPolicyRoll => 'Let characters roll dice';
+
+  @override
+  String get tavernToolPolicyRollSubtitle => 'When a reply needs a roll, the tavern rolls it and keeps the result';
+
+  @override
+  String get tavernToolPolicyRemember => 'Let characters keep notes';
+
+  @override
+  String get tavernToolPolicyRememberSubtitle =>
+      'What a character finds worth remembering goes into memory, as set below';
+
+  @override
+  String get tavernToolPolicyMode => 'Keeping notes';
+
+  @override
+  String get tavernToolPolicyModeAsk => 'Ask me first';
+
+  @override
+  String get tavernToolPolicyModeAuto => 'Automatically';
+
+  @override
+  String get tavernToolPolicyDiagnostics =>
+      'Part of this setting couldn\'t be read; the tool it belongs to is off for now';
+
+  @override
+  String get tavernToolPolicyNote =>
+      'Replies only use these with DeepSeek and thinking off; a change applies from the next turn, and a character card can turn them off';
+
+  @override
+  String tavernToolPolicyFailed(String detail) {
+    return 'Didn\'t change: $detail';
+  }
+
+  @override
+  String get tavernChatTools => 'Tools in this chat';
+
+  @override
+  String get tavernChatToolFollow => 'As set';
+
+  @override
+  String get tavernChatToolOn => 'On';
+
+  @override
+  String get tavernChatToolOff => 'Off';
+
+  @override
+  String tavernChatToolNow(String roll, String remember) {
+    return 'In this chat: dice $roll, memories $remember';
+  }
+
+  @override
+  String get tavernChatToolHeld => 'What tavern settings turned off stays off, even if on here';
+
+  @override
+  String tavernInspectRequests(int count) {
+    return '$count requests';
+  }
+
+  @override
+  String tavernInspectUsageTotals(String prompt, String hit, String completion) {
+    return 'In $prompt (cached $hit) · out $completion';
+  }
+
+  @override
+  String get tavernReqUsagePrompt => 'In';
+
+  @override
+  String get tavernReqUsageCache => 'Cached';
+
+  @override
+  String get tavernReqUsageCompletion => 'Out';
+
+  @override
+  String tavernReqUsageLine(String field, String parts) {
+    return '$field: $parts';
+  }
+
+  @override
+  String get tavernReqUsageJoin => ', ';
+
+  @override
+  String tavernReqUsageKnown(String known) {
+    return '$known known';
+  }
+
+  @override
+  String tavernReqUsageUnknown(int count) {
+    return '$count not known';
+  }
+
+  @override
+  String tavernReqUsageMissing(int count) {
+    return '$count not reported';
+  }
+
+  @override
+  String tavernReqUsageInvalid(int count) {
+    return '$count reported wrongly';
+  }
+
+  @override
+  String get tavernToolFailBudget =>
+      'This turn has used up its tool requests and stops here; dice already rolled still count';
+
+  @override
+  String get tavernToolFailBatch => 'The model asked for too many tools at once; that batch was not run';
+
+  @override
+  String get tavernToolFailProtocol => 'The model\'s tool call was malformed and was not run';
+
+  @override
+  String get tavernToolFailSnapshot => 'This model\'s reply can\'t continue with tools, so it stops here';
+
+  @override
+  String get tavernToolFailReceipt => 'A tool\'s result couldn\'t be saved; check this turn again shortly';
+
+  @override
+  String get tavernToolFailAnchor => 'The chat changed during this turn, so it did not go on';
+
+  @override
+  String get tavernToolFail => 'Something went wrong with a tool';
+
+  @override
+  String tavernToolFailDetail(String detail) {
+    return 'Something went wrong with a tool: $detail';
+  }
+
+  @override
+  String get tavernDiceUnsettled => 'The result is not confirmed yet; check again';
+
+  @override
+  String get tavernDicePending => 'Your last roll isn\'t confirmed yet';
+
+  @override
+  String get tavernDiceRecheck => 'Check again';
+
+  @override
+  String get tavernDiceForget => 'Let it go';
+
+  @override
+  String get tavernDiceBusy => 'Busy right now; roll once this turn is written';
+
+  @override
+  String get tavernDiceOff => 'Dice are turned off in tavern settings';
+
+  @override
+  String tavernDiceFailed(String detail) {
+    return 'Didn\'t roll: $detail';
+  }
+
+  @override
+  String tavernDiceNotSaved(String detail) {
+    return 'Didn\'t go through: $detail';
+  }
+
+  @override
+  String get tavernChannel => 'Channel';
+
+  @override
+  String get tavernChannelDeepSeek => 'DeepSeek';
+
+  @override
+  String get tavernChannelDeepSeekNote => 'Uses the app\'s DeepSeek key';
+
+  @override
+  String get tavernChannelAdd => 'Add a channel';
+
+  @override
+  String get tavernChannelEdit => 'Edit channel';
+
+  @override
+  String get tavernChannelsNote =>
+      'Any OpenAI-compatible service works: a relay, OpenRouter, a model running on your own computer. Keys stay in this phone\'s secure storage. Cost estimates know DeepSeek\'s prices only; other channels show token counts.';
+
+  @override
+  String get tavernChannelName => 'Name';
+
+  @override
+  String get tavernChannelNameHint => 'Leave empty to use the address';
+
+  @override
+  String get tavernChannelBaseUrlInvalid => 'Starts with http:// or https://';
+
+  @override
+  String get tavernChannelKeyOptional => 'A local server without a key can leave this empty';
+
+  @override
+  String get tavernChannelKeyKept => 'A key is saved; leave empty to keep it';
+
+  @override
+  String get tavernChannelFetchModels => 'Fetch list';
+
+  @override
+  String get tavernChannelFetching => 'Fetching…';
+
+  @override
+  String tavernChannelFetchFailed(String detail) {
+    return 'Couldn\'t get the model list ($detail). You can type the model name.';
+  }
+
+  @override
+  String get tavernChannelNoModels => 'This service lists no models. Type the model name.';
+
+  @override
+  String get tavernChannelModelHint => 'The model name your provider gives';
+
+  @override
+  String get tavernChannelModelMissing => 'Enter a model name';
+
+  @override
+  String get tavernChannelPickModel => 'Pick a model';
+
+  @override
+  String get tavernChannelSearchModels => 'Search models';
+
+  @override
+  String get tavernChannelDeepSeekApi => 'Send as DeepSeek\'s API';
+
+  @override
+  String get tavernChannelDeepSeekApiNote =>
+      'Uses DeepSeek\'s continuation and the Thinking switch. Turn on only for DeepSeek itself or a relay that forwards it as is.';
+
+  @override
+  String get tavernChannelDelete => 'Delete channel';
+
+  @override
+  String tavernChannelDeleteTitle(String name) {
+    return 'Delete “$name”?';
+  }
+
+  @override
+  String get tavernChannelDeleteMessage => 'Its key is deleted too. If it\'s in use, DeepSeek takes over.';
+
+  @override
+  String get tavernChannelCopyFromApp => 'Copy from the app\'s channels';
+
+  @override
+  String get tavernModelName => 'Model name';
+
+  @override
+  String get tavernNumberCustom => 'Custom';
+
+  @override
+  String get tavernNumberType => 'Enter a number';
+
+  @override
+  String tavernNumberRange(String min, String max) {
+    return 'Enter a number from $min to $max';
+  }
+
+  @override
+  String tavernNumberRangeWhole(String min, String max) {
+    return 'Enter a whole number from $min to $max';
+  }
+
+  @override
+  String get tavernTopP => 'Top P';
+
+  @override
+  String get tavernPresencePenalty => 'Presence penalty';
+
+  @override
+  String get tavernFrequencyPenalty => 'Frequency penalty';
+
+  @override
+  String get tavernPresetSampling => 'Sampling';
+
+  @override
+  String get tavernChannelHeaders => 'Request headers (optional)';
+
+  @override
+  String get tavernChannelHeadersNote =>
+      'One per line, as “Name: value”. Kept in this phone\'s secure storage, like the key.';
+
+  @override
+  String get tavernChannelHeadersInvalid => 'Write each line as “Name: value”';
+
+  @override
+  String get tavernAuxiliary => 'Helper model';
+
+  @override
+  String get tavernAuxiliaryNote => 'Used for the director, picking who speaks in a group, and secrets';
+
+  @override
+  String get tavernAuxiliaryAuto => 'Automatic';
+
+  @override
+  String get tavernAuxiliaryAutoNote => 'Follows the main channel: Flash on DeepSeek, the same model elsewhere';
+
+  @override
+  String get tavernAuxiliaryDeepSeek => 'DeepSeek Flash';
+
+  @override
+  String get tavernChannelKeyClear => 'Clear';
+
+  @override
+  String get tavernChannelKeyCleared => 'The key is cleared when you save';
+
+  @override
+  String get tavernDrafts => 'Drafts';
+
+  @override
+  String get tavernDraftsSubtitle => 'Changes wait in a draft until you pick what goes into the real one';
+
+  @override
+  String get tavernDraftsForCard => 'Change this card with AI';
+
+  @override
+  String get tavernDraftsForCardSubtitle => 'In a draft; apply what you pick';
+
+  @override
+  String get tavernDraftsEmpty => 'No drafts yet';
+
+  @override
+  String get tavernDraftsEmptyOwn => 'Start a draft and tell the AI how to change this card.';
+
+  @override
+  String get tavernDraftsEmptyAll =>
+      'Start one from a character\'s page, or from a file: it stays a draft, nothing is imported.';
+
+  @override
+  String get tavernDraftNew => 'New draft';
+
+  @override
+  String get tavernDraftFromFile => 'Draft from a file';
+
+  @override
+  String tavernDraftSeedUnsupported(String name) {
+    return '$name isn\'t a card or a lorebook';
+  }
+
+  @override
+  String get tavernDraft => 'Draft';
+
+  @override
+  String get tavernDraftSubtitle => 'Nothing here is in the real one yet';
+
+  @override
+  String get tavernDraftGone => 'This draft is gone';
+
+  @override
+  String get tavernDraftKindCharacter => 'Card';
+
+  @override
+  String get tavernDraftKindPreset => 'Preset';
+
+  @override
+  String tavernDraftNewSource(String name) {
+    return '$name (not saved yet)';
+  }
+
+  @override
+  String get tavernDraftGreetings => 'Other greetings';
+
+  @override
+  String tavernDraftEntry(int n) {
+    return 'Entry $n';
+  }
+
+  @override
+  String get tavernDraftNoChanges => 'No changes yet';
+
+  @override
+  String get tavernDraftNoChangesHint => 'Tell the AI below what to change';
+
+  @override
+  String get tavernDraftBefore => 'Was';
+
+  @override
+  String get tavernDraftAfter => 'Becomes';
+
+  @override
+  String get tavernDraftAbsent => '(none)';
+
+  @override
+  String get tavernDraftRemoved => 'Removed';
+
+  @override
+  String get tavernDraftAppliedChange => 'Applied';
+
+  @override
+  String tavernDraftDependsOn(int n) {
+    return 'Goes with $n earlier change(s)';
+  }
+
+  @override
+  String get tavernDraftRemoveChange => 'Take this out of the draft';
+
+  @override
+  String tavernDraftApply(int n) {
+    return 'Apply $n';
+  }
+
+  @override
+  String get tavernDraftSaveNew => 'Save as new';
+
+  @override
+  String get tavernDraftSavedNew => 'Saved as new';
+
+  @override
+  String get tavernDraftChecked => 'Checked: nothing found';
+
+  @override
+  String get tavernDraftCannotApply => 'Regex and preset drafts can be previewed, not applied yet';
+
+  @override
+  String tavernDraftApplied(String name) {
+    return 'Applied to $name';
+  }
+
+  @override
+  String get tavernDraftNoChange => 'Same as now: nothing to change';
+
+  @override
+  String tavernDraftNotApplied(String reason) {
+    return 'Not applied: $reason';
+  }
+
+  @override
+  String get tavernDraftUnconfirmed =>
+      'The write isn\'t confirmed yet. Don\'t repeat it; check the history in a while.';
+
+  @override
+  String tavernDraftApplyUnknown(String reason) {
+    return 'No answer ($reason); tapping again continues the same one';
+  }
+
+  @override
+  String tavernDraftBehind(String name) {
+    return '$name changed after this draft began (maybe just now, by applying). Continue from it and look the changes over again.';
+  }
+
+  @override
+  String get tavernDraftCatchUp => 'Continue from now';
+
+  @override
+  String get tavernDraftChangedMeanwhile => 'The draft just changed; reloaded';
+
+  @override
+  String get tavernDraftPending => 'The last write isn\'t confirmed; it can\'t be applied again yet';
+
+  @override
+  String get tavernDraftDelete => 'Delete draft';
+
+  @override
+  String get tavernDraftDeleteTitle => 'Delete this draft?';
+
+  @override
+  String get tavernDraftDeleteBody => 'Only the draft goes; what was applied stays.';
+
+  @override
+  String get tavernDraftAskHint => 'What to change? e.g. a cooler greeting';
+
+  @override
+  String get tavernDraftAiSend => 'Ask the AI';
+
+  @override
+  String get tavernDraftAiStop => 'Stop';
+
+  @override
+  String get tavernDraftAiTitle => 'AI';
+
+  @override
+  String get tavernDraftAiRunning => 'Working…';
+
+  @override
+  String get tavernDraftAiDone => 'Done: the changes are above; pick and apply';
+
+  @override
+  String get tavernDraftAiStopped => 'Stopped';
+
+  @override
+  String get tavernDraftAiConflict => 'The draft changed meanwhile; the AI stopped';
+
+  @override
+  String get tavernDraftAiBudget => 'Four requests used; it stopped here';
+
+  @override
+  String get tavernDraftAiFailed => 'Something went wrong';
+
+  @override
+  String get tavernDraftAiInterrupted => 'Interrupted (the app closed)';
+
+  @override
+  String get tavernDraftEarlier => 'Asked before';
+
+  @override
+  String tavernDraftRunReceipts(int changes, int requests) {
+    return '$changes edit(s) · $requests request(s)';
+  }
+
+  @override
+  String get tavernDraftHistory => 'Versions';
+
+  @override
+  String get tavernDraftHistoryEmpty => 'No versions recorded yet';
+
+  @override
+  String get tavernDraftHistoryNote =>
+      'Going back saves it as a new version; later ones stay. Pictures and chats aren\'t touched.';
+
+  @override
+  String tavernDraftVersion(int n) {
+    return 'Version $n';
+  }
+
+  @override
+  String get tavernDraftVersionCurrent => 'Current';
+
+  @override
+  String get tavernDraftRestore => 'Go back to it';
+
+  @override
+  String tavernDraftRestoreTitle(int n) {
+    return 'Go back to version $n?';
+  }
+
+  @override
+  String get tavernDraftRestoreBody => 'It is saved as a new version.';
+
+  @override
+  String tavernDraftRestored(int n) {
+    return 'Back to version $n';
+  }
+
+  @override
+  String get tavernDraftRestoreMoved => 'It changed meanwhile; try again';
+
+  @override
+  String get tavernDraftPrompt => 'Prompt with the draft';
+
+  @override
+  String get tavernDraftPromptSubtitle => 'What the next turn would send with the ticked changes; nothing is sent';
+
+  @override
+  String get tavernDraftPromptFrom => 'After which chat';
+
+  @override
+  String get tavernDraftPromptFirst => 'A new chat';
+
+  @override
+  String get tavernDraftPromptText => 'Next line (optional)';
+
+  @override
+  String get tavernDraftPromptTextHint => 'What you would say';
+
+  @override
+  String get tavernDraftPromptShow => 'Show the prompt';
+
+  @override
+  String get tavernDraftPromptComplete => 'Prompt';
+
+  @override
+  String get tavernDraftPromptUnsupported => 'Part of this card can\'t be put together faithfully in a preview';
+
+  @override
+  String get tavernDraftPromptNote => 'The card\'s scripts don\'t run in a preview.';
+
+  @override
+  String tavernDraftUsagePartial(String prompt, String completion) {
+    return 'Reported: in $prompt · out $completion (some requests reported nothing)';
+  }
+
+  @override
+  String get tavernDraftTrial => 'Try it';
+
+  @override
+  String get tavernDraftTrialSubtitle => 'A few lines with the draft in a chat of its own; real chats aren\'t touched';
+
+  @override
+  String get tavernDraftTrialNote => 'The model is really asked and billed as used; four lines at most.';
+
+  @override
+  String tavernDraftTrialLine(int n) {
+    return 'Line $n';
+  }
+
+  @override
+  String get tavernDraftTrialMore => 'Add a line';
+
+  @override
+  String get tavernDraftTrialPlay => 'Start';
+
+  @override
+  String get tavernDraftTrialRunning => 'Playing…';
+
+  @override
+  String get tavernDraftTrialDone => 'Done';
+
+  @override
+  String get tavernDraftTrialUnsupported => 'This draft can\'t be tried yet';
+
+  @override
+  String get tavernPacks => 'Gameplay packs';
+
+  @override
+  String get tavernPacksSubtitle =>
+      'Installed packs. Installing doesn\'t turn one on: add it globally, to a character or to a chat.';
+
+  @override
+  String get tavernPacksEmpty => 'No gameplay packs yet';
+
+  @override
+  String get tavernPacksEmptyNote =>
+      'Import a .dshpack file. Importing only keeps it: nothing is turned on and no character is made.';
+
+  @override
+  String get tavernPackImport => 'Import pack';
+
+  @override
+  String tavernPackInstalled(String title, String version) {
+    return 'Imported $title $version';
+  }
+
+  @override
+  String tavernPackAlreadyInstalled(String title, String version) {
+    return '$title $version is already installed with the same content';
+  }
+
+  @override
+  String tavernPackVersionCount(int n) {
+    return '$n versions';
+  }
+
+  @override
+  String tavernPackWithdrawnShort(String version) {
+    return '$version (withdrawn)';
+  }
+
+  @override
+  String get tavernPackWithdrawnLabel => 'Withdrawn';
+
+  @override
+  String get tavernPackShowWithdrawn => 'Show withdrawn versions';
+
+  @override
+  String get tavernPackScopeGlobal => 'On everywhere';
+
+  @override
+  String get tavernPackScopeGlobalSubtitle => 'Packs every chat uses';
+
+  @override
+  String get tavernPackScopeCharacter => 'This character\'s packs';
+
+  @override
+  String get tavernPackScopeChat => 'This chat\'s packs';
+
+  @override
+  String get tavernPackForCardSubtitle => 'Used by every chat with this card';
+
+  @override
+  String get tavernPackBindingsSubtitle => 'Changes take effect when saved; preview to see what they compose into';
+
+  @override
+  String get tavernPackOrderNote =>
+      'Composed top to bottom; the preview shows which pack wins each field. Tap a row to change its version, order or characters.';
+
+  @override
+  String get tavernPackAdd => 'Add a pack';
+
+  @override
+  String get tavernPackUnsaved => 'Not saved';
+
+  @override
+  String get tavernPackResetPending => 'Once-only state resets on save';
+
+  @override
+  String tavernPackCastMappedCount(int n) {
+    return '$n characters linked';
+  }
+
+  @override
+  String get tavernPackRemovedBindings => 'Removed';
+
+  @override
+  String get tavernPackPickVersion => 'Change version';
+
+  @override
+  String get tavernPackMoveUp => 'Move up';
+
+  @override
+  String get tavernPackMoveDown => 'Move down';
+
+  @override
+  String get tavernPackResetOnce => 'Reset once-only state';
+
+  @override
+  String get tavernPackRestore => 'Restore';
+
+  @override
+  String get tavernPackRemoveBinding => 'Remove';
+
+  @override
+  String get tavernPackSaved => 'Saved';
+
+  @override
+  String tavernPackUnanswered(String reason) {
+    return 'No answer: $reason. Saving again retries the same operation';
+  }
+
+  @override
+  String get tavernPackVersion => 'Version';
+
+  @override
+  String get tavernPackAddGlobal => 'Turn on everywhere';
+
+  @override
+  String get tavernPackAddNote =>
+      'For one character or chat only, add it from the character\'s page or the chat\'s stage panel';
+
+  @override
+  String get tavernPackCast => 'Characters';
+
+  @override
+  String get tavernPackCastNote =>
+      'Importing makes a new character; the original card is untouched and no group chat is joined';
+
+  @override
+  String get tavernPackCastFromCard => 'Full character card';
+
+  @override
+  String get tavernPackCastImportAction => 'Import as character';
+
+  @override
+  String tavernPackCastImportTitle(String name) {
+    return 'Import $name as a new character?';
+  }
+
+  @override
+  String get tavernPackCastImportNote =>
+      'A new character goes into the library. Changing this pack\'s version later won\'t replace it.';
+
+  @override
+  String tavernPackCastImported(String name) {
+    return 'Imported $name';
+  }
+
+  @override
+  String get tavernPackCastNotAdopted => 'No character was made this time';
+
+  @override
+  String tavernPackCastUnknown(String state) {
+    return 'Not confirmed yet ($state); check the library in a moment';
+  }
+
+  @override
+  String get tavernPackCastMapping => 'Linked characters';
+
+  @override
+  String get tavernPackCastMapped => 'Linked';
+
+  @override
+  String get tavernPackResources => 'Resources';
+
+  @override
+  String tavernPackIssueCount(int n) {
+    return '$n notes';
+  }
+
+  @override
+  String get tavernPackDeclaration => 'Declaration check';
+
+  @override
+  String get tavernPackDeclarationNote =>
+      'What the import found. Installed doesn\'t mean every block runs; conditional and opaque parts depend on the case.';
+
+  @override
+  String get tavernPackNothingNoted => 'Nothing to note';
+
+  @override
+  String get tavernPackExportOriginal => 'Export the original file';
+
+  @override
+  String get tavernPackWithdraw => 'Withdraw this version';
+
+  @override
+  String tavernPackWithdrawTitle(String version) {
+    return 'Withdraw $version?';
+  }
+
+  @override
+  String get tavernPackWithdrawNote =>
+      'It can\'t be chosen anew; places already using it stay as they are. The file and its history are kept and can still be exported.';
+
+  @override
+  String get tavernPackPreview => 'Preview';
+
+  @override
+  String get tavernPackPreviewSubtitle => 'Composed with the current changes; nothing is saved or run';
+
+  @override
+  String get tavernPackPreviewSources => 'Sources';
+
+  @override
+  String get tavernPackPreviewDefinitions => 'Definitions';
+
+  @override
+  String get tavernPackPreviewConflicts => 'Conflicts';
+
+  @override
+  String get tavernPackPreviewFields => 'Field sources';
+
+  @override
+  String get tavernPackPreviewState => 'Current value';
+
+  @override
+  String get tavernPackPreviewNote => 'Read only: no binding is saved, no variable set up, no model asked.';
+
+  @override
+  String get tavernPackStateUnavailable => 'This chat has no state to check yet';
+
+  @override
+  String get tavernPackStateNotValidated =>
+      'The current value wasn\'t validated this time; see the definitions and conflicts';
+
+  @override
+  String get tavernPackStateValid => 'The current value fits the composed definition';
+
+  @override
+  String get tavernPackStateInvalid => 'The current value doesn\'t fit the composed definition';
+
+  @override
+  String get tavernPackStateMissing => 'This chat has no such value';
+
+  @override
+  String get tavernPackCardExport => 'Export with packs';
+
+  @override
+  String get tavernPackCardExportMenuSubtitle => 'Fold chosen pack resources into the card';
+
+  @override
+  String get tavernPackCardExportSubtitle => 'Preview first; export once nothing blocks it';
+
+  @override
+  String get tavernPackExportFormat => 'Format';
+
+  @override
+  String get tavernPackExportCopyMedia => 'Include the card\'s images';
+
+  @override
+  String get tavernPackExportFlattenNote =>
+      'Inside a single card, scope, order, budget and timing may behave differently than here';
+
+  @override
+  String get tavernPackExportNoResources => 'The packs on for this card have no resources a card can carry';
+
+  @override
+  String get tavernPackExportFindings => 'Preview';
+
+  @override
+  String tavernPackExportMappings(int ids, int resources) {
+    return '$ids identities and $resources resources rewritten';
+  }
+
+  @override
+  String get tavernPackExportGo => 'Export';
+
+  @override
+  String get tavernPackExportPreviewFirst => 'Preview first';
+
+  @override
+  String get tavernPackExportBlocked => 'Something blocks the export';
+
+  @override
+  String get tavernPackDraftExport => 'Export as pack';
+
+  @override
+  String tavernPackDraftExportSubtitle(int n) {
+    return 'A new .dshpack from this draft\'s character definition and all $n changes';
+  }
+
+  @override
+  String get tavernPackDraftId => 'Pack ID';
+
+  @override
+  String get tavernPackDraftRoots => 'State paths to include';
+
+  @override
+  String get tavernPackDraftRootsHint => 'e.g. /hp /items; empty for all of it';
+
+  @override
+  String get tavernPackInstallMade => 'Install here';
+
+  @override
+  String get tavernPackCommitted => 'The change took effect, but a later notice failed';
+
+  @override
+  String get tavernPackVersionConflict =>
+      'This pack ID and version already exist with different content; use a new version name';
+
+  @override
+  String get tavernPackRevisionConflict => 'Changed elsewhere. Refreshed: please make this change again';
+
+  @override
+  String get tavernPackOperationConflict => 'This operation\'s ID was already used; please do it again';
+
+  @override
+  String get tavernPackVersionNotFound => 'Version not found';
+
+  @override
+  String get tavernPackVersionRemoved => 'This version is withdrawn and can\'t be chosen anew';
+
+  @override
+  String get tavernPackTimerConflict =>
+      'This upgrade changes sticky or cooldown settings: reset once-only state with it, or add a new instance';
+
+  @override
+  String get tavernPackTargetGone => 'The character, chat or binding is gone';
+
+  @override
+  String get tavernPackAuthorityConflict => 'The character\'s source changed; refresh and confirm again';
+
+  @override
+  String get tavernPackCastUnproven => 'Can\'t confirm this character was imported from this pack';
+
+  @override
+  String get tavernPackCastOtherVersion => 'The linked character comes from another version of this pack';
+
+  @override
+  String get tavernPackExportChanged => 'The export\'s sources or options changed; preview again';
+
+  @override
   String get updateCheck => 'Check for updates';
 
   @override
@@ -17230,7 +24123,7 @@ class L10nEn extends L10n {
 
   @override
   String get updateInstallBlockedMessage =>
-      'Allow installation in the system prompt, or download from the release page.';
+      'Allow installation in the system prompt. If the system blocks it outright (Xiaomi and others), try Shizuku or on-device ADB under Installation route; that needs no new signature.';
 
   @override
   String get updateInstallIncomplete => 'Installation incomplete';
@@ -17320,6 +24213,24 @@ class L10nEn extends L10n {
   String get updateSystemInstallerFailed => 'Couldn\'t open the system installer';
 
   @override
+  String get updateExportApk => 'Save the package';
+
+  @override
+  String get updateExportApkTitle => 'Save the package?';
+
+  @override
+  String get updateExportApkMessage =>
+      'Copies the package downloaded and verified now into Downloads/DSH-Go, so you can sign it yourself (MT Manager and the like) and install that.\n\nA package you signed has a different signature from ours: in-app updates then always report a signature mismatch, and every later version has to be signed and installed by hand.\n\nIf the system simply blocks the install (Xiaomi and other vendors), try Shizuku or on-device ADB under Installation route first; that needs no signing.';
+
+  @override
+  String updateExportApkDone(String path) {
+    return 'Saved to Downloads/$path';
+  }
+
+  @override
+  String get updateExportApkFailed => 'Couldn\'t save the package';
+
+  @override
   String get updateStarProject => 'Star it';
 
   @override
@@ -17357,7 +24268,8 @@ class L10nEn extends L10n {
   String get usageStatsSection => 'Improve DSH Go';
 
   @override
-  String get usageStatsFooter => 'Only usage counts, versions and the phone’s maker. Never chats, files or accounts.';
+  String get usageStatsFooter =>
+      'This switch controls dsh-go’s own statistics: feature counts (tavern messages, companion room visits and voice calls included), the token counts model replies report, versions, phone maker and model, and system version. It includes no chats, character cards, files or accounts, and does not control Google ML Kit SDK statistics.';
 
   @override
   String get usageNoticeBody => 'No chats or personal info.\nTurn off anytime.';
@@ -18011,25 +24923,159 @@ class L10nEn extends L10n {
       'Check what files and projects are in the workspace and give me a brief overview.';
 
   @override
-  String get viewSuggestWordCount => 'Count words';
+  String get viewSuggestWordCount => 'Write a script';
 
   @override
   String get viewSuggestWordCountPrompt =>
       'Write a Python script that finds the 20 most frequent words in a text file, then run it and show me the results.';
 
   @override
-  String get viewSuggestNode => 'Start Node.js';
+  String get viewSuggestNode => 'New project';
 
   @override
   String get viewSuggestNodePrompt =>
       'Create a Node.js project in the workspace with TypeScript and a minimal unit test.';
 
   @override
-  String get viewSuggestGit => 'Rebase or merge';
+  String get viewSuggestGit => 'Explain Git';
 
   @override
   String get viewSuggestGitPrompt =>
       'Use a concrete example to explain the difference between git rebase and git merge, and when to use each.';
+
+  @override
+  String get viewSuggestWorkspaceHint => 'List files and projects';
+
+  @override
+  String get viewSuggestWordCountHint => 'Count words, then run it';
+
+  @override
+  String get viewSuggestNodeHint => 'Node.js with tests';
+
+  @override
+  String get viewSuggestGitHint => 'Rebase or merge?';
+
+  @override
+  String get viewTipNext => 'Next tip';
+
+  @override
+  String viewTipLabel(String value) {
+    return 'Tip: $value';
+  }
+
+  @override
+  String get viewTipSteer => 'While it works, long-press Send to steer, queue or interrupt';
+
+  @override
+  String get viewTipMidRun => 'You can message mid-run — it reads it at the next step';
+
+  @override
+  String get viewTipSlash => 'Type / for commands: compact the context, switch models and more';
+
+  @override
+  String get viewTipMention => 'Type @ to reference a workspace file or another chat';
+
+  @override
+  String get viewTipReplyMenu => 'Long-press a reply to copy, quote or regenerate it';
+
+  @override
+  String get viewTipEditResend => 'Long-press your own message to edit and resend — the original stays';
+
+  @override
+  String get viewTipQuote => 'Select part of a reply and tap Quote to ask about just that';
+
+  @override
+  String get viewTipTitleDetails => 'Tap the chat title for changes, files and a terminal';
+
+  @override
+  String get viewTipContextRing => 'The ring by Send shows context use — tap it for details';
+
+  @override
+  String get viewTipDrawerMenu => 'Long-press a chat in the sidebar to pin, rename or archive it';
+
+  @override
+  String get viewTipSearch => 'Where the host supports it, chat search matches message content, not just titles';
+
+  @override
+  String get viewTipSettingsSearch => 'Long-press Settings in the sidebar to search settings';
+
+  @override
+  String get viewTipQuickPanel => 'Swipe left on a chat to open the quick panel';
+
+  @override
+  String get viewTipFolderNewChat => 'Long-press a folder in the sidebar to start a chat inside it';
+
+  @override
+  String get viewTipSwitchHost => 'Tap the host name at the sidebar\'s foot to switch to DSH on your computer';
+
+  @override
+  String get viewTipPasteImage => 'Screenshots and stickers from your keyboard can go straight into the composer';
+
+  @override
+  String get viewTipLauncher => 'Long-press the app icon to ask by voice or start a new chat';
+
+  @override
+  String get viewTipPetBubble => 'When the pet pops a bubble, tap it to jump to the chat that\'s waiting';
+
+  @override
+  String get viewTipPetPlay => 'Tap the pet three times to tickle it; long-press to swap it';
+
+  @override
+  String get viewTipActivityStrip => 'While it works, tap the status strip to see this turn\'s full trace';
+
+  @override
+  String get viewTipImageZoom => 'In the image viewer, double-tap or pinch to zoom; long-press to save';
+
+  @override
+  String get viewTipQueuedRecall => 'A queued message can be pulled back into the composer to edit';
+
+  @override
+  String get viewTipKeyboard => 'With a keyboard: Ctrl+Enter sends, Esc twice stops';
+
+  @override
+  String get viewTipShareIn => 'Share text or images to DSH Go from another app to start a new chat with them';
+
+  @override
+  String get viewTipShareSelect => 'When sharing a chat, long-press and slide to pick several messages at once';
+
+  @override
+  String get viewTipChartDrag => 'Drag across a chart in a reply to read each point';
+
+  @override
+  String get viewTipCopyPath => 'Long-press a file in a changes card to copy its path';
+
+  @override
+  String get viewTipCompanion => 'The Companion Room lives in the Switch Host sheet';
+
+  @override
+  String get viewTipAnswerInline => 'When the AI asks you something, just type the answer in the composer';
+
+  @override
+  String get viewTipWallpaper => 'Wallpapers can be dragged, zoomed, blurred and dimmed';
+
+  @override
+  String get viewTipModelHere => 'Pick the model, preset and permissions right here — for this chat only';
+
+  @override
+  String get viewNewChatFolder => 'Folder';
+
+  @override
+  String get viewNewChatPresetTitle => 'Preset for this chat';
+
+  @override
+  String get viewNewChatPermissionTitle => 'Permissions for this chat';
+
+  @override
+  String get viewNewChatDefault => 'Default';
+
+  @override
+  String get viewNewChatUnavailable => 'Unavailable';
+
+  @override
+  String get viewNewChatChange => 'Change';
+
+  @override
+  String get viewNewChatModesFailed => 'Couldn’t set the preset or permissions. The message wasn’t sent.';
 
   @override
   String get viewGreetingMorning => 'Good morning';
@@ -18068,6 +25114,9 @@ class L10nEn extends L10n {
 
   @override
   String get viewEmptySwitchWorkspace => 'Switch workspace';
+
+  @override
+  String get viewEmptyHostDefaultDirectory => 'Host default folder';
 
   @override
   String get viewScheduleTitle => 'Automations';
@@ -18775,7 +25824,7 @@ class L10nEn extends L10n {
   String get viewUiDialectNote => 'Shown in DSH Web';
 
   @override
-  String get voiceSettingsTitle => 'Voice input';
+  String get voiceSettingsTitle => 'Voice';
 
   @override
   String get voiceModeAuto => 'Automatic';
@@ -18787,7 +25836,8 @@ class L10nEn extends L10n {
   String get voiceModeEngine => 'Voice model';
 
   @override
-  String get voiceModeAutoHint => 'Uses the voice model when it’s ready, otherwise the phone’s service';
+  String get voiceModeAutoHint =>
+      'Uses DeepSeek when you’re signed in or have an API key, otherwise the voice model or the phone’s service';
 
   @override
   String get voiceModeSystemHint => 'Use the recognition service selected on this phone';
@@ -18993,6 +26043,30 @@ class L10nEn extends L10n {
 
   @override
   String get voiceModelNoticeFailed => 'Voice model download failed. Open the app to retry.';
+
+  @override
+  String get voiceModeDeepseek => 'DeepSeek';
+
+  @override
+  String get voiceModeDeepseekHint => 'DeepSeek’s recognizer, paid by your signed-in account or API key';
+
+  @override
+  String get voiceModeCloud => 'Another cloud service';
+
+  @override
+  String get voiceModeCloudHint => 'An OpenAI-compatible transcription API, such as Whisper or SiliconFlow';
+
+  @override
+  String get voiceCloudSection => 'Cloud recognition service';
+
+  @override
+  String get voiceCloudFooter => 'Recordings are sent to this service. The key stays on this phone.';
+
+  @override
+  String get voiceCloudBaseHelper => 'Up to /v1; the app calls …/audio/transcriptions';
+
+  @override
+  String get voiceCloudModelHelper => 'For example whisper-1 or FunAudioLLM/SenseVoiceSmall';
 
   @override
   String get voiceScribeReadFailed => 'Could not read voice settings. Retry.';
@@ -19246,4 +26320,1096 @@ class L10nEn extends L10n {
   String webConnectHostFirst(String name) {
     return 'Connect to “$name” to open DSH Web';
   }
+
+  @override
+  String get workshopTitle => 'Workshop';
+
+  @override
+  String get workshopSubtitle => 'Pets and companions made by others. Install the ones you like';
+
+  @override
+  String get workshopEntrySubtitle => 'Find pets and companions made by others';
+
+  @override
+  String get workshopTabBrowse => 'Browse';
+
+  @override
+  String get workshopTabMine => 'My uploads';
+
+  @override
+  String get workshopKindAll => 'All';
+
+  @override
+  String get workshopKindPet => 'Pixel pets';
+
+  @override
+  String get workshopKindCompanion => 'Companions';
+
+  @override
+  String get workshopSearchHint => 'Search by name or author';
+
+  @override
+  String get workshopGet => 'Get';
+
+  @override
+  String get workshopRefresh => 'Refresh';
+
+  @override
+  String workshopByAuthor(String author) {
+    return 'By $author';
+  }
+
+  @override
+  String get workshopEmptyTitle => 'Nothing here yet';
+
+  @override
+  String get workshopEmptyMessage =>
+      'No one has uploaded anything. If you made a pet or a companion, yours can be the first.';
+
+  @override
+  String get workshopNoMatchTitle => 'No matches';
+
+  @override
+  String get workshopNoMatchMessage => 'Try another name or author.';
+
+  @override
+  String get workshopUnavailableTitle => 'The Workshop can\'t be opened right now';
+
+  @override
+  String get workshopNotOpenTitle => 'The Workshop isn\'t open yet';
+
+  @override
+  String get workshopNotOpenMessage => 'This version isn\'t connected to a Workshop service.';
+
+  @override
+  String workshopShowingOlder(String when) {
+    return 'Couldn\'t refresh. Showing what was fetched $when.';
+  }
+
+  @override
+  String get workshopLocalUnknown =>
+      'Couldn\'t read what is installed on this phone, so the Installed marks may be wrong.';
+
+  @override
+  String get workshopStatVersion => 'Version';
+
+  @override
+  String get workshopStatSize => 'Size';
+
+  @override
+  String get workshopStatLicense => 'License';
+
+  @override
+  String get workshopAbout => 'About';
+
+  @override
+  String get workshopNoDescription => 'The author didn\'t write a description.';
+
+  @override
+  String get workshopSource => 'Source';
+
+  @override
+  String workshopMinApp(String version) {
+    return 'Needs DSH Go $version or later.';
+  }
+
+  @override
+  String workshopInstalledVersion(String version) {
+    return 'Installed $version';
+  }
+
+  @override
+  String workshopUpdateTo(String version) {
+    return 'Update to $version';
+  }
+
+  @override
+  String get workshopInstalledWithdrawn =>
+      'The version you installed has been withdrawn. It still works; update if a newer version is listed, otherwise consider removing it.';
+
+  @override
+  String get workshopPhasePreparing => 'Getting ready…';
+
+  @override
+  String get workshopPhaseDownloading => 'Downloading';
+
+  @override
+  String get workshopPhaseVerifying => 'Verifying…';
+
+  @override
+  String get workshopPhaseCancelling => 'Cancelling…';
+
+  @override
+  String workshopProgressBytes(String received, String total) {
+    return '$received / $total';
+  }
+
+  @override
+  String get workshopInstallDone => 'Installed';
+
+  @override
+  String get workshopInstallDonePet => 'Installed. Pick it on the Pets page.';
+
+  @override
+  String get workshopInstallDoneCompanion => 'Installed. She\'s in the Companion room.';
+
+  @override
+  String get workshopInstallDoneRefreshIssue =>
+      'Installed, but the list couldn\'t refresh. Open this page again to see it.';
+
+  @override
+  String get workshopInstallCancelled => 'Cancelled. Nothing on this phone was changed.';
+
+  @override
+  String get workshopInstallBusy => 'Another install or removal is still running. Try again when it finishes.';
+
+  @override
+  String get workshopReplaceTitle => 'Replace what\'s on this phone?';
+
+  @override
+  String workshopReplaceMessage(String title) {
+    return 'This phone already has something with the same name that didn\'t come from this Workshop entry. Continuing replaces it with \"$title\", and the old one can\'t be brought back.';
+  }
+
+  @override
+  String get workshopReplaceConfirm => 'Replace';
+
+  @override
+  String get workshopReport => 'Report';
+
+  @override
+  String get workshopErrorNetwork => 'No connection. Try again later.';
+
+  @override
+  String get workshopErrorTimeout => 'No response in time. Try again later.';
+
+  @override
+  String get workshopErrorServer => 'The Workshop service has a problem right now. Try again later.';
+
+  @override
+  String get workshopErrorRateLimited => 'Too many requests. Try again in a while.';
+
+  @override
+  String get workshopErrorBadData => 'The Workshop sent something unexpected, so it wasn\'t used. Try again later.';
+
+  @override
+  String get workshopErrorCatalogChanged => 'This item just changed. Refresh and look again.';
+
+  @override
+  String get workshopErrorNotFound => 'This item can\'t be found. It may have been taken down.';
+
+  @override
+  String get workshopErrorWithdrawn => 'This version has been withdrawn and can\'t be installed.';
+
+  @override
+  String get workshopErrorMinApp => 'This app is too old. Update it to install this.';
+
+  @override
+  String get workshopErrorUnsupported => 'This version of the app doesn\'t know this kind of item.';
+
+  @override
+  String get workshopErrorCompanionOff => 'Companion items are turned off for now.';
+
+  @override
+  String get workshopErrorUploadOff => 'The Workshop isn\'t taking uploads right now.';
+
+  @override
+  String get workshopErrorNoSpace => 'Not enough storage on this phone. Free some up and try again.';
+
+  @override
+  String get workshopErrorStorage => 'Couldn\'t read or write files on this phone.';
+
+  @override
+  String get workshopErrorIntegrity =>
+      'The download didn\'t match what was registered, so it was discarded. Try again.';
+
+  @override
+  String get workshopErrorDowngrade => 'The version on this phone is newer and won\'t be replaced with an older one.';
+
+  @override
+  String get workshopErrorRuntimeMissing =>
+      'Invite a character in the Companion room first. Then other companions can be installed.';
+
+  @override
+  String get workshopErrorReadersBusy =>
+      'She\'s in use. Leave the Companion room or close the floating window, then try again.';
+
+  @override
+  String get workshopErrorInstallRecord => 'The install record on this phone doesn\'t match, so nothing was changed.';
+
+  @override
+  String get workshopErrorOtherOrigin => 'This was installed from a different Workshop.';
+
+  @override
+  String get workshopErrorSignIn => 'Sign in with GitHub first.';
+
+  @override
+  String get workshopErrorConsent => 'Agree to let the Workshop check your sign-in first.';
+
+  @override
+  String get workshopErrorAccountMismatch =>
+      'The account you signed in with isn\'t the kind this Workshop uses. Sign in again.';
+
+  @override
+  String get workshopErrorAccountDown => 'Couldn\'t confirm who you are with GitHub right now. Try again later.';
+
+  @override
+  String get workshopErrorPreferences => 'Couldn\'t save the record on this phone, so this step didn\'t continue.';
+
+  @override
+  String get workshopErrorBusy => 'The previous step is still running. One moment.';
+
+  @override
+  String get workshopErrorCancelled => 'Cancelled.';
+
+  @override
+  String get workshopErrorUnknownResult =>
+      'It\'s unclear whether that went through. Refresh and check before trying again.';
+
+  @override
+  String get workshopErrorGeneric => 'That didn\'t work. Try again later.';
+
+  @override
+  String get workshopDisclosureTitle => 'Let the Workshop confirm your GitHub identity';
+
+  @override
+  String get workshopDisclosureLead =>
+      'To submit, manage your submissions or report something, the Workshop needs to know who you are. To find out, your GitHub sign-in credential is sent to the Workshop service below, which asks GitHub which account it belongs to.';
+
+  @override
+  String get workshopDisclosureWorker => 'Workshop that receives the credential';
+
+  @override
+  String get workshopDisclosureAccount => 'Account service that confirms who you are';
+
+  @override
+  String get workshopDisclosureUse =>
+      'It is sent when you submit, view or withdraw your submissions, or report something. The Workshop only uses it to confirm your identity with GitHub and does not keep it.';
+
+  @override
+  String get workshopDisclosureKept =>
+      'The credential stays on this phone, which also remembers that you agreed to these two addresses. If either changes, you\'ll be asked again.';
+
+  @override
+  String get workshopDisclosureStale => 'The addresses just changed. Please confirm the ones shown now.';
+
+  @override
+  String get workshopDisclosureAccept => 'Agree and continue';
+
+  @override
+  String get workshopDisclosureDecline => 'Not now';
+
+  @override
+  String get workshopDisclosureUnsaved =>
+      'Your consent counts for now, but it couldn\'t be saved on this phone. You may be asked again.';
+
+  @override
+  String get workshopSignInTitle => 'Sign in with GitHub';
+
+  @override
+  String get workshopSignInLead =>
+      'The Workshop knows authors by their GitHub account. This sign-in can only read your public profile (username and account number), not your repositories.';
+
+  @override
+  String get workshopSignInPreparing => 'Getting a code from GitHub…';
+
+  @override
+  String get workshopSignInSteps =>
+      'Enter this code on GitHub\'s verification page and authorize, then come back here.';
+
+  @override
+  String get workshopSignInOpen => 'Copy and open GitHub';
+
+  @override
+  String get workshopSignInCopied => 'Code copied';
+
+  @override
+  String get workshopSignInWaiting => 'Waiting for you to authorize on GitHub…';
+
+  @override
+  String get workshopSignInExpired => 'The code expired.';
+
+  @override
+  String get workshopSignInDenied => 'You cancelled the authorization on GitHub.';
+
+  @override
+  String get workshopSignInNetwork => 'Can\'t reach GitHub. Check the connection and try again.';
+
+  @override
+  String get workshopSignInUnconfigured => 'This Workshop hasn\'t set up GitHub sign-in yet.';
+
+  @override
+  String get workshopSignInAgain => 'Get a new code';
+
+  @override
+  String workshopAccountLine(String login) {
+    return 'GitHub account $login';
+  }
+
+  @override
+  String get workshopAccountSignOut => 'Sign out';
+
+  @override
+  String get workshopAccountSignedOut =>
+      'Signed out. To withdraw the authorization completely, revoke it under Applications in your GitHub settings.';
+
+  @override
+  String get workshopAccountSignOutFailed => 'Couldn\'t sign out. Try again later.';
+
+  @override
+  String get workshopInstalledEmptyTitle => 'Nothing from the Workshop yet';
+
+  @override
+  String get workshopInstalledEmptyMessage => 'Pets and companions you get in Browse show up here.';
+
+  @override
+  String get workshopInstalledEmptyAction => 'Browse';
+
+  @override
+  String get workshopInstalledLoadFailedTitle => 'Can\'t read what\'s installed';
+
+  @override
+  String get workshopInstalledLoadStale => 'Couldn\'t read this phone again. Showing the last result.';
+
+  @override
+  String get workshopInstalledCatalogStale => 'Update and withdrawal info may be out of date.';
+
+  @override
+  String get workshopInstalledCatalogUnknown => 'Update and withdrawal info isn\'t available right now.';
+
+  @override
+  String get workshopInstalledStatusUpdate => 'Update available';
+
+  @override
+  String get workshopInstalledStatusWithdrawn => 'This version was withdrawn';
+
+  @override
+  String get workshopInstalledStatusOtherOrigin => 'From a different Workshop';
+
+  @override
+  String get workshopInstalledStatusNotListed => 'Not in the Workshop right now';
+
+  @override
+  String get workshopInstalledStatusCompanionOff => 'Companion items are off for now';
+
+  @override
+  String get workshopInstalledStatusRewritten => 'Differs from the same version in the Workshop';
+
+  @override
+  String get workshopInstalledStatusRemoving => 'Uninstalling…';
+
+  @override
+  String get workshopInstalledStatusRemoveFailed => 'Couldn\'t uninstall';
+
+  @override
+  String get workshopInstalledStatusRemoved => 'Uninstalled';
+
+  @override
+  String get workshopInstalledIssueBroken => 'This pack is damaged';
+
+  @override
+  String get workshopInstalledIssueUnreadable => 'This pack can\'t be read';
+
+  @override
+  String get workshopInstalledIssueRecord => 'Install record doesn\'t match';
+
+  @override
+  String get workshopInstalledIssueOther => 'Something is wrong with this item';
+
+  @override
+  String get workshopInstalledNoteBroken => 'This pack is damaged and may not work.';
+
+  @override
+  String get workshopInstalledNoteUnreadable => 'Couldn\'t read this pack\'s files.';
+
+  @override
+  String get workshopInstalledNoteRecord => 'Its install record doesn\'t match.';
+
+  @override
+  String get workshopInstalledNoteOther => 'Something is wrong with this item, and nothing more can be read.';
+
+  @override
+  String get workshopInstalledNoteUntrusted =>
+      'Its install record can\'t be trusted, so it can\'t be uninstalled from here.';
+
+  @override
+  String get workshopInstalledNoteOtherOrigin =>
+      'This came from a different Workshop, so its updates can\'t be checked here.';
+
+  @override
+  String get workshopInstalledNoteNotListed =>
+      'The Workshop doesn\'t list it right now. The copy on this phone isn\'t affected.';
+
+  @override
+  String get workshopInstalledNoteRewritten =>
+      'The same version in the Workshop has different contents. The copy on this phone wasn\'t changed.';
+
+  @override
+  String get workshopInstalledNoteMinApp => 'The version now in the Workshop needs a newer app.';
+
+  @override
+  String get workshopInstalledNoteUnavailable => 'The version now in the Workshop can\'t be installed right now.';
+
+  @override
+  String get workshopInstalledNoteGone => 'This item is no longer on this phone.';
+
+  @override
+  String get workshopInstalledNoteUnread =>
+      'The install records on this phone can\'t be read right now. This is what was there a moment ago.';
+
+  @override
+  String workshopInstalledRemoveFailed(String reason) {
+    return 'Couldn\'t uninstall. $reason';
+  }
+
+  @override
+  String get workshopInstalledFactKind => 'Kind';
+
+  @override
+  String get workshopInstalledFactId => 'Item ID';
+
+  @override
+  String get workshopInstalledFactOrigin => 'From';
+
+  @override
+  String get workshopInstalledFactLocalId => 'Local ID';
+
+  @override
+  String workshopInstalledRemoveTitle(String title) {
+    return 'Uninstall \"$title\"?';
+  }
+
+  @override
+  String get workshopInstalledRemoveMessage =>
+      'This deletes the copy on this phone. To use it again, get it from the Workshop again.';
+
+  @override
+  String get workshopInstalledRemoveNoReinstall =>
+      'The Workshop doesn\'t list it right now, so you may not be able to get it back.';
+
+  @override
+  String get workshopInstalledRemovedRefreshIssue =>
+      'Uninstalled, but the list couldn\'t refresh. Pull down to refresh it.';
+
+  @override
+  String get workshopInstalledRemovedLocalIssue =>
+      'Uninstalled, but some places didn\'t catch up. Reopen the app to bring them up to date.';
+
+  @override
+  String get workshopInstalledDismissFailure => 'Got it';
+
+  @override
+  String get workshopMinePublish => 'Submit';
+
+  @override
+  String get workshopMinePublishHint => 'Shows up in Discover once approved';
+
+  @override
+  String get workshopMineSignInTitle => 'Submissions belong to a GitHub account';
+
+  @override
+  String get workshopMineSignInMessage => 'Sign in to see what you have sent in.';
+
+  @override
+  String get workshopMineConsentTitle => 'One more step';
+
+  @override
+  String get workshopMineConsentMessage =>
+      'The workshop checks who you are with your GitHub sign-in. Agree to that to see your submissions.';
+
+  @override
+  String get workshopMineConsentAction => 'See details';
+
+  @override
+  String get workshopMineEmptyTitle => 'No submissions yet';
+
+  @override
+  String get workshopMineEmptyMessage => 'Made a pet or a companion? Send it in for others to use.';
+
+  @override
+  String get workshopMineEmptyFiltered => 'Nothing with this status';
+
+  @override
+  String get workshopMineLoadFailed => 'Couldn\'t load your submissions';
+
+  @override
+  String get workshopMineStale => 'Couldn\'t get the latest. Showing what was loaded before.';
+
+  @override
+  String get workshopMineLoadMore => 'Load more';
+
+  @override
+  String get workshopMineStatusPending => 'In review';
+
+  @override
+  String get workshopMineStatusApproved => 'Approved';
+
+  @override
+  String get workshopMineStatusRejected => 'Rejected';
+
+  @override
+  String get workshopMineStatusWithdrawn => 'Withdrawn';
+
+  @override
+  String get workshopMineStatusDraft => 'Draft';
+
+  @override
+  String get workshopMineDetailTitle => 'Submission';
+
+  @override
+  String get workshopMineRefreshOne => 'Refresh this one';
+
+  @override
+  String get workshopMineAboutPending => 'Sent and waiting for review. It shows up in Discover once approved.';
+
+  @override
+  String get workshopMineAboutApproved => 'Approved. Whether it is public right now is what Discover shows.';
+
+  @override
+  String get workshopMineAboutRejected => 'Not approved.';
+
+  @override
+  String get workshopMineAboutWithdrawn => 'Withdrawn. This can\'t be undone.';
+
+  @override
+  String get workshopMineAboutDraft => 'The file hasn\'t finished uploading, so it isn\'t in review.';
+
+  @override
+  String get workshopMineReviewReason => 'Reviewer\'s note';
+
+  @override
+  String get workshopMineWithdrawReason => 'Reason for withdrawing';
+
+  @override
+  String get workshopMineWithdrawReasonHint => 'For example: wrong file, want to change it first';
+
+  @override
+  String get workshopMineCreatedAt => 'Submitted';
+
+  @override
+  String get workshopMineUpdatedAt => 'Last updated';
+
+  @override
+  String get workshopMineDetailStale => 'Couldn\'t refresh this one. Showing the status loaded before.';
+
+  @override
+  String get workshopMineAccountChanged => 'The account has changed';
+
+  @override
+  String get workshopMineAccountChangedMessage =>
+      'This submission belongs to the previous account and is no longer shown.';
+
+  @override
+  String get workshopMineWithdraw => 'Withdraw';
+
+  @override
+  String get workshopMineWithdrawConfirmTitle => 'Withdraw this submission?';
+
+  @override
+  String workshopMineWithdrawConfirmMessage(String title) {
+    return 'This can\'t be undone. If \"$title\" is already public, nobody will be able to download this version, and the same version number can\'t be published again.';
+  }
+
+  @override
+  String get workshopMineWithdrawConfirm => 'Withdraw';
+
+  @override
+  String get workshopMineWithdrawing => 'Withdrawing…';
+
+  @override
+  String get workshopMineWithdrawDone => 'Submission withdrawn';
+
+  @override
+  String get workshopMineWithdrawUnknown =>
+      'Not sure whether it was withdrawn. Check the result first; don\'t withdraw again yet.';
+
+  @override
+  String get workshopMineWithdrawQuery => 'Check result';
+
+  @override
+  String get workshopMineWithdrawStill => 'It hasn\'t been withdrawn. You can withdraw it again if you still want to.';
+
+  @override
+  String get workshopMineWithdrawReconciled => 'It is withdrawn now.';
+
+  @override
+  String get workshopMineReasonEmpty => 'Write a reason first.';
+
+  @override
+  String workshopMineReasonTooLong(String max) {
+    return 'At most $max characters. This is too long.';
+  }
+
+  @override
+  String get workshopMineReasonBadChars => 'It contains characters that can\'t be used. Remove them and try again.';
+
+  @override
+  String get workshopMineReasonRejected => 'This reason wasn\'t accepted. Change it and try again.';
+
+  @override
+  String workshopReportTarget(String title, String version) {
+    return '$title · $version';
+  }
+
+  @override
+  String get workshopReportReason => 'Reason';
+
+  @override
+  String get workshopReportReasonHint => 'What\'s wrong with it, e.g. infringement or unsuitable content';
+
+  @override
+  String get workshopReportNote =>
+      'A reviewer will look at this report. Reporting doesn\'t take the item down by itself.';
+
+  @override
+  String get workshopReportSubmit => 'Send report';
+
+  @override
+  String get workshopReportSending => 'Sending…';
+
+  @override
+  String get workshopReportDone => 'Report received. A reviewer will look at it.';
+
+  @override
+  String get workshopReportSignInTitle => 'Reporting needs a GitHub account';
+
+  @override
+  String get workshopReportSignInMessage => 'Sign in to send a report.';
+
+  @override
+  String get workshopReportConsentMessage =>
+      'The workshop checks who you are with your GitHub sign-in. Agree to that to report.';
+
+  @override
+  String get workshopReportUnknownTitle => 'Not sure it arrived';
+
+  @override
+  String get workshopReportUnknownMessage =>
+      'The last report may or may not have been received, and there is no way to check. Sending again could create a duplicate.';
+
+  @override
+  String workshopReportUnknownOther(String id, String version) {
+    return 'That report was about $id $version.';
+  }
+
+  @override
+  String get workshopReportUnknownAgain => 'I understand, write it again';
+
+  @override
+  String get workshopPublishTitle => 'Submit';
+
+  @override
+  String get workshopPublishClosedTitle => 'The Workshop isn\'t taking submissions right now';
+
+  @override
+  String get workshopPublishClosedMessage => 'What you already sent is still under My uploads.';
+
+  @override
+  String get workshopPublishSignInTitle => 'Sign in with GitHub first';
+
+  @override
+  String get workshopPublishSignInMessage => 'The Workshop uses your GitHub account to know who is submitting.';
+
+  @override
+  String get workshopPublishProfileTitle => 'Couldn\'t read your GitHub account yet';
+
+  @override
+  String get workshopPublishProfileMessage => 'Submitting needs to know which account you are.';
+
+  @override
+  String get workshopPublishCheckFailedTitle => 'Couldn\'t read the record of your last submission';
+
+  @override
+  String get workshopPublishCheckLocked => 'To avoid sending something twice, a new one can\'t start until it is read.';
+
+  @override
+  String get workshopPublishWaitingPrevious => 'The previous step is still finishing.';
+
+  @override
+  String get workshopPublishChooseTitle => 'Choose what to submit';
+
+  @override
+  String get workshopPublishCompanionCurrent => 'Your current companion';
+
+  @override
+  String get workshopPublishSourcesEmptyTitle => 'Nothing to submit yet';
+
+  @override
+  String get workshopPublishSourcesEmptyMessage =>
+      'Pixel pets you imported and your current companion can be submitted, or pick a file directly.';
+
+  @override
+  String get workshopPublishFromFile => 'Choose a file';
+
+  @override
+  String get workshopPublishFromFileHint => 'A pet or companion zip; no need to import it first';
+
+  @override
+  String get workshopPublishTitleEnHelper => 'Optional; the Chinese name is used if empty';
+
+  @override
+  String get workshopPublishAuthorHelper => 'Optional; your GitHub username is used if empty';
+
+  @override
+  String get workshopPublishLicenseHelper => 'Optional; Author permission if none is picked';
+
+  @override
+  String get workshopPublishSourcesIssue => 'Couldn\'t read what can be submitted from this phone.';
+
+  @override
+  String get workshopPublishPetsIssue => 'Couldn\'t read the pixel pets on this phone.';
+
+  @override
+  String get workshopPublishCompanionIssue => 'Couldn\'t read the companion on this phone.';
+
+  @override
+  String get workshopPublishNoCompanion =>
+      'There\'s no companion on this phone yet. Invite one in the Companion room first.';
+
+  @override
+  String get workshopPublishSectionSource => 'What to submit';
+
+  @override
+  String get workshopPublishChange => 'Change';
+
+  @override
+  String get workshopPublishSectionNames => 'Name';
+
+  @override
+  String get workshopPublishTitleZh => 'Chinese name';
+
+  @override
+  String get workshopPublishTitleEn => 'English name';
+
+  @override
+  String get workshopPublishSectionInfo => 'Details';
+
+  @override
+  String get workshopPublishId => 'Item ID';
+
+  @override
+  String get workshopPublishIdHelper => 'Optional; made from the name if empty. Lowercase letters, digits and hyphens';
+
+  @override
+  String get workshopPublishAuthor => 'Author';
+
+  @override
+  String get workshopPublishLicenseAuthor => 'Author permission';
+
+  @override
+  String get workshopPublishSourceLink => 'Source link';
+
+  @override
+  String get workshopPublishSourceHelper => 'Optional; your GitHub page is used if empty. Starts with https://';
+
+  @override
+  String get workshopPublishSectionAbout => 'About (optional)';
+
+  @override
+  String get workshopPublishTags => 'Tags';
+
+  @override
+  String get workshopPublishTagsHelper => 'Separate with commas, up to 8';
+
+  @override
+  String get workshopPublishNext => 'Next';
+
+  @override
+  String get workshopPublishPreparing => 'Packing…';
+
+  @override
+  String get workshopPublishBadTitle => 'Enter a name, up to 120 characters';
+
+  @override
+  String get workshopPublishBadId => 'Lowercase letters, digits and hyphens only, up to 40 characters';
+
+  @override
+  String get workshopPublishBadVersion => 'Write a version like 1.0.0';
+
+  @override
+  String get workshopPublishBadAuthor => 'Enter an author, up to 256 characters';
+
+  @override
+  String get workshopPublishBadLicense => 'Choose a license';
+
+  @override
+  String get workshopPublishBadSource => 'Enter a link starting with https://';
+
+  @override
+  String get workshopPublishBadDescription => 'Up to 512 characters';
+
+  @override
+  String get workshopPublishBadTags => 'Up to 8 tags of 32 characters each, with no repeats';
+
+  @override
+  String get workshopPublishBadRights => 'Confirm that you have the right to share this first';
+
+  @override
+  String get workshopPublishFiles => 'Files in the package';
+
+  @override
+  String get workshopPublishEdit => 'Edit details';
+
+  @override
+  String get workshopPublishRights => 'I confirm I have the right to share this';
+
+  @override
+  String get workshopPublishReviewNote => 'The Workshop reviews it first. Others see it once it is approved.';
+
+  @override
+  String get workshopPublishSubmit => 'Submit';
+
+  @override
+  String get workshopPublishPhaseWorking => 'Working…';
+
+  @override
+  String get workshopPublishPhaseUploading => 'Uploading';
+
+  @override
+  String get workshopPublishPhaseWaiting => 'All sent. Waiting for the Workshop…';
+
+  @override
+  String get workshopPublishStay => 'Leaving this page won\'t interrupt it.';
+
+  @override
+  String get workshopPublishDoneTitle => 'Sent to the Workshop, waiting for review';
+
+  @override
+  String get workshopPublishDoneMessage => 'Follow it under My uploads.';
+
+  @override
+  String get workshopPublishBackToMine => 'Back to My uploads';
+
+  @override
+  String get workshopPublishApprovedTitle => 'This submission has been approved';
+
+  @override
+  String get workshopPublishApprovedMessage => 'Whether it is listed is what Browse shows.';
+
+  @override
+  String get workshopPublishRejectedTitle => 'This submission wasn\'t approved';
+
+  @override
+  String get workshopPublishWithdrawnTitle => 'This submission was withdrawn';
+
+  @override
+  String workshopPublishReason(String reason) {
+    return 'Reason: $reason';
+  }
+
+  @override
+  String get workshopPublishAgain => 'Submit again';
+
+  @override
+  String get workshopPublishAgainMessage => 'Fix it and you can submit it again.';
+
+  @override
+  String get workshopPublishRecordKept => 'The result is confirmed, but the record on this phone couldn\'t be cleared.';
+
+  @override
+  String get workshopPublishLeftovers => 'Temporary files left on this phone couldn\'t be removed.';
+
+  @override
+  String get workshopPublishPendingTitle => 'One submission isn\'t finished';
+
+  @override
+  String get workshopPublishPendingMessage =>
+      'It didn\'t finish last time. Continuing sends the same content on, without creating a second one.';
+
+  @override
+  String get workshopPublishPendingLocked =>
+      'Its details are fixed for now: they can\'t be edited or swapped for something else. Once the problem is solved you can continue.';
+
+  @override
+  String get workshopPublishPendingUnsent =>
+      'This one hasn\'t been sent yet. You can continue once the problem is solved, or go back to edit it or pick something else.';
+
+  @override
+  String get workshopPublishEditUnsent => 'Go back and edit';
+
+  @override
+  String get workshopPublishUnknownTitle => 'Not sure whether it was sent';
+
+  @override
+  String get workshopPublishUnknownMessage =>
+      'The Workshop didn\'t answer, so the result isn\'t known. Checking asks again about the same submission: if it arrived it isn\'t repeated, and if it didn\'t it carries on.';
+
+  @override
+  String get workshopPublishContinue => 'Continue';
+
+  @override
+  String get workshopPublishCheckResult => 'Check result';
+
+  @override
+  String get workshopPublishCheckAgain => 'Check again';
+
+  @override
+  String get workshopPublishErrorInvalid => 'A few details need fixing.';
+
+  @override
+  String get workshopPublishErrorMismatch => 'The package doesn\'t match the details you entered. Please try again.';
+
+  @override
+  String get workshopPublishErrorPending => 'Another submission isn\'t finished. Deal with it first.';
+
+  @override
+  String get workshopPublishErrorTooLarge => 'The package is larger than the Workshop accepts.';
+
+  @override
+  String get workshopPublishErrorMetadata => 'The Workshop didn\'t accept these details. Change them and try again.';
+
+  @override
+  String get workshopPublishErrorNotReady => 'Not ready yet. Try again in a moment.';
+
+  @override
+  String get workshopPublishErrorAgain => 'It can\'t be submitted again right now.';
+
+  @override
+  String get workshopPublishSectionPreview => 'Preview';
+
+  @override
+  String get workshopPublishPreviewSwitch => 'Show a preview in the Workshop';
+
+  @override
+  String get workshopPublishPreviewIdle => 'The first frame of the idle animation';
+
+  @override
+  String get workshopPublishSectionCover => 'Cover (optional)';
+
+  @override
+  String get workshopPublishCoverPick => 'Choose a cover';
+
+  @override
+  String get workshopPublishCoverHelper =>
+      'PNG, up to 512 px a side and 2 MB. Without one, the first letter of the name is shown.';
+
+  @override
+  String get workshopPublishCoverChosen => 'Your cover';
+
+  @override
+  String get workshopPublishCoverReplace => 'Replace';
+
+  @override
+  String get workshopPublishCoverRemove => 'Remove';
+
+  @override
+  String get workshopPublishCoverBadSize => 'This image is empty or larger than 2 MB. Try another.';
+
+  @override
+  String get workshopPublishCoverBadPng => 'This isn\'t an intact PNG image. Try another.';
+
+  @override
+  String get workshopPublishCoverBadDimensions =>
+      'This image is too large: 512 px a side at most. Shrink it and choose again.';
+
+  @override
+  String get workshopPublishCoverUnreadable => 'Couldn\'t read this image. Try another.';
+
+  @override
+  String get workshopPublishReviewPreviewIdle => 'First idle frame';
+
+  @override
+  String get workshopPublishReviewPreviewNone => 'No preview';
+
+  @override
+  String get workshopPublishErrorPreviewPet =>
+      'This pet\'s frame is larger than 512 px, so it can\'t have a preview. Turn the preview off to submit as usual.';
+
+  @override
+  String get workshopPublishErrorPreviewConflict =>
+      'The companion\'s package already has a preview.png, so the cover can\'t be added. Remove the cover to submit as usual.';
+
+  @override
+  String get workshopPublishErrorPreviewMissing =>
+      'The preview to use wasn\'t found. Choose it again, or submit without one.';
+
+  @override
+  String get workshopPublishErrorPreviewUnsupported =>
+      'This Workshop isn\'t taking previews right now. Submit without one as usual.';
+
+  @override
+  String get workshopPublishLetGo => 'Let go of this record';
+
+  @override
+  String get workshopPublishLetGoTitle => 'Let go of this phone\'s record?';
+
+  @override
+  String workshopPublishLetGoAccount(String worker) {
+    return 'Only this phone\'s unfinished record for this GitHub account at Workshop $worker is removed.';
+  }
+
+  @override
+  String workshopPublishLetGoAll(String worker) {
+    return 'The submission records on this phone can\'t be read as a whole. Letting go removes the unfinished-submission records of every account on this phone, not just the one for this GitHub account at Workshop $worker.';
+  }
+
+  @override
+  String get workshopPublishLetGoFacts =>
+      'The Workshop isn\'t told to cancel: if it already received this submission, it stays there and shows under My uploads. If it didn\'t, you\'ll need to submit again, and if it did arrive after all there will be two.';
+
+  @override
+  String get workshopPublishLetGoFactsKnown =>
+      'The Workshop isn\'t told to cancel: its result stays as it is, and this submission is still under My uploads.';
+
+  @override
+  String get workshopPublishLetGoConfirm => 'Let go';
+
+  @override
+  String get workshopPublishLetGoDone => 'This phone\'s record was let go';
+
+  @override
+  String get workshopPublishLetGoStale => 'The record just changed. Tap again to confirm it anew.';
+
+  @override
+  String get workshopPublishLetGoUnsupported => 'This version can\'t let go of the record here.';
+
+  @override
+  String get workspaceRecoveryTitle => 'Workspace index recovery';
+
+  @override
+  String get workspaceRecoveryEnable => 'Use a recovery workspace index';
+
+  @override
+  String get workspaceRecoveryDisable => 'Use the original index again';
+
+  @override
+  String get workspaceRecoveryHint =>
+      'This phone only: use a separate index to access readable conversations when the original workspace index fails.';
+
+  @override
+  String get workspaceRecoveryActive =>
+      'The separate recovery index is selected. Both the original and recovery indexes are retained.';
+
+  @override
+  String get workspaceRecoveryWorking => 'Working…';
+
+  @override
+  String get workspaceRecoveryEnableBody =>
+      'The local engine will stop, switch to a separate recovery index, and start again. The original workspace index stays untouched. Conversation files, plugins, and credentials are not deleted.\n\nOn first use, the new index is built from readable conversations whose folders still exist. Old workspace names, order, defaults, archived state, and pins are not inherited automatically. Empty workspaces and conversations with missing folders may not appear. Original local grouping and pin preferences are retained.\n\nThe recovery index is retained and reused the next time you enable it. This bypasses the original index failure; it does not repair the original index.';
+
+  @override
+  String get workspaceRecoveryDisableBody =>
+      'The local engine will stop, switch back to the original workspace index, and start again. The original failure may return.\n\nConversation files created during recovery and the recovery index are both retained. Workspace membership and order do not sync between the two indexes. Some conversations created during recovery may not appear with the original index. Enable the recovery index again to continue using it.';
+
+  @override
+  String get workspaceRecoveryEnableStart => 'Enable and restart';
+
+  @override
+  String get workspaceRecoveryDisableStart => 'Use original and restart';
+
+  @override
+  String get workspaceRecoveryUnavailable =>
+      'This version does not support workspace index recovery. Check the local engine status and update the app.';
+
+  @override
+  String get workspaceRecoveryRestartIncomplete =>
+      'The index mode changed, but the engine has not been confirmed stopped or restarted. Wait for it to stop before starting it again.';
+
+  @override
+  String get workspaceRecoverySaveFailed =>
+      'The index mode could not be saved. No new start was requested. Check the local engine status and logs.';
+
+  @override
+  String get workspaceRecoveryFailed =>
+      'The operation did not finish. Check the local engine status and logs. This page shows whether the index mode changed.';
 }

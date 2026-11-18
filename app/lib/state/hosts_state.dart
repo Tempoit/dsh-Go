@@ -138,18 +138,22 @@ class HostsController extends Notifier<HostsState> {
     state = HostsState(ssh: hosts, loaded: true);
   }
 
-  Future<void> _persist(List<SshHostConfig> hosts) async {
+  Future<bool> _persist(List<SshHostConfig> hosts) async {
     state = HostsState(ssh: List.unmodifiable(hosts), loaded: true);
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(prefsKey, jsonEncode([for (final h in hosts) h.toJson()]));
-    } catch (_) {}
+      return await prefs.setString(prefsKey, jsonEncode([for (final h in hosts) h.toJson()]));
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Adds or replaces [config]. With [secrets], stores the one matching the
   /// auth method and deletes the other kind, so a host never keeps a stale
   /// password next to its key.
-  Future<void> saveSsh(SshHostConfig config, {SshSecrets? secrets}) async {
+  /// Returns the preferences write result. A false result does not undo the
+  /// in-memory config or any completed secret operations.
+  Future<bool> saveSsh(SshHostConfig config, {SshSecrets? secrets}) async {
     await _loaded;
     ref.read(readListCredentialEpochProvider.notifier).advance();
     if (secrets != null) await _writeSecrets(config, secrets);
@@ -160,7 +164,7 @@ class HostsController extends Notifier<HostsState> {
     } else {
       hosts.add(config);
     }
-    await _persist(hosts);
+    return _persist(hosts);
   }
 
   Future<void> _writeSecrets(SshHostConfig config, SshSecrets secrets) async {
@@ -173,6 +177,7 @@ class HostsController extends Notifier<HostsState> {
       }
     }
 
+    await put(SshSecrets.attachTokenKey(id), config.dshMode == SshDshMode.attachOnly ? secrets.attachToken?.trim() : null);
     if (config.auth == SshAuthMethod.password) {
       await put(SshSecrets.passwordKey(id), secrets.password);
       await _secrets.delete(SshSecrets.privateKeyKey(id));
@@ -197,6 +202,7 @@ class HostsController extends Notifier<HostsState> {
       password: await get(SshSecrets.passwordKey(id)),
       privateKey: await get(SshSecrets.privateKeyKey(id)),
       passphrase: await get(SshSecrets.passphraseKey(id)),
+      attachToken: await get(SshSecrets.attachTokenKey(id)),
     );
   }
 
@@ -204,7 +210,7 @@ class HostsController extends Notifier<HostsState> {
   Future<void> removeSsh(String id) async {
     await _loaded;
     await _persist([...state.ssh.where((h) => h.id != id)]);
-    for (final key in [SshSecrets.passwordKey(id), SshSecrets.privateKeyKey(id), SshSecrets.passphraseKey(id)]) {
+    for (final key in [SshSecrets.passwordKey(id), SshSecrets.privateKeyKey(id), SshSecrets.passphraseKey(id), SshSecrets.attachTokenKey(id)]) {
       try {
         await _secrets.delete(key);
       } catch (_) {}
@@ -262,26 +268,67 @@ class RemoteAutoConnectController extends Notifier<bool> {
 
 final remoteAutoConnectProvider = NotifierProvider<RemoteAutoConnectController, bool>(RemoteAutoConnectController.new);
 
+/// Reduces history payloads on supporting Remote Hosts, never live events.
+/// Changes apply to the next client, so an active turn is not interrupted.
+class RemoteCompactHistoryController extends Notifier<bool> {
+  static const prefsKey = 'remote_compact_history';
+  late Future<void> _loaded;
+
+  @override
+  bool build() {
+    _loaded = _load();
+    return false;
+  }
+
+  Future<void> get ready => _loaded;
+
+  Future<void> _load() async {
+    try {
+      final stored = (await SharedPreferences.getInstance()).getBool(prefsKey);
+      if (stored != null && ref.mounted) state = stored;
+    } catch (_) {}
+  }
+
+  Future<void> set(bool value) async {
+    await _loaded;
+    if (!ref.mounted) return;
+    state = value;
+    try {
+      await (await SharedPreferences.getInstance()).setBool(prefsKey, value);
+    } catch (_) {}
+  }
+}
+
+final remoteCompactHistoryProvider = NotifierProvider<RemoteCompactHistoryController, bool>(
+  RemoteCompactHistoryController.new,
+);
+
 /// Which host the chat, session list and new chats use. Persisted.
 class ActiveHostController extends Notifier<HostRef> {
   static const prefsKey = 'active_host';
   bool _touched = false;
+  late Future<void> _loaded;
 
   @override
   HostRef build() {
     // Read the startup preference now, so the remote hosts page shows the
     // stored value from its first frame.
     ref.read(remoteAutoConnectProvider);
-    unawaited(_restore());
+    _loaded = _restore();
     return HostRef.local;
   }
 
+  /// The startup host choice has settled, including a disabled auto-connect
+  /// preference or an earlier explicit selection.
+  Future<void> get ready => _loaded;
+
   Future<void> _restore() async {
+    final owner = ref;
     try {
       final prefs = await SharedPreferences.getInstance();
       final restored = HostRef.decode(prefs.getString(prefsKey));
       final autoConnect = prefs.getBool(RemoteAutoConnectController.prefsKey) ?? true;
-      if (!_touched && ref.mounted && autoConnect) state = restored;
+      if (!_touched && owner.mounted && autoConnect) state = restored;
     } catch (_) {
       // No preferences backend (tests): stay on 本机.
     }
@@ -322,7 +369,7 @@ final activeHostProvider = NotifierProvider<ActiveHostController, HostRef>(Activ
 // ── DSH Remote (relay) account ───────────────────────────────────────────────
 
 /// The DSH Remote server: null for the hosted dsh.r2049.cn, else a
-/// self-hosted origin (an advanced option; it signs in with email + password).
+/// self-hosted origin with its own sign-in methods.
 class RelayServerController extends Notifier<String?> {
   static const prefsKey = 'remote_relay_server';
   bool _touched = false;
@@ -353,19 +400,64 @@ class RelayServerController extends Notifier<String?> {
   }
 
   /// Back to dsh.r2049.cn (each server keeps its own sign-in).
-  Future<void> useDefault() async {
-    await _set(null);
-    ref.invalidate(relayAccountProvider);
-  }
+  Future<void> useDefault() => ref.read(_relayServerActionsProvider).useDefault();
+
+  /// Switches to [server] after the person selects it or agrees to a pairing code;
+  /// each Server keeps its own sign-in. Throws [HostLinkError] when invalid.
+  Future<void> useServer(String server) => ref.read(_relayServerActionsProvider).useServer(server);
 
   /// Switches to [server] (normalized; throws [HostLinkError] when invalid)
   /// and signs in there with email + password.
+  Future<void> loginWithPassword({required String server, required String email, required String password}) =>
+      ref.read(_relayServerActionsProvider).loginWithPassword(server: server, email: email, password: password);
+}
+
+// Commands need their own Ref: the backend watches the server state, so the
+// server notifier cannot read/invalidate its downstream providers. This provider
+// does not watch the selection and remains alive when a login sheet closes.
+final _relayServerActionsProvider = Provider<_RelayServerActions>(_RelayServerActions.new);
+
+class _RelayServerActions {
+  _RelayServerActions(this.ref);
+
+  final Ref ref;
+  int _operation = 0;
+
+  bool _owns(int operation, String? selection) =>
+      ref.mounted && operation == _operation && ref.read(relayServerProvider) == selection;
+
+  Future<void> useDefault() async {
+    final operation = ++_operation;
+    await ref.read(relayServerProvider.notifier)._set(null);
+    if (_owns(operation, null)) ref.invalidate(relayAccountProvider);
+  }
+
+  Future<void> useServer(String server) async {
+    final origin = DshRemoteRelayBackend.normalizeServer(server);
+    final selection = origin == defaultRelayServer ? null : origin;
+    final operation = ++_operation;
+    await ref.read(relayServerProvider.notifier)._set(selection);
+    if (_owns(operation, selection)) ref.invalidate(relayAccountProvider);
+  }
+
   Future<void> loginWithPassword({required String server, required String email, required String password}) async {
     ref.read(readListCredentialEpochProvider.notifier).advance();
     final origin = DshRemoteRelayBackend.normalizeServer(server);
-    await _set(origin == defaultRelayServer ? null : origin);
-    await ref.read(relayBackendProvider).loginWithPassword(email.trim(), password);
-    ref.invalidate(relayAccountProvider);
+    final selection = origin == defaultRelayServer ? null : origin;
+    final operation = ++_operation;
+    await ref.read(relayServerProvider.notifier)._set(selection);
+    // Persistence may yield to another server action, including A -> B -> A.
+    // Never resolve a retired request against the newly selected backend.
+    if (!_owns(operation, selection)) {
+      throw HostLinkError(HostLinkErrorKind.other, appL10n.remoteSignInCancelled);
+    }
+    final backend = ref.read(relayBackendProvider);
+    await backend.loginWithPassword(email.trim(), password);
+    // The captured account may have completed successfully after selection
+    // changed. Keep that result, but do not rebuild/cancel its successor login.
+    if (_owns(operation, selection) && identical(backend, ref.read(relayBackendProvider))) {
+      ref.invalidate(relayAccountProvider);
+    }
   }
 }
 
@@ -376,11 +468,21 @@ final relayServerProvider = NotifierProvider<RelayServerController, String?>(Rel
 /// The relay client (`packages/dsh_remote`) for the chosen server. Tests
 /// override with a fake; [UnavailableRelayBackend] turns the native relay off.
 final relayBackendProvider = Provider<RelayBackend>((ref) {
+  final history = ref.read(remoteCompactHistoryProvider.notifier);
   final backend = DshRemoteRelayBackend(
     secrets: ref.watch(secretStoreProvider),
     serverUrl: ref.watch(relayServerProvider),
     clientVersion: AppInfo.version.split('+').first,
     peerConnector: flutterPeerConnector,
+    loadCompactHistory: () async {
+      await history.ready;
+      return ref.read(remoteCompactHistoryProvider);
+    },
+  );
+  ref.listen<bool>(
+    remoteCompactHistoryProvider,
+    (_, enabled) => backend.compactHistory = enabled,
+    fireImmediately: true,
   );
   // The old default-off preference no longer controls automatic transport selection.
   unawaited(

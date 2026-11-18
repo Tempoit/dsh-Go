@@ -31,6 +31,11 @@ export async function apply(ctx, config) {
     assert.ok(req.reason.includes('不是报价或供应商扣费上限'));
     return 'allowed-once'; // Test-only explicit synthetic consent; production answerers are untouched.
   });
+  ctx.jobs.events.subscribe({ owners: 'all' }, event => {
+    if (event.type === 'settled' && event.job.kind === 'media') {
+      void durableReplace(join(output, 'job-settled.json'), JSON.stringify(event.job)).catch(noteFailure);
+    }
+  });
   let captured;
   let failure;
   let pending = Promise.resolve();

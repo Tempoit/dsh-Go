@@ -157,6 +157,16 @@ check(mux.status === 101, `WebSocket /api/remote.mux with cookie (Dart client) -
 
 if (table.prefix.includes("/dsh-go")) {
   console.log("== dsh-go-bridge");
+  const capabilitiesAnon = await request("GET", "/dsh-go/v1/capabilities");
+  check(capabilitiesAnon.status === 401, `capabilities without cookie -> ${capabilitiesAnon.status}`);
+  const capabilities = await request("GET", "/dsh-go/v1/capabilities", { headers: C });
+  let negotiated = {};
+  try { negotiated = JSON.parse(capabilities.body); } catch {}
+  check(capabilities.status === 200 && negotiated.v === 1 && typeof negotiated.bridge === "string"
+    && Array.isArray(negotiated.capabilities) && negotiated.capabilities.includes("native-ui"),
+    `capabilities with cookie -> ${capabilities.status}, v=${negotiated.v}`);
+  const capabilitiesRefused = await request("GET", "/dsh-go/v1/capabilities", { headers: { ...C, origin: "http://evil.example" } });
+  check(capabilitiesRefused.status === 403, `capabilities with cross-site Origin -> ${capabilitiesRefused.status}`);
   const anon = await request("GET", "/dsh-go/v1/inventory");
   check(anon.status === 401, `inventory without cookie -> ${anon.status}`);
   const inv = await request("GET", "/dsh-go/v1/inventory", { headers: C });

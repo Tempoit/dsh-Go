@@ -85,6 +85,10 @@ class ChatNotifier(private val app: Context) {
         ensureChannels()
         val tag = tagOf(post.group)
         val id = idOf(post.key)
+        // Redelivery keeps the first decision and the owner of its timeout.
+        val processing = post.canApprove && actions[tag to id]?.let {
+            it.post.key == post.key && it.decision != null
+        } == true
         val channel = if (post.attention) CHANNEL_ATTENTION else CHANNEL_DONE
         val locked = keyguard.isKeyguardLocked
         val public = Notification.Builder(app, channel)
@@ -93,13 +97,17 @@ class ChatNotifier(private val app: Context) {
             .setContentTitle(AppStrings.APP_NAME)
             .setContentText(post.publicText)
             .build()
-        val (title, text) = if (locked) AppStrings.APP_NAME to post.publicText else post.title to post.text
+        val (title, text) = when {
+            locked -> AppStrings.APP_NAME to post.publicText
+            processing -> post.title to AppStrings.get(app, R.string.notify_action_processing)
+            else -> post.title to post.text
+        }
         val builder = Notification.Builder(app, channel)
             .setSmallIcon(R.drawable.ic_stat_dsh)
             .setColor(ThemeAccent.notificationColor(app))
             .setContentTitle(title)
             .setContentText(text)
-            .setStyle(Notification.BigTextStyle().bigText(if (locked) text else post.fullText ?: text))
+            .setStyle(Notification.BigTextStyle().bigText(if (locked || processing) text else post.fullText ?: text))
             .setWhen(postedAt)
             .setShowWhen(true)
             .setAutoCancel(true)
@@ -113,8 +121,10 @@ class ChatNotifier(private val app: Context) {
         // The floating pet is out and its bubble says 做完了 / 出错了: posted, but no banner, no sound.
         io.github.ccch1mneyyy.dsh_app.pet.ResultSilence.apply(builder, tag, post.attention)
         // Approval buttons, in the approval card's order; not on the lock screen.
-        if (post.canApprove) actions[tag to id] = ActionEntry(post, postedAt) else actions.remove(tag to id)
-        if (post.canApprove && !locked) {
+        if (!processing) {
+            if (post.canApprove) actions[tag to id] = ActionEntry(post, postedAt) else actions.remove(tag to id)
+        }
+        if (post.canApprove && !locked && !processing) {
             for ((label, decision) in listOf(AppStrings.get(app, R.string.notify_decline) to "rejected", AppStrings.get(app, R.string.notify_allow_once) to "allowed-once")) {
                 val action = Notification.Action.Builder(null, label, actionIntent(post, decision))
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) action.setAuthenticationRequired(true)
@@ -169,7 +179,9 @@ class ChatNotifier(private val app: Context) {
         unlockReceiver = receiver
         val filter = IntentFilter(Intent.ACTION_USER_PRESENT)
         if (Build.VERSION.SDK_INT >= 33) {
-            app.applicationContext.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            // SystemUI may use its own UID. USER_PRESENT is protected: only the
+            // system can send it, so exporting this single-action receiver is safe.
+            app.applicationContext.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
         } else {
             app.applicationContext.registerReceiver(receiver, filter)
         }
@@ -263,7 +275,7 @@ class ChatNotifier(private val app: Context) {
         val summary = Notification.Builder(app, channel)
             .setSmallIcon(R.drawable.ic_stat_dsh)
             .setColor(ThemeAccent.notificationColor(app))
-            .setContentTitle(title)
+            .setContentTitle(if (keyguard.isKeyguardLocked) AppStrings.APP_NAME else title)
             .setContentText(AppStrings.plural(app, R.plurals.notify_reminder_count, count, count))
             .setGroup(tag)
             .setGroupSummary(true)
@@ -281,12 +293,18 @@ class ChatNotifier(private val app: Context) {
 
     /**
      * A tap that opens [sessionId] on [host], the way a chat notification's does (it carries the
-     * secret [takeTap] checks). Extras don't make PendingIntents distinct: give each notification
-     * its own [requestCode].
+     * secret [takeTap] checks). Full route data distinguishes PendingIntents even when their
+     * [requestCode] hashes collide; extras alone do not participate in identity.
      */
     fun sessionIntent(sessionId: String, host: String, kind: String, eventId: String?, requestCode: Int): PendingIntent {
         val intent = Intent(app, MainActivity::class.java)
             .setAction(ACTION_OPEN)
+            .setData(Uri.Builder().scheme("dsh-notify").authority("open")
+                .appendQueryParameter("host", host)
+                .appendQueryParameter("session", sessionId)
+                .appendQueryParameter("kind", kind)
+                .apply { if (eventId != null) appendQueryParameter("event", eventId) }
+                .build())
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             .putExtra(EXTRA_TOKEN, token())
             .putExtra(EXTRA_SESSION, sessionId)
@@ -351,25 +369,29 @@ class ChatNotifier(private val app: Context) {
         val builder = Notification.Builder(app, CHANNEL_ATTENTION)
             .setSmallIcon(R.drawable.ic_stat_dsh)
             .setColor(ThemeAccent.notificationColor(app))
-            .setContentTitle(post?.title ?: AppStrings.APP_NAME)
+            .setContentTitle(if (keyguard.isKeyguardLocked) AppStrings.APP_NAME else post?.title ?: AppStrings.APP_NAME)
             .setContentText(text)
             .setOnlyAlertOnce(true)
             .setAutoCancel(true)
             .setVisibility(Notification.VISIBILITY_PRIVATE)
             .setGroup(identity.first)
-        if (post != null) builder.setContentIntent(openIntent(post, identity.first, identity.second))
+        // A cold action has no Post; retain the existing notification's route.
+        val tap = post?.let { openIntent(it, identity.first, identity.second) }
+            ?: nm.activeNotifications.firstOrNull { it.tag == identity.first && it.id == identity.second }
+                ?.notification?.contentIntent
+        if (tap != null) builder.setContentIntent(tap)
         if (expire) builder.setTimeoutAfter(1_000)
         nm.notify(identity.first, identity.second, builder.build())
     }
 
     /** Per-install secret proving a launch intent came from our own PendingIntent. */
-    private fun token(): String {
+    private fun token(): String = synchronized(tokenLock) {
         val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        prefs.getString(PREF_TOKEN, null)?.let { return it }
+        prefs.getString(PREF_TOKEN, null)?.let { return@synchronized it }
         val bytes = ByteArray(16).also { SecureRandom().nextBytes(it) }
         val fresh = bytes.joinToString("") { "%02x".format(it) }
         prefs.edit().putString(PREF_TOKEN, fresh).apply()
-        return fresh
+        fresh
     }
 
     companion object {
@@ -396,6 +418,8 @@ class ChatNotifier(private val app: Context) {
         private const val EXTRA_EVENT = "dsh.notify.event"
         private const val PREFS = "dsh_notify"
         private const val PREF_TOKEN = "tap_token"
+        // The UI notifier and dsh-live worker create different ChatNotifier instances.
+        private val tokenLock = Any()
 
         /**
          * Per group: the conversation title and channel its summary uses (latest child wins).

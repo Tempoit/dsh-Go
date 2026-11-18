@@ -7,7 +7,8 @@ import 'dart:math';
 import 'package:dsh_app/usage/usage_ledger.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-DateTime _at(int day, [int hour = 12]) => DateTime(2026, 10, day, hour);
+// Fixed UTC fixtures keep the host retention boundary independent of the test machine's zone.
+DateTime _at(int day, [int hour = 12]) => DateTime.utc(2026, 10, day, hour);
 
 void main() {
   test('a day is the local date, zero-padded', () {
@@ -134,7 +135,10 @@ void main() {
       'engine': 'direct',
       'counts': {'turns': 5, 'voice': 0, 'phone': 0, 'share': 0, 'gen': 1, 'plugins': 2},
     });
-    expect(usagePayload(iid: 'x', day: 'd', record: UsageDayRecord(), device: const UsageDevice(), lang: 'en')['engine'], 'none');
+    expect(
+      usagePayload(iid: 'x', day: 'd', record: UsageDayRecord(), device: const UsageDevice(), lang: 'en')['engine'],
+      'none',
+    );
   });
 
   test('a count over the share host\'s ceiling goes as the ceiling', () {
@@ -196,7 +200,7 @@ void main() {
 
     test('each field by its rule', () {
       final cases = <String, List<Object?>>{
-        'v': [2, '1', null],
+        'v': [4, 0, '1', null],
         'iid': ['short', 'AAAAAAAAAAAAAAAAAAAAAB', 'AAAAAAAAAAAAAAAAAAAA+A', 7],
         'day': ['2026-10-30x', '2026-02-30', '2026-10-21', '2026-11-01', 20261029],
         'app': ['0.9.9+10301000', 'v0.9.9', '0.9', ''],
@@ -221,6 +225,97 @@ void main() {
         expect(usageProblem(counts(key, -1), now), 'counts.$key');
         expect(usageProblem(counts(key, 1.5), now), 'counts.$key');
       }
+    });
+
+    test('v2 and v3: the model and system, both or neither; v3 adds its counts', () {
+      const phone = UsageDevice(
+        app: '0.9.9',
+        build: 10301000,
+        sdk: 34,
+        abi: 'arm64-v8a',
+        maker: 'vivo',
+        model: 'v2405a',
+        rom: 'originos 5.0',
+      );
+      final record = UsageDayRecord(
+        counts: {UsageCount.turns: 2, UsageCount.tavern: 9000, UsageCount.room: 2, UsageCount.call: 1},
+        tokensIn: 3000000000,
+        tokensOut: 4567,
+      );
+      Map<String, Object> body({int version = usageContract, UsageDevice device = phone}) => usagePayload(
+        iid: 'AAAAAAAAAAAAAAAAAAAAAA',
+        day: '2026-10-29',
+        record: record,
+        device: device,
+        lang: 'zh',
+        version: version,
+      );
+      final v3 = body();
+      expect(v3['v'], 3);
+      expect(v3.keys.toSet(), usagePayloadKeysV2);
+      expect(usageProblem(v3, now), isNull);
+      // Each at most its ceiling.
+      expect(v3['counts'], {
+        'turns': 2,
+        'voice': 0,
+        'phone': 0,
+        'share': 0,
+        'gen': 0,
+        'plugins': 0,
+        'tavern': 5000,
+        'room': 2,
+        'call': 1,
+        'tok_in': 2000000000,
+        'tok_out': 4567,
+      });
+      final v2 = body(version: 2);
+      expect(v2['v'], 2);
+      expect(v2.keys.toSet(), usagePayloadKeysV2);
+      expect((v2['counts']! as Map).keys.toSet(), usageCountKeys);
+      expect([v2['model'], v2['rom']], ['v2405a', 'originos 5.0']);
+      expect(usageProblem(v2, now), isNull);
+      // Asked for v1, or no facts from the native side: v1 exactly.
+      for (final v1 in [
+        body(version: 1),
+        body(
+          device: const UsageDevice(app: '0.9.9', build: 1, sdk: 34, abi: 'x86', maker: 'vivo'),
+        ),
+      ]) {
+        expect(v1['v'], 1);
+        expect(v1.keys.toSet(), usagePayloadKeys);
+        expect((v1['counts']! as Map).keys.toSet(), usageCountKeys);
+      }
+      expect(usageProblem({...v3}..remove('rom'), now), 'rom');
+      expect(usageProblem({...v3, 'model': '华为'}, now), 'model');
+      expect(usageProblem({...v3, 'rom': ''}, now), 'rom');
+      expect(usageProblem({...body(version: 1), 'v': 2}, now), 'model');
+      // v3's counts only in v3, and all of them there.
+      expect(usageProblem({...v2, 'v': 3}, now), 'counts.tavern');
+      expect(usageProblem({...v3, 'v': 2}, now), 'counts.tavern');
+      Map<String, Object?> v3Counts(String key, Object? value) => {
+        ...v3,
+        'counts': {...(v3['counts']! as Map<String, Object?>), key: value},
+      };
+      for (final MapEntry(:key, value: limit) in {...usageCountLimits, ...usageCountLimitsV3}.entries) {
+        expect(usageProblem(v3Counts(key, limit), now), isNull, reason: key);
+        expect(usageProblem(v3Counts(key, limit + 1), now), 'counts.$key');
+        expect(usageProblem(v3Counts(key, -1), now), 'counts.$key');
+      }
+    });
+
+    test('tokens add up, from reported numbers only', () {
+      final ledger = UsageLedger()
+        ..tokens(1200, 300, _at(28))
+        ..tokens(0, 0, _at(28))
+        ..tokens(-5, 10, _at(28))
+        ..tokens(800, 0, _at(28, 23));
+      final day = ledger.days['2026-10-28']!;
+      expect([day.tokensIn, day.tokensOut], [2000, 310]);
+      // Kept across a restart.
+      final back = UsageLedger.decode(ledger.encode()).days['2026-10-28']!;
+      expect([back.tokensIn, back.tokensOut], [2000, 310]);
+      // Nothing reported: no day is made for it.
+      expect((UsageLedger()..tokens(0, 0, _at(28))).days, isEmpty);
     });
 
     test('makers are cut to what the host takes, as UsagePlugin.kt does', () {

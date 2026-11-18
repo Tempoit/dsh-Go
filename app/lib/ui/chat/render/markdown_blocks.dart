@@ -154,8 +154,8 @@ _RenderListItem? _firstListItemIn(RenderObject node) {
 
 /// A task-list box (`- [ ]` / `- [x]`) and the gap before its text. A bullet
 /// item that opens with one draws no bullet: the box takes the bullet's
-/// place and the text still starts on the list's text column, as GitHub,
-/// ChatGPT and Claude show checklists (a dot before a box reads twice).
+/// place and the text still starts on the list's text column, as task lists
+/// are usually shown (a dot before a box reads twice).
 class TaskBox extends SingleChildRenderObjectWidget {
   const TaskBox({super.key, required super.child});
 

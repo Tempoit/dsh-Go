@@ -8,6 +8,11 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 
 import '../l10n/l10n.dart';
+import 'phone_skill.dart';
+import 'phone_skill_replay.dart';
+
+export 'phone_skill.dart';
+export 'phone_skill_replay.dart';
 
 // ── Wire helpers ─────────────────────────────────────────────────────────────
 
@@ -220,6 +225,49 @@ class AdbStatus {
   final bool connected;
 }
 
+enum PhoneBackgroundViewport {
+  portrait, landscape;
+
+  /// Native preference capability, not proof that the privileged peer can create landscape.
+  static PhoneBackgroundViewport? fromMap(Map<Object?, Object?> m) {
+    if (m['v'] is! int || m['v'] != 1) return null;
+    return switch (m['preset']) {
+      'portrait' => portrait,
+      'landscape' => landscape,
+      _ => null,
+    };
+  }
+}
+
+/// Native admission capacity, independent of the legacy global parallelLimit field.
+class BackgroundParallelism {
+  const BackgroundParallelism._(this.configuredLimit, this.effectiveLimit, this.heldSlots, this.reason);
+
+  final int configuredLimit;
+  final int effectiveLimit;
+  final int heldSlots;
+  final String? reason;
+
+  static BackgroundParallelism? parse(Object? value) {
+    if (value is! Map || value['v'] is! int || value['v'] != 1) return null;
+    final configured = value['configuredLimit'];
+    final effective = value['effectiveLimit'];
+    final held = value['heldSlots'];
+    final reason = value['reason'];
+    if (configured is! int || configured < 1 || configured > 3 ||
+        effective is! int || effective < 0 || effective > configured ||
+        held is! int || held < 0 || held > 3) {
+      return null;
+    }
+    if (reason != null &&
+        !const {'off', 'unsupported', 'connectionRequired', 'busy', 'transportSerial'}.contains(reason)) {
+      return null;
+    }
+    if (effective == 0 && reason == null) return null;
+    return BackgroundParallelism._(configured, effective, held, reason as String?);
+  }
+}
+
 class PhoneBackgroundStatus {
   const PhoneBackgroundStatus({
     this.mode = PhoneBackgroundMode.off,
@@ -230,6 +278,10 @@ class PhoneBackgroundStatus {
     this.adb = const AdbStatus(),
     this.root = const PhoneRootStatus(),
     this.privileged,
+    this.viewport,
+    this.previewVersion,
+    this.previewEnabled = false,
+    this.parallelism,
   });
 
   factory PhoneBackgroundStatus.fromMap(Map<Object?, Object?> m) => PhoneBackgroundStatus(
@@ -241,6 +293,10 @@ class PhoneBackgroundStatus {
     adb: AdbStatus.fromMap(_map(m['adb'])),
     root: PhoneRootStatus.fromMap(_map(m['root'])),
     privileged: PhonePrivilegedStatus.parse(m['privileged']),
+    viewport: PhoneBackgroundViewport.fromMap(_map(m['viewport'])),
+    previewVersion: _int(_map(m['preview'])['v']),
+    previewEnabled: _flag(_map(m['preview'])['enabled']),
+    parallelism: BackgroundParallelism.parse(m['parallelism']),
   );
 
   final PhoneBackgroundMode mode;
@@ -257,6 +313,10 @@ class PhoneBackgroundStatus {
   final AdbStatus adb;
   final PhoneRootStatus root;
   final PhonePrivilegedStatus? privileged;
+  final PhoneBackgroundViewport? viewport;
+  final int? previewVersion;
+  final bool previewEnabled;
+  final BackgroundParallelism? parallelism;
 
   PhonePrivilegedMode get effectiveMode =>
       privileged?.mode ??
@@ -276,24 +336,95 @@ class PhoneBackgroundStatus {
       const [PhonePrivilegedMode.off, PhonePrivilegedMode.shizuku, PhonePrivilegedMode.adb];
 }
 
+/// Only the caller's target is published; no holder/session/UID is retained here.
+class PhoneAppWait {
+  const PhoneAppWait._(this.packageName);
+
+  /// Null means that the current interface has no confirmed app identity.
+  final String? packageName;
+
+  static PhoneAppWait? fromValue(Object? value) {
+    if (value is! Map) return null;
+    if (value['kind'] == 'unknown' && !value.containsKey('packageName')) return const PhoneAppWait._(null);
+    if (value['kind'] != 'known') return null;
+    final packageName = _text(value['packageName']);
+    return packageName == null ? null : PhoneAppWait._(packageName);
+  }
+}
+
 class PhoneTaskStatus {
   const PhoneTaskStatus({
+    this.sessionId,
+    this.runId,
+    this.generation,
+    this.waitingForScreen,
+    this.backgroundSlot,
+    this.waitingForApp,
+    this.waitingForMs = 0,
+    this.pendingCalls = 0,
+    this.finishing = false,
+    this.draining = false,
+    this.endedRunId,
+    this.endedGeneration,
+    this.completion = 'unknown',
+    this.retiring = false,
+    this.cleanupFailed = false,
+    this.settling = false,
     this.id,
     this.active = false,
     this.app,
     this.paused = false,
     this.stopped = false,
+    this.interrupted,
+    this.stopSource,
     this.waived = false,
   });
 
   factory PhoneTaskStatus.fromMap(Map<Object?, Object?> m) => PhoneTaskStatus(
+    sessionId: _text(m['sessionId']),
+    runId: _text(m['runId']),
+    generation: _int(m['generation']),
+    waitingForScreen: _text(m['waitingForScreen']),
+    backgroundSlot: m.containsKey('backgroundSlot') ? m['backgroundSlot'] is bool && m['backgroundSlot'] == true : null,
+    waitingForApp: PhoneAppWait.fromValue(m['waitingForApp']),
+    waitingForMs: m['waitingForMs'] is int && (m['waitingForMs'] as int) >= 0 ? m['waitingForMs'] as int : 0,
+    pendingCalls: _int(m['pendingCalls']) ?? 0,
+    finishing: _flag(m['finishing']),
+    draining: _flag(m['draining']),
+    endedRunId: _text(m['endedRunId']),
+    endedGeneration: _int(m['endedGeneration']),
+    retiring: _flag(m['retiring']),
+    cleanupFailed: _flag(m['cleanupFailed']),
+    settling: _flag(m['settling']),
+    completion: const {'completed', 'other', 'unknown'}.contains(m['completion']) ? m['completion'] as String : 'unknown',
     id: _int(m['id']),
     active: _flag(m['active']),
     app: _text(m['app']),
     paused: _flag(m['paused']),
     stopped: _flag(m['stopped']),
+    interrupted: m.containsKey('interrupted') ? _flag(m['interrupted']) : null,
+    stopSource: m.containsKey('stopSource') ? (_text(m['stopSource']) ?? 'UNKNOWN') : null,
     waived: _flag(m['waived']),
   );
+
+  final String? sessionId;
+  final String? runId;
+  final int? generation;
+  final String? waitingForScreen;
+  /// Null only for absent legacy metadata; malformed present values never grant a slot.
+  final bool? backgroundSlot;
+  final PhoneAppWait? waitingForApp;
+  final int waitingForMs;
+  bool get waitingForResources => waitingForApp != null || const {'main', 'background'}.contains(waitingForScreen);
+  final int pendingCalls;
+  final bool finishing;
+  final bool draining;
+  final String? endedRunId;
+  final int? endedGeneration;
+  final String completion;
+  final bool retiring;
+  final bool cleanupFailed;
+  final bool settling;
 
   /// The current (or last) task's number; a new one means a new task even
   /// when no inactive status came in between. Null from older builds.
@@ -305,12 +436,33 @@ class PhoneTaskStatus {
   final String? app;
   final bool paused;
 
-  /// The person pressed 停止 (overlay or notification); native refuses phone
-  /// actions for a short while after. The app cancels the running turn.
+  /// Native refuses phone actions after a user stop or an ambient interruption.
   final bool stopped;
+
+  /// Whether this stop cut off a phone task that was running, recorded by native at the
+  /// moment it stopped. Null only from an older native that doesn't report it; a present
+  /// value of the wrong type is false, never a reason to guess.
+  final bool? interrupted;
+
+  /// USER, SCREEN_OFF or ENVIRONMENT; null only when absent on older native.
+  final String? stopSource;
 
   /// 本任务免确认 was granted: the rest of this task asks nothing.
   final bool waived;
+}
+
+List<PhoneTaskStatus> _phoneTasks(Map<Object?, Object?> m) => m['taskProtocol'] == 1 && m['tasks'] is List
+    ? [for (final item in m['tasks'] as List) if (item is Map) PhoneTaskStatus.fromMap(item.cast<Object?, Object?>())]
+    : const [];
+
+PhoneTaskStatus _selectedPhoneTask(Map<Object?, Object?> m) {
+  final selected = _int(m['selectedTaskId']);
+  if (selected != null) {
+    for (final task in _phoneTasks(m)) {
+      if (task.id == selected) return task;
+    }
+  }
+  return PhoneTaskStatus.fromMap(_map(m['task']));
 }
 
 /// Where Android 13+'s 「受限制的设置」 stands for this app (native
@@ -375,9 +527,62 @@ class A11yKeeperStatus {
 }
 
 /// Snapshot of the native phone-control module (`status` / status events).
+/// Logical interruption only; never an active task or a physical cleanup receipt.
+class PhoneTaskInterruption {
+  const PhoneTaskInterruption({this.state = 'ready', this.count = 0, this.batchToken, this.error});
+  final String state;
+  final int count;
+  final String? batchToken;
+  final String? error;
+  bool get visible => state != 'ready' || count > 0;
+  bool get canAcknowledge => state == 'ready' && count > 0 && batchToken != null;
+
+  static PhoneTaskInterruption parse(Object? raw) {
+    if (raw == null) return const PhoneTaskInterruption(); // Older native modules.
+    const invalid = PhoneTaskInterruption(state: 'error', error: 'loadFailed');
+    if (raw is! Map || raw['version'] is! int || raw['version'] != 1) return invalid;
+    final state = raw['state'];
+    final count = raw['count'];
+    final token = raw['batchToken'];
+    final error = raw['error'];
+    if (state is! String || !const ['loading', 'ready', 'error'].contains(state) ||
+        count is! int || count < 0 || count > 256) {
+      return invalid;
+    }
+    if (state == 'ready') {
+      if (error != null || (count == 0 && token != null)) return invalid;
+      if (count > 0 && (token is! String ||
+          !RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$').hasMatch(token))) {
+        return invalid;
+      }
+    } else if (token != null || (state == 'loading' && (error != null || count != 0)) ||
+        (state == 'error' && error != 'loadFailed' && error != 'writeFailed')) {
+      return invalid;
+    }
+    return PhoneTaskInterruption(state: state, count: count, batchToken: token as String?, error: error as String?);
+  }
+}
+
+/// Native launch history; this counter is not an execution token.
+class PhoneCallerCapability {
+  const PhoneCallerCapability(this.launch, this.modernSeen);
+  final int launch;
+  final bool modernSeen;
+
+  static PhoneCallerCapability? parse(Object? value) {
+    if (value is! Map) return null;
+    final launch = value['launch'];
+    final modern = value['modernSeen'];
+    return launch is int && launch >= 0 && modern is bool ? PhoneCallerCapability(launch, modern) : null;
+  }
+}
+
 class PhoneStatus {
+  static const _keepError = Object();
   const PhoneStatus({
     this.ready = true,
+    this.statusRevision,
+    this.statusRevisionPresent = false,
     this.error,
     this.enabled = false,
     this.bridgeListening = false,
@@ -388,12 +593,20 @@ class PhoneStatus {
     this.confirmationNotifications,
     this.background = const PhoneBackgroundStatus(),
     this.task = const PhoneTaskStatus(),
+    this.taskProtocol = 0,
+    this.callerCapability,
+    this.tasks = const [],
+    this.parallelLimit = 1,
     this.device = const PhoneDevice(),
+    this.skills = const PhoneSkillStatus(),
+    this.taskInterruption = const PhoneTaskInterruption(),
   });
 
   /// The native module isn't there (or failed to answer): "未就绪".
   const PhoneStatus.notReady([this.error])
     : ready = false,
+      statusRevision = null,
+      statusRevisionPresent = false,
       enabled = false,
       bridgeListening = false,
       a11y = const PhoneA11yStatus(),
@@ -403,9 +616,18 @@ class PhoneStatus {
       confirmationNotifications = null,
       background = const PhoneBackgroundStatus(),
       task = const PhoneTaskStatus(),
-      device = const PhoneDevice();
+      taskProtocol = 0,
+      callerCapability = null,
+      tasks = const [],
+      parallelLimit = 1,
+      device = const PhoneDevice(),
+      skills = const PhoneSkillStatus(),
+      taskInterruption = const PhoneTaskInterruption();
 
   factory PhoneStatus.fromMap(Map<Object?, Object?> m) => PhoneStatus(
+    statusRevision: m['statusRevision'] is int && (m['statusRevision'] as int) > 0
+        ? m['statusRevision'] as int : null,
+    statusRevisionPresent: m.containsKey('statusRevision'),
     enabled: _flag(m['enabled']),
     bridgeListening: _flag(m['bridgeListening']),
     a11y: PhoneA11yStatus.fromMap(_map(m['a11y'])),
@@ -414,12 +636,23 @@ class PhoneStatus {
     notifications: _flag(m['notifications']),
     confirmationNotifications: _maybeFlag(m['confirmationNotifications']),
     background: PhoneBackgroundStatus.fromMap(_map(m['background'])),
-    task: PhoneTaskStatus.fromMap(_map(m['task'])),
+    task: _selectedPhoneTask(m),
+    taskProtocol: m['taskProtocol'] == 1 ? 1 : 0,
+    callerCapability: PhoneCallerCapability.parse(m['callerCapability']),
+    tasks: _phoneTasks(m),
+    parallelLimit: _int(m['parallelLimit']) ?? 1,
     device: PhoneDevice.fromMap(_map(m['device'])),
+    skills: PhoneSkillStatus.parse(m['skills']),
+    taskInterruption: PhoneTaskInterruption.parse(m['taskInterruption']),
   );
 
-  /// The native side answered. False → everything else is a default.
+  /// Whether native status is currently available. On transport failure the
+  /// other fields may retain the last trusted snapshot.
   final bool ready;
+
+  /// Process-lifetime native snapshot order; absent only on older native modules.
+  final int? statusRevision;
+  final bool statusRevisionPresent;
 
   /// Why it didn't, when it said.
   final String? error;
@@ -439,11 +672,23 @@ class PhoneStatus {
   final bool? confirmationNotifications;
   final PhoneBackgroundStatus background;
   final PhoneTaskStatus task;
+  final int taskProtocol;
+  final PhoneCallerCapability? callerCapability;
+  final List<PhoneTaskStatus> tasks;
+  final int parallelLimit;
   final PhoneDevice device;
+  final PhoneSkillStatus skills;
+  final PhoneTaskInterruption taskInterruption;
 
-  PhoneStatus copyWith({bool? enabled}) => PhoneStatus(
-    ready: ready,
-    error: error,
+  /// Some task may still act, the selected one or any other conversation's: active, a call
+  /// waiting to start, or one still draining. Mirrors the native refusal of 解除限制.
+  bool get anyTaskBusy => task.active || tasks.any((t) => t.active || t.pendingCalls > 0 || t.draining);
+
+  PhoneStatus copyWith({bool? enabled, bool? ready, Object? error = _keepError}) => PhoneStatus(
+    ready: ready ?? this.ready,
+    error: identical(error, _keepError) ? this.error : error as String?,
+    statusRevision: statusRevision,
+    statusRevisionPresent: statusRevisionPresent,
     enabled: enabled ?? this.enabled,
     bridgeListening: bridgeListening,
     a11y: a11y,
@@ -453,22 +698,32 @@ class PhoneStatus {
     confirmationNotifications: confirmationNotifications,
     background: background,
     task: task,
+    taskProtocol: taskProtocol,
+    callerCapability: callerCapability,
+    tasks: tasks,
+    parallelLimit: parallelLimit,
     device: device,
+    skills: skills,
+    taskInterruption: taskInterruption,
   );
 }
 
 // ── 悬浮条 ───────────────────────────────────────────────────────────────────
 
 /// 设置 → 手机操控 → 悬浮条 (`overlayPrefs` / `setOverlayPrefs`): how opaque the
-/// pill is when idle, and whether it folds into the ball by itself. A showing
-/// overlay follows changes at once.
+/// ball is when idle, and whether an idle capsule folds into the ball by itself
+/// (on unless the person turned it off, as OverlayPrefs.kt). A showing overlay
+/// follows changes at once.
 class PhoneOverlayPrefs {
-  const PhoneOverlayPrefs({this.idleOpacity = defaultOpacity, this.autoCollapse = false});
+  const PhoneOverlayPrefs({this.idleOpacity = defaultOpacity, this.autoCollapse = defaultAutoCollapse});
 
   factory PhoneOverlayPrefs.fromMap(Map<Object?, Object?> m) => PhoneOverlayPrefs(
     idleOpacity: clampOpacity(m['idleOpacity'] is num ? (m['idleOpacity'] as num).toDouble() : defaultOpacity),
-    autoCollapse: _flag(m['autoCollapse']),
+    autoCollapse: _maybeFlag(m['autoCollapse']) ?? defaultAutoCollapse,
   );
+
+  /// On: the capsule shows what DSH starts doing, then gets out of the way.
+  static const defaultAutoCollapse = true;
 
   /// 70 %: the line reads over light and dark pages alike (see OverlayPrefs.kt).
   static const defaultOpacity = 0.7;
@@ -712,6 +967,7 @@ class PhonePolicies {
     this.defaultConfirm = const [],
     this.confirmMode = PhoneConfirmMode.ask,
     this.unlocks = const {},
+    this.localOcrEnabled,
   });
 
   factory PhonePolicies.fromMap(Map<Object?, Object?> m) {
@@ -727,6 +983,7 @@ class PhonePolicies {
       defaultDeny: _strings(defaults['denyPackages']),
       defaultConfirm: _strings(defaults['confirmEveryWritePackages']),
       confirmMode: PhoneConfirmMode.parse(m['confirmMode']),
+      localOcrEnabled: _maybeFlag(m['localOcrEnabled']),
       // Only an explicit true lifts a rule.
       unlocks: {
         for (final u in PhoneUnlock.values)
@@ -750,6 +1007,9 @@ class PhonePolicies {
   /// The hard rules the person lifted; empty by default.
   final Set<PhoneUnlock> unlocks;
 
+  /// Missing, malformed or unread native settings remain unknown.
+  final bool? localOcrEnabled;
+
   Map<String, Object?> toWire() => {
     'denyPackages': denyPackages,
     'confirmEveryWritePackages': confirmEveryWritePackages,
@@ -764,6 +1024,7 @@ class PhonePolicies {
     defaultConfirm: defaultConfirm,
     confirmMode: mode,
     unlocks: unlocks,
+    localOcrEnabled: localOcrEnabled,
   );
 
   PhonePolicies withUnlock(PhoneUnlock unlock, bool on) => PhonePolicies(
@@ -774,6 +1035,18 @@ class PhonePolicies {
     defaultConfirm: defaultConfirm,
     confirmMode: confirmMode,
     unlocks: on ? {...unlocks, unlock} : ({...unlocks}..remove(unlock)),
+    localOcrEnabled: localOcrEnabled,
+  );
+
+  PhonePolicies withLocalOcrEnabled(bool? enabled) => PhonePolicies(
+    denyPackages: denyPackages,
+    confirmEveryWritePackages: confirmEveryWritePackages,
+    labels: labels,
+    defaultDeny: defaultDeny,
+    defaultConfirm: defaultConfirm,
+    confirmMode: confirmMode,
+    unlocks: unlocks,
+    localOcrEnabled: enabled,
   );
 
   AppRule ruleFor(String package) {
@@ -813,6 +1086,7 @@ class PhonePolicies {
       defaultConfirm: defaultConfirm,
       confirmMode: confirmMode,
       unlocks: unlocks,
+      localOcrEnabled: localOcrEnabled,
     );
   }
 }
@@ -852,6 +1126,7 @@ enum PhoneDecision {
       'confirmed' ||
       'confirmed_app' ||
       'confirmed_task' ||
+      'confirmed_visual' ||
       'allow_once' ||
       'allow_app_for_task' ||
       'allow_all_for_task' => allowed,
@@ -906,14 +1181,62 @@ class PhoneLogEntry {
 
 // ── Channel ──────────────────────────────────────────────────────────────────
 
-/// Typed wrapper over `dsh/phone` + `dsh/phone/events`.
+/// A bounded local-only preview message; it never joins ordinary phone status.
+class PhonePreviewFrame {
+  const PhonePreviewFrame({
+    required this.taskId,
+    required this.generation,
+    required this.sequence,
+    required this.state,
+    this.width = 0,
+    this.height = 0,
+    this.imageBytes,
+  });
+
+  static PhonePreviewFrame? parse(Object? raw) {
+    if (raw is! Map) return null;
+    final taskId = raw['taskId'];
+    final generation = raw['generation'];
+    final sequence = raw['sequence'];
+    final state = raw['state'];
+    if (taskId is! int || taskId <= 0 || generation is! int || generation < 0 ||
+        sequence is! int || sequence < 0 ||
+        !const {'off', 'waiting', 'frame', 'unavailable', 'protected', 'inUse'}.contains(state)) {
+      return null;
+    }
+    if (state != 'frame') {
+      return PhonePreviewFrame(taskId: taskId, generation: generation, sequence: sequence, state: state as String);
+    }
+    final bytes = raw['imageBytes'];
+    final width = raw['width'];
+    final height = raw['height'];
+    if (bytes is! Uint8List || bytes.isEmpty || bytes.lengthInBytes > 128 * 1024 ||
+        width is! int || width < 1 || width > 800 || height is! int || height < 1 || height > 800) {
+      return null;
+    }
+    return PhonePreviewFrame(taskId: taskId, generation: generation, sequence: sequence,
+        state: 'frame', width: width, height: height, imageBytes: bytes);
+  }
+
+  final int taskId;
+  final int generation;
+  final int sequence;
+  final String state;
+  final int width;
+  final int height;
+  final Uint8List? imageBytes;
+}
+
+/// Typed wrapper over the private phone method, status, and preview channels.
 class PhoneChannel {
-  PhoneChannel({MethodChannel? methods, EventChannel? events})
+  PhoneChannel({MethodChannel? methods, EventChannel? events, EventChannel? preview})
     : _methods = methods ?? const MethodChannel('dsh/phone'),
-      _events = events ?? const EventChannel('dsh/phone/events');
+      _events = events ?? const EventChannel('dsh/phone/events'),
+      _preview = preview ?? const EventChannel('dsh/phone/preview');
 
   final MethodChannel _methods;
   final EventChannel _events;
+  final EventChannel _preview;
   Stream<PhoneStatus>? _stream;
 
   /// Status pushes. Listen only after [status] came back ready: activating the
@@ -936,6 +1259,133 @@ class PhoneChannel {
   }
 
   Future<bool> setEnabled(bool enabled) => _bool('setEnabled', {'enabled': enabled});
+
+  /// Explicit preference only; native snapshots it when a new background driver is created.
+  Future<PhoneResult> setBackgroundViewport(PhoneBackgroundViewport preset) =>
+      _result('setBackgroundViewport', {'preset': preset.name});
+
+  Future<PhoneResult> setBackgroundParallelLimit(int limit) =>
+      _result('setBackgroundParallelLimit', {'limit': limit});
+
+  Future<bool> setBackgroundPreview(bool enabled) => _bool('setBackgroundPreview', {'enabled': enabled});
+
+  /// One App viewer at a time. Cancellation completes after the native ACK.
+  Stream<PhonePreviewFrame?> previewFrames(int taskId) {
+    final messenger = _preview.binaryMessenger;
+    final control = MethodChannel(_preview.name, _preview.codec, messenger);
+    final arguments = <String, Object>{'taskId': taskId};
+    late final StreamController<Object?> controller;
+    var cancelled = false;
+
+    Future<void> start() async {
+      try {
+        await control.invokeMethod<void>('listen', arguments);
+      } catch (error, stack) {
+        if (!cancelled && !controller.isClosed) {
+          controller.addError(error, stack);
+        }
+      }
+    }
+
+    controller = StreamController<Object?>(
+      onListen: () {
+        messenger.setMessageHandler(_preview.name, (reply) async {
+          if (cancelled || controller.isClosed) {
+            return null;
+          }
+          if (reply == null) {
+            unawaited(controller.close());
+          } else {
+            try {
+              controller.add(_preview.codec.decodeEnvelope(reply));
+            } on PlatformException catch (error, stack) {
+              controller.addError(error, stack);
+            }
+          }
+          return null;
+        });
+        unawaited(start());
+      },
+      onCancel: () async {
+        cancelled = true;
+        messenger.setMessageHandler(_preview.name, null);
+        await control.invokeMethod<void>('cancel', arguments);
+      },
+    );
+    return controller.stream.map(PhonePreviewFrame.parse);
+  }
+
+  Future<bool> setSkillSavePrompt(bool enabled) => _bool('setSkillSavePrompt', {'enabled': enabled});
+
+  Future<PhoneSkillReply> openSkillDraft(PhoneSkillCandidate candidate, {required bool confirmed}) =>
+      _skillReply('skillDraft', {'action': 'open', 'taskId': candidate.taskId,
+        'generation': candidate.generation, 'confirmed': confirmed});
+
+  Future<PhoneSkillReply> editSkillDraft(PhoneSkillDraftView draft, {required String goal,
+    required String prerequisites, required List<String> checkpoints, required List<int> stepOrder}) =>
+      _skillReply('skillDraft', {'action': 'edit', 'taskId': draft.taskId, 'draftId': draft.draftId,
+        'revision': draft.revision, 'goal': goal, 'prerequisites': prerequisites,
+        'checkpoints': checkpoints, 'stepOrder': stepOrder});
+
+  Future<PhoneSkillReply> checkSkillSave(PhoneSkillSaveHandle handle) =>
+      _skillReply('skillDraft', handle.query);
+
+  Future<PhoneSkillReply> viewSkillDraft(PhoneSkillDraftView draft) => _skillReply('skillDraft',
+      {'action': 'view', 'taskId': draft.taskId, 'draftId': draft.draftId});
+
+  Future<PhoneSkillReply> saveSkillDraft(PhoneSkillDraftView draft, {required bool confirmed}) =>
+      _skillReply('saveSkillDraft', {'taskId': draft.taskId, 'draftId': draft.draftId,
+        'revision': draft.revision, 'confirmed': confirmed});
+
+  Future<PhoneSkillReply> discardSkillDraft(PhoneSkillDraftView draft) =>
+      _skillReply('discardSkillDraft', {'taskId': draft.taskId, 'draftId': draft.draftId});
+
+  Future<PhoneSkillReplayInspection> inspectSkillReplay(String skillId) async {
+    try {
+      return PhoneSkillReplayInspection.parse(await _methods.invokeMapMethod<Object?, Object?>(
+        'inspectSkillReplay', {'skillId': skillId}));
+    } on MissingPluginException {
+      return const PhoneSkillReplayInspection.unavailable();
+    } on PlatformException {
+      return const PhoneSkillReplayInspection.unavailable();
+    }
+  }
+
+  Future<PhoneSkillReplayReady?> prepareSkillReplay({required String skillId, required String revision,
+    required String sessionId, required PhoneSkillReplayApp app}) async {
+    try {
+      return PhoneSkillReplayReady.parse(await _methods.invokeMapMethod<Object?, Object?>(
+        'prepareSkillReplay', {'skillId': skillId, 'revision': revision, 'sessionId': sessionId,
+          'parameters': {'appSlots': {'app1': {'packageName': app.packageName, 'uid': app.uid}}, 'values': <String, Object?>{}}}));
+    } on MissingPluginException {
+      return null;
+    } on PlatformException {
+      return null;
+    }
+  }
+
+  Future<bool> discardSkillReplay(String invocation) async {
+    try {
+      final reply = await _methods.invokeMapMethod<Object?, Object?>('discardSkillReplay', {'invocation': invocation});
+      return reply?['kind'] == 'discarded';
+    } on MissingPluginException {
+      return false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  Future<PhoneSkillReply> _skillReply(String method, Map<String, Object?> arguments) async {
+    try {
+      return PhoneSkillReply.parse(await _methods.invokeMapMethod<Object?, Object?>(method, arguments));
+    } on MissingPluginException {
+      return const PhoneSkillReply.unavailable();
+    } on PlatformException {
+      // Draft contents and native exception details never enter an error message or a log.
+      return const PhoneSkillReply.unavailable();
+    }
+  }
+
 
   Future<bool> openAccessibilitySettings() => _bool('openAccessibilitySettings');
 
@@ -992,6 +1442,9 @@ class PhoneChannel {
 
   Future<bool> setPolicies(PhonePolicies policies) => _bool('setPolicies', policies.toWire());
 
+  Future<bool> setLocalOcrEnabled(bool enabled) =>
+      _bool('setPolicies', {'localOcrEnabled': enabled});
+
   /// Lifts or restores one hard rule, and nothing else (`setPolicies` keeps
   /// what it isn't sent).
   Future<bool> setUnlock(PhoneUnlock unlock, bool on) => _bool('setPolicies', {
@@ -1012,7 +1465,18 @@ class PhoneChannel {
     }
   }
 
-  Future<bool> stopTask() => _bool('stopTask');
+  Future<bool> stopTask({int? taskId}) => _bool('stopTask', taskId == null ? null : {'taskId': taskId});
+
+  Future<bool> retryTaskCleanup(int taskId) => _bool('retryTaskCleanup', {'taskId': taskId});
+
+  Future<bool> acknowledgeTaskInterruption(String batchToken) =>
+      _bool('acknowledgeTaskInterruption', {'batchToken': batchToken});
+
+  Future<bool> retryTaskInterruptionStorage() => _bool('retryTaskInterruptionStorage');
+
+  Future<bool> resumeTask(int taskId) => _bool('resumeTask', {'taskId': taskId});
+
+  Future<bool> pauseTask(int taskId, bool paused) => _bool('pauseTask', {'taskId': taskId, 'paused': paused});
 
   /// Private, structured engine request. Native owns the UI identity, nonce,
   /// one-active-card policy and 30-second deadline; text is never an action.
@@ -1090,13 +1554,16 @@ class PhoneChannel {
   /// The turn that drove the phone ended: closes the overlay and ends the
   /// task; with [reopen], brings the app forward on [sessionId] (just the app
   /// when null) if it is in the background, and says whether it came up.
-  Future<PhoneFinish> finishTask({required int taskId, String? sessionId, String? host, bool reopen = false}) async {
+  Future<PhoneFinish> finishTask({required int taskId, String? sessionId, String? host, bool reopen = false, String? runId, int? generation, bool appOnly = false}) async {
     try {
       final map = await _methods.invokeMapMethod<Object?, Object?>('finishTask', {
         'taskId': taskId,
         'sessionId': sessionId,
         'host': host,
         'reopen': reopen,
+        'runId': ?runId,
+        'generation': ?generation,
+        if (appOnly) 'appOnly': true,
       });
       return map == null ? const PhoneFinish() : PhoneFinish.fromMap(map);
     } on MissingPluginException {

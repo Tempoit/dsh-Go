@@ -1,4 +1,6 @@
-// Portions derived from DeepSeek Harness (https://github.com/deepseek-ai/deepseek-harness), MIT, Copyright (c) 2026 DeepSeek. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 DeepSeek
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 // Local changes: the phone actions (share, save to Downloads, copy path),
 // thumbnails, and the "generated files" card for turns without deliverables.
 

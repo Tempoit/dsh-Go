@@ -21,8 +21,10 @@ void main() {
   late FakeInstaller installer;
   late ProviderContainer container;
   late AppUpdateController controller;
+  late bool disposed;
 
   setUp(() async {
+    disposed = false;
     directory = Directory.systemTemp.createTempSync('update-result-');
     installer = FakeInstaller();
     SharedPreferences.setMockInitialValues({
@@ -52,7 +54,7 @@ void main() {
   });
 
   tearDown(() async {
-    container.dispose();
+    if (!disposed) container.dispose();
     await directory.delete(recursive: true);
   });
 
@@ -122,5 +124,29 @@ void main() {
     await controller.onAppResumed(confirmGrace: Duration.zero);
     expect(container.read(appUpdateProvider).problem, UpdateProblem.installCancelled);
     expect(await controller.installWithSystem(), isTrue);
+  });
+
+  test('system fallback does not open after another install starts during its file check', () async {
+    final inspection = installer.pendingInspect = Completer<ApkInspection>();
+    final opening = controller.installWithSystem();
+    final installing = controller.install();
+
+    final opened = await opening;
+    await installer.called('inspect');
+    inspection.complete(installer.inspection);
+    await installing;
+
+    expect(opened, isFalse);
+    expect(installer.calls, isNot(contains('openWithSystemInstaller')));
+    expect(installer.calls.where((call) => call == 'install'), hasLength(1));
+  });
+
+  test('system fallback retires quietly when its provider is disposed during the file check', () async {
+    final opening = controller.installWithSystem();
+    container.dispose();
+    disposed = true;
+
+    await expectLater(opening, completion(isFalse));
+    expect(installer.calls, isNot(contains('openWithSystemInstaller')));
   });
 }

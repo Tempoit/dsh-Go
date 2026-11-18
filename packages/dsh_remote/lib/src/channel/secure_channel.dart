@@ -1,4 +1,6 @@
-// Portions derived from ds-harness-remote (https://github.com/liguobao/ds-harness-remote), MIT, Copyright (c) 2026 DSH Remote contributors. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 DSH Remote contributors
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 // Client-side Noise IK channel over a [SecureHandshakeTransport].
 library;
 
@@ -105,6 +107,8 @@ class SecureChannel {
 
   Future<void> _handshake(Duration timeout) async {
     final done = _handshakeDone = Completer<void>();
+    // listen may synchronously replay closure before the awaited send starts.
+    done.future.ignore();
     _transport.listen(onData: _onData, onHandshake: _onHandshakeMessage, onClosed: _onTransportClosed);
     try {
       await _transport.sendHandshake(1, _noise.writeHandshake());
@@ -193,9 +197,13 @@ class SecureChannel {
   }
 
   /// Sends one Remote message. Calls are serialized; a failure closes the
-  /// channel.
-  Future<void> send(Uint8List message) {
-    final run = _sendTail.then((_) => _sendNow(message));
+  /// channel. [canSend] may retire a queued message before its first fragment
+  /// is encoded/encrypted. It is not checked again once sending has started.
+  Future<void> send(Uint8List message, {bool Function()? canSend}) {
+    final run = _sendTail.then<void>((_) {
+      if (canSend?.call() == false) return null;
+      return _sendNow(message);
+    });
     _sendTail = run.catchError((Object _) {});
     return run;
   }
@@ -232,8 +240,12 @@ class SecureChannel {
     _onClosed?.call(reason);
   }
 
-  Future<void> close() async {
+  /// Closes the channel before notifying receivers, retaining an optional
+  /// local protocol failure instead of reporting it as a client shutdown.
+  Future<void> close({SecureChannelClosed? reason}) async {
     if (_closed) return;
-    _fail(const SecureChannelClosed('CLIENT_CLOSED', 'The client closed the secure channel.', retryable: false));
+    _fail(
+      reason ?? const SecureChannelClosed('CLIENT_CLOSED', 'The client closed the secure channel.', retryable: false),
+    );
   }
 }

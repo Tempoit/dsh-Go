@@ -10,6 +10,8 @@ const prefix=resolve(process.argv[2]), output=process.argv[3] ? resolve(process.
 const pkg=join(prefix,'node_modules/@deepseek-ai');
 const apiFile=join(pkg,'dsh-api-session-controller/lib/b9-measure-'+process.pid+'.mjs');
 const cacheFile=join(pkg,'dsh-session-projection-cache/lib/b9-measure-'+process.pid+'.mjs');
+const {Context}=await import(pathToFileURL(join(pkg,'cordis/lib/index.js')));
+const owner=new Context();
 const temporary=[];
 const result={node:process.version,platform:process.platform,arch:process.arch,timezone:process.env.TZ,count:500,warmups:1,samples:5,
   scope:'Real ApiSessionList, SessionProjectionCache read methods, DomainFacility and JsonStorageBackend. Service lifecycle, projection-view registry and session log persistence are fixture boundaries; not a running Host or phone benchmark.',groups:[]};
@@ -46,6 +48,7 @@ try {
     let cache, beforeObserve;
     const persistence={identity:{},stat:async(id)=>{counts.persistenceStat++;return {revision:revisions.get(id),header:headers.get(id)};}};
     const ctx={
+      fiber:owner.fiber,
       emit(){},inject(){},logger:{warn(message){throw new Error(message);},error(message){throw new Error(message);}},
       storage:{backend:{get:()=>({kv:{open:async descriptor=>{
         const unit=await jsonBackend.kv.open(descriptor);
@@ -58,7 +61,7 @@ try {
       }}})}},
       sessions:new Map(),agents:new Map(),
       // Fixtures are valid version-1 title/metadata values. This boundary does not test projection registry hydration.
-      sessionProjections:{register(){},viewCheckpoint(rows,keys){
+      sessionProjections:{register(){},summaryKeys(){return ["title","sessionListMetadata"]},viewCheckpoint(rows,keys){
         return Object.fromEntries(Object.entries(rows).filter(([key,row])=>row.ver===1&&(!keys||keys.includes(key))).map(([key,row])=>[key,row.val]));
       }},
       get(name){return name==='sessionProjectionCache'?cache:name==='sessionPersistence'?persistence:undefined;},
@@ -96,7 +99,8 @@ try {
       assert.equal(changes.readRecord,expectedRead,`${label}: read only changed JSON`);
       assert.equal(changes.recordSchemaParses,expectedRead,`${label}: parse only changed JSON`);
       assert.equal(changes.statRecord,shrunk ? 1 : 500,`${label}: one stat per cold record`);
-      assert.equal(changes.persistenceStat,mode==='fallback' ? records.length : 0);
+      // A cold record with no reusable hint is stat'ed by observeSession itself, so the first list adds none.
+      assert.equal(changes.persistenceStat,mode==='fallback' && !first ? records.length : 0);
       assert.equal(changes.observeSession,expectedObserve,`${label}: reuse unchanged log revisions`);
       assert.equal(list.coldHints.size,mode==='fallback' ? records.length : 0);
       const row={label,elapsedMs:elapsed,...changes,retainedHints:list.coldHints.size,rowCount:rows.length,rowsSha256:createHash('sha256').update(JSON.stringify(rows)).digest('hex')};
@@ -135,6 +139,7 @@ try {
   if(output){await mkdir(resolve(output,'..'),{recursive:true});await writeFile(output,JSON.stringify(result,null,2)+'\n');}
   console.log('PASS 500 cold sessions: changed-record reads, revision reuse, visible-set bound and no write-back');
 } finally {
+  await owner.fiber.dispose();
   await rm(apiFile,{force:true});await rm(cacheFile,{force:true});
   for(const path of temporary)await rm(path,{recursive:true,force:true});
 }

@@ -52,6 +52,8 @@ Run these commands from the repository root. Select checks relevant to your chan
 (cd app && flutter pub get && flutter analyze && flutter test)
 ```
 
+**UI work on a phone (hot reload):** `tooling/dev-run.sh` installs the debug build over the release build already on the phone, then attaches Flutter, so pressing `r` applies a change within seconds. It uses `adb install -r` and `flutter attach` instead of `flutter run`, because a failed `flutter run` install uninstalls the app first, which erases the phone's data. Animations stutter in debug mode, so use it for layout, sizes and colours, and judge smoothness on a release build. It needs `app/android/key.properties` with the same key as the build on the phone.
+
 **Dart communication packages:**
 
 ```bash

@@ -1,11 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, realpath, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, realpath, readdir, rm } from 'node:fs/promises';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { Config, CREDENTIAL_SLOTS, catalogModel } from '../src/config.js';
 import { createWorkspaceAuthorizer, installMedia } from '../src/index.js';
 import { MediaError } from '../src/errors.js';
+import { createHttpTransport } from '../src/http.js';
+import { createBudgetLedger } from '../src/budget-ledger.js';
 
 function deferred() {
   let resolve;
@@ -29,7 +33,7 @@ function mockResult(request) {
   };
 }
 
-async function fixture(t, { raw = {}, configured = [], generate, describe } = {}) {
+async function fixture(t, { raw = {}, configured = [], generate, describe, engineOptions, approve } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'dsh-media-wiring-'));
   const workspace = join(directory, 'workspace');
   await mkdir(workspace);
@@ -40,6 +44,7 @@ async function fixture(t, { raw = {}, configured = [], generate, describe } = {}
     services: { get: () => parsed.services.get() },
     defaults: { get: () => parsed.defaults.get() },
     limits: { get: () => parsed.limits.get() },
+    budget: { get: () => parsed.budget.get() },
   };
   const registered = new Map();
   const prompts = new Map();
@@ -68,6 +73,8 @@ async function fixture(t, { raw = {}, configured = [], generate, describe } = {}
       listeners.set(event, entries);
       return () => listeners.set(event, entries.filter(item => item !== callback));
     },
+    jobs: { events: { subscribe() { return () => {}; } } },
+    approval: { request: approve ?? (async () => 'allowed-once') },
     tools: {
       register(definition) {
         assert.equal(registered.has(definition.name), false);
@@ -124,7 +131,9 @@ async function fixture(t, { raw = {}, configured = [], generate, describe } = {}
   };
   // Any command registration is outside M0.
   Object.defineProperty(ctx, 'commands', { get() { throw new Error('unexpected command access'); } });
-  const installed = installMedia(ctx, config, { generate: generate ?? (async request => mockResult(request)) });
+  const installed = installMedia(ctx, config, engineOptions === undefined
+    ? { generate: generate ?? (async request => mockResult(request)) }
+    : { engineOptions });
   let cleaned = false;
   async function cleanup() {
     if (cleaned) return;
@@ -315,6 +324,80 @@ test('retiring a configured service aborts and drains a running call', async t =
     await Promise.allSettled([operation]);
   }
 });
+
+for (const submitted of [false, true]) {
+  test(`settings refresh ${submitted ? 'after POST preserves submission_unknown' : 'before submission remains cancelled'}`, { timeout: 10000 }, async t => {
+    // Real installMedia, admission, engine, HTTP and disk; ctx and the incoming
+    // volatile notification are fixtures. The server never invents a receipt.
+    const received = deferred(), approval = deferred(), approved = deferred(), closed = deferred();
+    const wires = [];
+    const server = createServer(async (request, _response) => {
+      const chunks = [];
+      for await (const bytes of request) chunks.push(bytes);
+      wires.push({ method: request.method, path: request.url, body: JSON.parse(Buffer.concat(chunks)) });
+      received.resolve();
+    });
+    server.on('connection', socket => socket.once('close', () => closed.resolve()));
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const origin = `http://127.0.0.1:${server.address().port}`;
+    const local = createHttpTransport({ allowLoopback: true });
+    const raw = { services: [service({ models: 'gpt-image-2' })], budget: { dailyCny: '20', unknownPriceHoldCny: '20' } };
+    let approvals = 0;
+    let f;
+    try {
+      f = await fixture(t, {
+        raw, configured: [CREDENTIAL_SLOTS[0]],
+        approve() {
+          approvals++;
+          approval.resolve();
+          return submitted ? 'allowed-once' : approved.promise;
+        },
+        engineOptions: { transport(url, options) {
+          assert.equal(new URL(url).origin, 'https://api.openai.com');
+          return local(origin + new URL(url).pathname, options);
+        } },
+      });
+      await f.installed.ready;
+      const exec = f.exec();
+      const outcome = f.registered.get('generate_image').execute({ prompt: 'a blue circle' }, exec)
+        .then(() => assert.fail('refresh must abort the operation'), error => error);
+      await Promise.race([(submitted ? received : approval).promise, outcome.then(error => { throw error; })]);
+      assert.equal(exec.signal.aborted, false);
+      if (submitted) {
+        assert.equal(wires.length, 1);
+        assert.equal(wires[0].method, 'POST');
+        assert.equal(wires[0].path, '/v1/images/generations');
+        assert.equal(wires[0].body.model, 'gpt-image-2');
+      }
+      f.setRaw({ ...raw, budget: { ...raw.budget, dailyCny: '40' } });
+      f.emit('loader/volatile-update', [['budget']]);
+      approved.resolve('allowed-once');
+      const error = await outcome;
+      assert.equal(exec.signal.aborted, false);
+      await f.installed.settled();
+      assert.ok(f.registered.has('generate_image'));
+      assert.equal(approvals, 1);
+      assert.equal(wires.length, submitted ? 1 : 0);
+      const ledger = await createBudgetLedger(join(f.home, 'media', 'dsh-media', 'budget')).snapshot();
+      assert.equal(ledger.requests.length, submitted ? 1 : 0);
+      if (submitted) {
+        await closed.promise;
+        const record = ledger.requests[0];
+        assert.equal(record.state, 'submission_unknown');
+        assert.equal(record.estimateMicros, 20_000_000);
+        assert.equal(record.providerTaskId, undefined);
+        assert.deepEqual(await readdir(join(f.workspace, 'generated', record.outputDate)), []);
+      }
+      assert.equal(error.code, submitted ? 'submission_unknown' : 'cancelled');
+    } finally {
+      approved.resolve('allowed-once');
+      await f?.cleanup();
+      server.closeAllConnections();
+      await new Promise(resolve => server.close(resolve));
+    }
+  });
+}
 
 test('authorization rechecks the real session policy on every invocation', async t => {
   const f = await fixture(t);

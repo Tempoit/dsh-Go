@@ -420,7 +420,13 @@
   "botsDuplicateHint": "沿用设置，对话与记忆从头开始",
   "botsDuplicateNamed": "复制 {name}？",
   "botsDuplicateBody": "新 Bot 沿用职责、指令和模型设置，对话与个人记忆从头开始，名称由主机分配。模型可用时，它会先发送一句问候。",
-  "@botsDuplicateNamed": {"placeholders": {"name": {"type": "String"}}},
+  "@botsDuplicateNamed": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "botsChooseModelStart": "选一个模型开始",
   "botsNoChats": "还没有对话",
   "botsUnreadCount": "{count} 条未读",
@@ -703,6 +709,27 @@
   "botsPetDisplayWhen": "显示时机",
   "botsPetWhenActive": "有事时显示",
   "botsPetAlways": "一直显示",
+  "botsPetOverlayShows": "悬浮窗里显示",
+  "botsPetOverlayPixel": "像素宠物",
+  "botsPetOverlayCompanion": "小屋里的她",
+  "botsPetOverlayCompanionNamed": "小屋里的{name}",
+  "@botsPetOverlayCompanionNamed": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "botsPetOverlayNoPack": "先去伙伴小屋里请一位角色",
+  "botsPetOverlayPackBroken": "角色包不完整，去伙伴小屋里重新导入",
+  "botsPetOverlayUnavailable": "这台手机暂时请不出她",
+  "botsPetOverlayCompanionHint": "点一下和她互动，连点两下打开对话。比像素宠物更耗电，熄屏和隐藏时会停下来",
+  "botsPetOverlayLoading": "正在请她出来…",
+  "botsPetOverlayFallback": "她没能出来，先由像素宠物顶班",
+  "botsPetOverlayFraming": "取景",
+  "botsPetOverlayFramingFull": "全身",
+  "botsPetOverlayFramingHalf": "半身",
+  "botsPetOverlayFramingHint": "换取景会重新加载她",
   "botsPetSwitchDisabled": "开关点不动",
   "botsPetRestrictedSettings": "允许受限制的设置",
   "botsPetHiddenToday": "今天不再显示",
@@ -715,7 +742,93 @@
   "botsPetNone": "不显示",
   "botsPets": "宠物",
   "botsPetSource": "来自 DSH-TUI",
+  "botsPetImport": "导入",
+  "botsPetImportHint": "导入你自己的像素宠物：一个 zip，里面是 pack.json 和序列帧 PNG，格式见仓库里的 docs/design/pets.md。长按导入的宠物可以删除。",
+  "botsPetImportDone": "「{name}」来了",
+  "botsPetCodexTitle": "「{name}」是从 Codex 宠物转过来的",
+  "botsPetCodexBody": "大部分照原样，有几处不完全一样：",
+  "botsPetCodexOk": "知道了",
+  "botsPetCodexLoops": "动作会一直循环到状态变化，不像 Codex 里跑几遍就回到待机",
+  "botsPetCodexRoamLeft": "往左走用的是往右走那一行的镜像",
+  "botsPetCodexDrag": "拖着它时一律用朝右的那一行",
+  "botsPetCodexSleep": "睡觉时用待机的第一帧",
+  "botsPetCodexLook": "看向不同方向的那些格子没用上",
+  "botsPetCodexWebp": "WebP 图转成了 PNG",
+  "botsPetCodexCustomTracks": "自定义的动作行没接到任何状态上",
+  "botsPetCodexFps": "帧率换算成毫秒时取了整",
+  "botsPetCodexOneShot": "只播一次的动作，播完回到哪里由 DSH 决定",
+  "botsPetCodexMissingAuthor": "包里没写作者",
+  "botsPetCodexMissingLicense": "包里没写授权",
+  "botsPetCodexMissingSource": "包里没写来源",
+  "@botsPetImportDone": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "@botsPetCodexTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "botsPetImportReplaced": "「{name}」换成了新的",
+  "@botsPetImportReplaced": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "botsPetImportNotZip": "这不是 zip 文件",
+  "botsPetImportNoPack": "zip 里没有 pack.json",
+  "botsPetImportBadPack": "pack.json 有问题：{detail}",
+  "@botsPetImportBadPack": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "botsPetImportMissingSheet": "zip 里少了序列帧图 {name}",
+  "@botsPetImportMissingSheet": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "botsPetImportBadSheet": "序列帧图不对：{name}（要完整的 PNG，每边不超过 4096 像素，每一帧都在图内）",
+  "@botsPetImportBadSheet": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "botsPetImportTooLarge": "这个宠物包太大了",
+  "botsPetImportStorage": "没能存到手机上，再试一次",
+  "botsPetRemoveTitle": "删除「{name}」？",
+  "@botsPetRemoveTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "botsPetRemoveBody": "删除后可以再导入。",
+  "botsPetRemoveFailed": "没能删除「{name}」，再试一次",
+  "@botsPetRemoveFailed": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "botsPetSize": "大小",
+  "botsPetCustomSize": "自定义大小",
   "botsPetQuiet": "安静模式",
   "botsPetQuietSubtitle": "只做动作，不冒气泡",
   "botsPetShowNow": "立即显示",
@@ -751,7 +864,7 @@
   },
   "botsTerminalCloseBody": "里面的进程会结束",
   "botsTerminalUnsupported": "这个连接用不了终端",
-  "botsTerminalSupportedHosts": "在本机或 SSH 主机上可用",
+  "botsTerminalSupportedHosts": "在本机、SSH 主机或 Remote 电脑上可用",
   "botsTerminalOpening": "正在打开终端…",
   "botsTerminalNone": "没有打开的终端",
   "botsTerminalNew": "新建终端",

@@ -10,6 +10,7 @@ import java.nio.file.Files
 import java.nio.file.StandardOpenOption
 import java.security.DigestInputStream
 import java.security.MessageDigest
+import org.json.JSONObject
 
 /**
  * Unpacks the bundled rootfs into app-private storage.
@@ -24,7 +25,8 @@ import java.security.MessageDigest
  *   runtime.reset/     the runtime being deleted
  *   runtime-keep/      what the reset keeps, mirrored under rootfs paths, until the next install
  *
- * Upgrading keeps the user's /root (DSH_HOME, workspaces) from the previous rootfs.
+ * First install creates the system; upgrades replace only app-owned engine paths.
+ * The user's Linux system, package databases and home are never rebuilt implicitly.
  */
 class RuntimeInstaller(
     private val context: Context,
@@ -39,10 +41,15 @@ class RuntimeInstaller(
     private val retiredDir = File(context.filesDir, "runtime.reset")
     private val keepDir = File(context.filesDir, "runtime-keep")
 
+    private val engineUpgrade = EngineUpgrade(baseDir, sync)
+
     fun installedVersion(): String? =
-        if (rootfs.isDirectory && versionFile.isFile) versionFile.readText().trim().ifEmpty { null } else null
+        if (!engineUpgrade.isPending() && rootfs.isDirectory && versionFile.isFile) versionFile.readText().trim().ifEmpty { null } else null
 
     fun isCurrent(): Boolean = installedVersion() == manifest.runtimeVersion
+
+    /** A current runtime skips install(), but an interrupted final cleanup can still need this. */
+    fun cleanupCommittedUpgrade() = engineUpgrade.cleanupCommitted()
 
     /**
      * Extracts the bundled rootfs; [onProgress] gets (compressedBytesRead, totalCompressedBytes).
@@ -51,54 +58,72 @@ class RuntimeInstaller(
      */
     fun install(dropKept: Boolean = false, onProgress: (Long, Long) -> Unit) {
         // A reset killed halfway finishes first, so what it keeps is in runtime-keep for the restore.
-        settleReset(retiredDir, keepDir, dropKept)
+        settleReset(baseDir, retiredDir, keepDir, dropKept, sync)
         baseDir.mkdirs()
+        // The transaction owns its payload outside staging. Finish it before any
+        // cleanup, including when a different APK resumes this install.
+        engineUpgrade.recover()
         staging.deleteRecursivelySafely()
-        checkFreeSpace()
+        if (resumeRootfsInstall(baseDir, manifest.runtimeVersion, manifest.abi, manifest.raw,
+                keepDir, dropKept, sync)) return
+        val archives = manifest.archivesForInstall(Files.exists(rootfs.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS))
+        checkFreeSpace(archives)
         staging.mkdirs()
 
-        val assetPath = "${RuntimeManifest.ASSET_DIR}/${manifest.rootfsAsset}"
-        val assetBytes = assetLength(assetPath)
-        val total = assetBytes.takeIf { it > 0 } ?: manifest.rootfsBytes
+        val assetLengths = archives.map { assetLength("${RuntimeManifest.ASSET_DIR}/${it.asset}") }
+        val totals = archives.mapIndexed { i, archive -> assetLengths[i].takeIf { it > 0 } ?: archive.bytes }
+        val total = totals.sum()
+        onLog("[dsh-app] install assets: ${archives.joinToString { it.asset }} ($total compressed bytes)")
+        var completed = 0L
         var lastReported = 0L
-        val progress: (Long) -> Unit = { read ->
-            if (read - lastReported >= 512 * 1024 || read == total) {
-                lastReported = read
-                onProgress(read, total)
-            }
-        }
-        timed("verify") {
-            // Parallel readers revisit compressed bytes; hash the asset once, in order.
-            val digest = MessageDigest.getInstance("SHA-256")
-            DigestInputStream(context.assets.open(assetPath, AssetManager.ACCESS_STREAMING), digest).use { input ->
-                val buffer = ByteArray(1 shl 16)
-                while (input.read(buffer) >= 0) {}
-            }
-            val actual = digest.digest().joinToString("") { "%02x".format(it) }
-            val expected = manifest.rootfsSha256
-            if (expected != null && !expected.equals(actual, ignoreCase = true)) {
-                staging.deleteRecursivelySafely()
-                throw IllegalStateException(AppStrings.get(context, R.string.service_package_checksum_failed))
-            }
-        }
-        timed("extract") {
-            val extractor = TarExtractor(staging, progress)
-            if (manifest.rootfsAsset.endsWith(".xz") && assetBytes > 0) {
-                val decoded = ParallelXZInputStream.open(
-                    { AssetSeekableInputStream(context.assets.openFd(assetPath)) }, progress,
-                )
-                extractor.extractDecoded(decoded)
-            } else {
-                context.assets.open(assetPath, AssetManager.ACCESS_STREAMING).use { raw ->
-                    extractor.extract(raw, manifest.rootfsAsset)
+        for ((index, archive) in archives.withIndex()) {
+            val assetPath = "${RuntimeManifest.ASSET_DIR}/${archive.asset}"
+            val progress: (Long) -> Unit = { read ->
+                val aggregate = completed + read
+                if (aggregate - lastReported >= 512 * 1024 || aggregate == total) {
+                    lastReported = aggregate
+                    onProgress(aggregate, total)
                 }
             }
+            timed("verify") {
+                // Parallel readers revisit compressed bytes; hash each selected asset once, in order.
+                val digest = MessageDigest.getInstance("SHA-256")
+                DigestInputStream(context.assets.open(assetPath, AssetManager.ACCESS_STREAMING), digest).use { input ->
+                    val buffer = ByteArray(1 shl 16)
+                    while (input.read(buffer) >= 0) {}
+                }
+                val actual = digest.digest().joinToString("") { "%02x".format(it) }
+                val expected = archive.sha256
+                if (expected != null && !expected.equals(actual, ignoreCase = true)) {
+                    staging.deleteRecursivelySafely()
+                    throw IllegalStateException(AppStrings.get(context, R.string.service_package_checksum_failed))
+                }
+            }
+            timed("extract") {
+                val extractor = TarExtractor(staging, progress)
+                if (archive.asset.endsWith(".xz") && assetLengths[index] > 0) {
+                    val decoded = ParallelXZInputStream.open(
+                        { AssetSeekableInputStream(context.assets.openFd(assetPath)) }, progress,
+                    )
+                    extractor.extractDecoded(decoded)
+                } else {
+                    context.assets.open(assetPath, AssetManager.ACCESS_STREAMING).use { raw ->
+                        extractor.extract(raw, archive.asset)
+                    }
+                }
+            }
+            completed += totals[index]
         }
         onProgress(total, total)
 
+        val groupNames = appendAndroidGroupNames(staging,
+            runCatching { File("/proc/self/task/${android.os.Process.myTid()}/status").readText() }.getOrNull())
+        onLog("[dsh-app] install group names: " +
+            (groupNames.skipped?.let { "skipped ($it)" } ?: "added ${groupNames.added}"))
+
         timed("activate") {
-            activateRootfs(baseDir, manifest.runtimeVersion, keepDir, dropKept,
-                sync = { timed("sync") { sync() } })
+            activateRuntimeUpdate(baseDir, manifest.runtimeVersion, manifest.abi, manifest.raw,
+                keepDir, dropKept, sync = { timed("sync") { sync() } }, onLog = onLog)
         }
     }
 
@@ -111,8 +136,8 @@ class RuntimeInstaller(
         }
     }
 
-    private fun checkFreeSpace() {
-        val need = (manifest.uncompressedBytes.takeIf { it > 0 } ?: 600L * 1024 * 1024) * 115 / 100
+    private fun checkFreeSpace(archives: List<RuntimeArchive>) {
+        val need = requiredRuntimeInstallSpace(archives)
         val free = context.filesDir.usableSpace
         if (free < need) {
             val mb = { b: Long -> b / (1024 * 1024) }
@@ -122,13 +147,82 @@ class RuntimeInstaller(
 
     /** Deletes the runtime; [keep] (paths under the rootfs) waits in runtime-keep for the next install. */
     fun reset(keep: List<String>) {
-        retireRuntime(baseDir, retiredDir, keepDir, keep)
+        // tawcroot's store goes with the runtime: kept files it linked must become real files first.
+        if (keep.isNotEmpty() && TawcrootLinks.pending(rootfs)) {
+            val result = TawcrootLinks(rootfs, ::syncFilesystems, within = keep).run()
+            if (result is TawcrootLinks.Result.NotEnoughSpace) {
+                throw IllegalStateException("keep: needs ${result.need shr 20} MB free to keep files from the tawcroot launch, ${result.free shr 20} MB free")
+            }
+            // The store goes with the runtime: a kept name we could not convert would be lost.
+            check(!(result as TawcrootLinks.Result.Done).unseen) { "keep: some files from the tawcroot launch could not be read; nothing was reset" }
+        }
+        retireRuntime(baseDir, retiredDir, keepDir, keep, sync)
     }
 
     private fun assetLength(path: String): Long = try {
         context.assets.openFd(path).use { it.length }
     } catch (_: Exception) {
         -1L // compressed asset; fall back to the manifest
+    }
+}
+
+internal fun requiredRuntimeInstallSpace(archives: List<RuntimeArchive>): Long {
+    val bytes = archives.sumOf { it.uncompressedBytes }
+    return (bytes.takeIf { it > 0 } ?: 600L * 1024 * 1024) * 115 / 100
+}
+
+/**
+ * Called after reset and engine-transaction recovery, before reserving another archive's space.
+ * Only complete extracted trees are published as rootfs. If first activation stopped before
+ * creating its marker, finish that tree without extracting a second copy. Existing markers
+ * still take the normal route, including same-version repairs after a launch error.
+ */
+internal fun resumeRootfsInstall(
+    base: File, version: String, abi: String, raw: JSONObject,
+    keep: File? = null, dropKept: Boolean = false, sync: () -> Unit,
+): Boolean {
+    val rootfs = File(base, "rootfs")
+    if (File(base, "rootfs.version").present() || !rootfs.isDirectory) return false
+    try {
+        // Reuse the installed-system checks, including the old/carry rejection. Here the
+        // payload was already published, so its identity must match this APK exactly.
+        checkEngineCompatibility(base, raw, version, abi, payloadTree = rootfs)
+    } catch (_: RuntimeUpgradeBlocked) {
+        return false
+    }
+    finishRootfsInstall(base, version, keep, dropKept, sync)
+    return true
+}
+
+/** The production activation route, also exercised without an Android Context in JVM tests. */
+internal fun activateRuntimeUpdate(
+    base: File,
+    version: String,
+    abi: String,
+    raw: JSONObject,
+    keep: File? = null,
+    dropKept: Boolean = false,
+    sync: () -> Unit,
+    onLog: (String) -> Unit = {},
+) {
+    val rootfs = File(base, "rootfs")
+    if (Files.exists(rootfs.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+        val spec = checkEngineCompatibility(base, raw, version, abi)
+        // Finish an interrupted first install before the engine journal can mark it ready.
+        if (keep != null && !File(base, "rootfs.version").present()) restoreKept(keep, rootfs, dropKept)
+        onLog("[dsh-app] upgrading engine; preserving installed Linux system and user tools")
+        EngineUpgrade(base, sync).activate(version, spec)
+        File(base, "staging").deleteRecursivelySafely()
+    } else {
+        if (File(base, "home.carry").exists() || File(base, "rootfs.old").exists()) {
+            throw RuntimeUpgradeBlocked("legacy_interrupted")
+        }
+        // Only first install (or an explicit user-confirmed reset) may activate
+        // an entire rootfs. Never use this as an incompatible-upgrade fallback.
+        if (raw.optInt("schema", 1) == 2) {
+            checkLayeredFirstInstall(File(base, "staging"), raw, version, abi)
+        }
+        activateRootfs(base, version, keep, dropKept, sync = sync)
     }
 }
 
@@ -190,15 +284,23 @@ internal fun activateRootfs(
         home.deleteRecursivelySafely()
         if (!carry.renameTo(home)) throw IllegalStateException("could not restore the user's home")
     }
+    finishRootfsInstall(base, version, keep, dropKept, sync, syncDirectory)
+    retired.deleteRecursivelySafely()
+}
+
+private fun finishRootfsInstall(
+    base: File, version: String, keep: File?, dropKept: Boolean, sync: () -> Unit,
+    syncDirectory: (File) -> Unit = ::syncDirectory,
+) {
+    val rootfs = File(base, "rootfs")
     listOf("root", "root/workspace", "tmp", "dev", "proc", "sys").forEach { File(rootfs, it).mkdirs() }
     File(rootfs, "tmp").setWritable(true, false)
     // Before the version: until everything kept is back, the runtime reads as not installed.
     if (keep != null) restoreKept(keep, rootfs, dropKept)
-    // Everything the marker vouches for is on disk before it says ready. A marker torn by a
-    // power cut doesn't match the version, so the next start just installs again.
+    // Sync restored data before publishing a complete ready marker. An interrupted
+    // temporary write leaves the formal marker absent, so first-install resume can retry.
     sync()
-    versionFile.writeText(version)
-    retired.deleteRecursivelySafely()
+    publishRuntimeVersion(base, version, syncDirectory)
 }
 
 internal fun syncDirectory(directory: File) {
@@ -236,8 +338,8 @@ class KeepFailed(rel: String) : IllegalStateException("keep: could not move $rel
  * killed at any point is finished by the next one or by the next install ([settleReset]). Nothing is
  * deleted before what is kept has moved.
  */
-internal fun retireRuntime(base: File, retired: File, keep: File, paths: List<String>) {
-    settleReset(retired, keep)
+internal fun retireRuntime(base: File, retired: File, keep: File, paths: List<String>, sync: () -> Unit = ::syncFilesystems) {
+    settleReset(base, retired, keep, sync = sync)
     if (!base.exists()) {
         // Nothing to take from; the choice still applies to what an earlier reset kept.
         pruneKept(keep, paths)
@@ -249,7 +351,7 @@ internal fun retireRuntime(base: File, retired: File, keep: File, paths: List<St
         list.delete()
         throw IllegalStateException("could not retire the runtime")
     }
-    settleReset(retired, keep)
+    settleReset(base, retired, keep, sync = sync)
 }
 
 /**
@@ -259,15 +361,26 @@ internal fun retireRuntime(base: File, retired: File, keep: File, paths: List<St
  * runtime stays as it is and the next attempt picks up from there; with [dropFailed] it is deleted
  * with whatever could not move.
  */
-internal fun settleReset(retired: File, keep: File, dropFailed: Boolean = false) {
+internal fun settleReset(base: File, retired: File, keep: File, dropFailed: Boolean = false, sync: () -> Unit = ::syncFilesystems) {
     if (!retired.present()) return
     val list = File(retired, KEEP_LIST)
     val listed = readKeepList(list)
-    val rootfs = File(retired, "rootfs")
+    // activateRootfs keeps the authoritative home here until its move back succeeds.
+    // A reset during that interrupted upgrade must not keep the fresh rootfs skeleton.
+    val carry = File(retired, "home.carry")
+    val home = if (carry.exists()) carry else File(retired, "rootfs/root")
     for (rel in listed.orEmpty()) {
-        val from = File(rootfs, rel)
+        val from = File(home, rel.removePrefix("root/"))
         val to = File(keep, rel)
         if (!from.present() || to.present()) continue
+        // PRoot names still address the original rootfs even after retirement or
+        // home.carry. Materialize this item before deleting its shared .l2s store.
+        try {
+            L2sMigration(File(base, "rootfs"), sync, within = from, relocatedStore = File(home, ".l2s")).run()
+        } catch (_: Exception) {
+            if (!dropFailed) throw KeepFailed(rel)
+            // Still move this item: a failed conversion must not discard its ordinary files.
+        }
         to.parentFile?.mkdirs()
         if (!from.renameTo(to) && !dropFailed) throw KeepFailed(rel)
     }

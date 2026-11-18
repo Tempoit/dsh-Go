@@ -15,6 +15,9 @@
     <string name="overlay_fold_row">收成小球</string>
     <string name="overlay_hold_hint">按住小球 1 秒可直接停止</string>
     <string name="overlay_stop_description">停止 DSH 的操作</string>
+    <string name="overlay_move_left">移到左侧</string>
+    <string name="overlay_move_centre">移到中间</string>
+    <string name="overlay_move_right">移到右侧</string>
     <string name="overlay_paused_short">已暂停</string>
     <string name="overlay_waiting">等你在下方确认</string>
     <string name="overlay_waived">免确认</string>
@@ -24,4 +27,13 @@
     <string name="overlay_unlock_secrets">密码和验证码</string>
     <string name="overlay_unlock_own_app">DSH Go 自身</string>
     <string name="overlay_list_separator">、</string>
+    <string name="overlay_preview_readonly">后台屏预览，仅供查看</string>
+    <string name="overlay_preview_waiting">等待后台屏画面…</string>
+    <string name="overlay_preview_protected">受保护的画面，已隐藏预览</string>
+    <string name="overlay_preview_unavailable">暂时无法预览后台屏</string>
+    <string name="overlay_control_rejected">任务未接受这次操作。</string>
+    <string name="overlay_steer_rejected">未发送。任务已不能接受这条插话，文字已保留。</string>
+    <string name="overlay_preview_in_use">正在预览另一任务</string>
+    <string name="background_parallel_limit_invalid">后台任务上限须为 1、2 或 3。</string>
+    <string name="background_parallel_limit_save_failed">后台任务上限保存失败，请重试。</string>
 </resources>

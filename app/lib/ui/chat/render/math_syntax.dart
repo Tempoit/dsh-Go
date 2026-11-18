@@ -1,8 +1,8 @@
 // Turns the maths delimiters models write into the ones gpt_markdown parses,
 // without mistaking prices for formulas.
 //
-// The rules follow remark-math / Pandoc (`tex_math_dollars`), which is what
-// ChatGPT-style renderers converge on:
+// The rules follow remark-math / Pandoc (`tex_math_dollars`), which mainstream
+// renderers converge on:
 //
 // * `$…$` is inline maths when the opening `$` is followed by a non-space,
 //   the closing `$` is preceded by a non-space and not followed by a digit,

@@ -16,8 +16,6 @@ import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.InsetDrawable
-import android.graphics.drawable.StateListDrawable
 import android.os.Bundle
 import android.os.SystemClock
 import android.text.TextUtils
@@ -307,8 +305,8 @@ internal class BubbleView(context: Context, onTap: () -> Unit) : LinearLayout(co
 
 /**
  * A bubble's answer key, as careful as phone control's prompt ([PromptInputPolicy]): no touch before
- * [armedAt] (the bubble may pop up under a finger), none through another app's window, none
- * injected by an accessibility service unless TalkBack is the one reading.
+ * [armedAt] (the bubble may pop up under a finger), none through another app's window, none while
+ * this app is sending input itself ([PromptInputPolicy] says why that is the line).
  */
 @SuppressLint("ViewConstructor")
 internal class GuardedButton(context: Context, private val armedAt: Long) : TextView(context) {
@@ -324,8 +322,6 @@ internal class GuardedButton(context: Context, private val armedAt: Long) : Text
             rejected = !PromptInputPolicy.allows(
                 SystemClock.uptimeMillis(), armedAt, isEnabled, InjectGuard.active(),
                 event.flags and (MotionEvent.FLAG_WINDOW_IS_OBSCURED or 0x2) != 0,
-                event.deviceId <= 0, event.flags and FLAG_IS_ACCESSIBILITY_EVENT != 0 || event.getToolType(0) == MotionEvent.TOOL_TYPE_UNKNOWN,
-                a11y.isTouchExplorationEnabled,
             )
         }
         if (rejected) {
@@ -347,11 +343,6 @@ internal class GuardedButton(context: Context, private val armedAt: Long) : Text
             return false
         }
         return super.performAccessibilityAction(action, arguments)
-    }
-
-    private companion object {
-        /** MotionEvent.FLAG_IS_ACCESSIBILITY_EVENT (hidden): dispatched by an accessibility service. */
-        const val FLAG_IS_ACCESSIBILITY_EVENT = 0x800
     }
 }
 
@@ -382,79 +373,5 @@ internal class DismissTargetView(context: Context) : View(context) {
         val a = r * 0.36f
         canvas.drawLine(c - a, c - a, c + a, c + a, cross)
         canvas.drawLine(c - a, c + a, c + a, c - a, cross)
-    }
-}
-
-/**
- * Long-press menu ([PetMenuItem]): 「问一句」 first, the shortcuts that apply, 「今天不再显示」,
- * 「宠物设置」; 切换主机 swaps the rows for the hosts ([setRows]). A touch outside closes it.
- */
-@SuppressLint("ViewConstructor")
-internal class PetMenuView(
-    context: Context,
-    rows: List<Row>,
-    private val onOutside: () -> Unit,
-) : LinearLayout(context) {
-    /** One row; [muted]: the host already in use. */
-    class Row(val label: String, val muted: Boolean = false, val action: () -> Unit)
-
-    private val palette = OverlayPalette.of(context)
-
-    init {
-        orientation = VERTICAL
-        val pad = context.dp(4f)
-        setPadding(0, pad, 0, pad)
-        background = GradientDrawable().apply {
-            cornerRadius = context.dp(16f).toFloat()
-            setColor(palette.fill)
-            setStroke(context.dp(1f).coerceAtLeast(1), palette.stroke)
-        }
-        setRows(rows)
-    }
-
-    fun setRows(rows: List<Row>) {
-        removeAllViews()
-        for (r in rows) addView(row(r.label, r.muted, r.action))
-    }
-
-    private fun row(label: String, muted: Boolean, action: () -> Unit) = TextView(context).apply {
-        text = label
-        textSize = 15f
-        setTextColor(if (muted) palette.muted else palette.ink)
-        maxLines = 1
-        ellipsize = TextUtils.TruncateAt.END
-        maxWidth = context.dp(240f)
-        gravity = Gravity.CENTER_VERTICAL
-        minHeight = context.dp(44f)
-        minWidth = context.dp(168f)
-        // A rounded highlight inset from the card's edge: software windows can't clip to the card.
-        // Set before the padding: a background with insets would replace it.
-        val inset = context.dp(4f)
-        background = StateListDrawable().apply {
-            addState(
-                intArrayOf(android.R.attr.state_pressed),
-                InsetDrawable(GradientDrawable().apply { cornerRadius = context.dp(12f).toFloat(); setColor(palette.pressed) }, inset, 0, inset, 0),
-            )
-        }
-        setPadding(context.dp(16f), 0, context.dp(16f), 0)
-        isClickable = true
-        isFocusable = true
-        setOnClickListener { action() }
-    }
-
-    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
-        if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) {
-            onOutside()
-            return true
-        }
-        return super.dispatchTouchEvent(event)
-    }
-
-    fun measureFor(): Pair<Int, Int> {
-        measure(
-            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
-            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
-        )
-        return measuredWidth to measuredHeight
     }
 }

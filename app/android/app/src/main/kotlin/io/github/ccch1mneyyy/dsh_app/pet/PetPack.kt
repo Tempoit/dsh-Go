@@ -2,6 +2,7 @@ package io.github.ccch1mneyyy.dsh_app.pet
 
 import io.github.ccch1mneyyy.dsh_app.phone.Json
 import kotlin.math.roundToInt
+import kotlin.random.Random
 
 /** One frame: which cell of the sheet, and for how long. */
 data class PetFrame(val cell: Int, val ms: Int)
@@ -19,6 +20,17 @@ enum class PetSize(val dp: Float) {
             "large" -> LARGE
             else -> MEDIUM
         }
+
+        /** 宠物设置 › 自定义's range of body height, dp (the app's `PetSize.customMin` / `customMax`). */
+        const val CUSTOM_MIN = 15f
+        const val CUSTOM_MAX = 90f
+
+        /** A size key as [PetPush.size] holds it: a preset name, or `custom:<dp>`. */
+        fun customDp(key: String?): Float? =
+            key?.removePrefix("custom:")?.takeIf { it != key }?.toFloatOrNull()?.takeIf { it.isFinite() }?.coerceIn(CUSTOM_MIN, CUSTOM_MAX)
+
+        /** Body height for a size key, dp. */
+        fun dpOf(key: String?): Float = customDp(key) ?: fromName(key).dp
     }
 }
 
@@ -82,7 +94,8 @@ class PetPack(
     val animations: Map<String, PetAnimation>,
     val states: Map<String, List<String>>,
     val tiers: Map<String, List<PetTier>>,
-    val reactions: Map<String, String>,
+    /** By kind: one animation, or several to pick from at random (a tap's choice among alternatives). */
+    val reactions: Map<String, List<String>>,
     /** One-off play time of a variant or reaction (`timings.playMs`). */
     val playMs: Map<String, Long>,
     /** `hitBoxes.wide`: the out-of-app window's size. Null when the pack has none. */
@@ -113,18 +126,23 @@ class PetPack(
     }
 
     /**
-     * The state's occasional replacement: `bonus[state]`, else (format v1) the state's own list
-     * past its primary at up to a third of the time. Idle's list is the idle pool, not a bonus.
+     * The state's occasional replacement: `bonus[state]`, else (format v1) the state's list past
+     * its first animation at up to a third of the time. Idle's list is the idle pool, not a bonus;
+     * a tier doesn't take one away (as the app, whose `bonusOf` has no tier).
      */
     fun bonusOf(state: String, tier: Int): PetBonus? {
         bonus?.let { return it[state] }
-        if (state == IDLE || tiers[state]?.any { tier >= it.min } == true) return null
-        val p = primary(state, tier)
-        val rest = states[state].orEmpty().mapNotNull { animations[it] }.filter { it !== p }
+        if (state == IDLE) return null
+        val rest = states[state].orEmpty().mapNotNull { animations[it] }.drop(1)
         return if (rest.isEmpty()) null else PetBonus(rest, 1f / 3)
     }
 
-    fun reaction(kind: String): PetAnimation? = reactions[kind]?.let { animations[it] }
+    /** [kind]'s first animation, deterministic: the drag pose stays put while the window is rebuilt. */
+    fun reaction(kind: String): PetAnimation? = reactions[kind]?.firstOrNull()?.let { animations[it] }
+
+    /** A random one of [kind]'s animations, equally likely: a tap picks among the pack's alternatives. */
+    fun reaction(kind: String, random: Random): PetAnimation? =
+        reactions[kind]?.takeIf { it.isNotEmpty() }?.let { animations[it[random.nextInt(it.size)]] }
 
     /** How long a one-off of [anim] plays: `timings.playMs`, else two cycles (one for a one-shot). */
     fun playMsOf(anim: PetAnimation): Long = playMs[anim.name] ?: (if (anim.loop) 2 * anim.totalMs else anim.totalMs)
@@ -138,7 +156,7 @@ class PetPack(
         val names = LinkedHashSet<String>()
         states.filterKeys { it !in skipStates }.values.forEach(names::addAll)
         tiers.filterKeys { it !in skipStates }.values.forEach { list -> list.forEach { names += it.anim } }
-        names += reactions.values
+        reactions.values.forEach { names += it }
         if (IDLE !in skipStates) idlePool.forEach { names += it.anim.name }
         bonus.orEmpty().filterKeys { it !in skipStates }.values.forEach { b -> b.anims.forEach { names += it.name } }
         return names
@@ -165,6 +183,12 @@ class PetPack(
     fun screenScale(size: PetSize, density: Float): Float =
         if (pixelArt) devicePixels(size, density).toFloat() else size.dp * density / contentBox.h
 
+    /** [screenScale] for a size key: a preset, or 自定义's `custom:<dp>`, rounded on its own. */
+    fun screenScale(key: String, density: Float): Float {
+        val dp = PetSize.customDp(key) ?: return screenScale(PetSize.fromName(key), density)
+        return if (pixelArt) (dp.toDouble() * density / contentBox.h).roundToInt().coerceAtLeast(1).toFloat() else dp * density / contentBox.h
+    }
+
     /**
      * Whole physical pixels per art pixel for [size]: `round(dp × density ÷ body)`, then small /
      * medium / large at least one apart — on a 2.75× phone 22/30/40 dp over a 49 px body round to
@@ -184,6 +208,9 @@ class PetPack(
 
     companion object {
         const val IDLE = "idle"
+
+        /** A numbered reaction key for older apps: `tickle2` → base "tickle", number 2 (merged in [parse]). */
+        private val NUMBERED_REACTION = Regex("^(.*?)(\\d+)$")
 
         /** Clawd on Desk state names the overlay understands (anything else plays as idle). */
         val STATES = setOf(
@@ -236,8 +263,26 @@ class PetPack(
                 }.sortedByDescending { it.min }
                 if (k is String && list.isNotEmpty()) tiers[k] = list
             }
-            val reactions = LinkedHashMap<String, String>()
-            (root["reactions"] as? Map<*, *>)?.forEach { (k, v) -> if (k is String) reactions[k] = ref(v, "reactions.$k") }
+            val reactions = LinkedHashMap<String, List<String>>()
+            // A value is one animation name or a list of them; an empty list means the reaction is absent.
+            (root["reactions"] as? Map<*, *>)?.forEach { (k, v) ->
+                if (k is String) {
+                    val names = (v as? List<*> ?: listOf(v)).map { ref(it, "reactions.$k") }
+                    if (names.isNotEmpty()) reactions[k] = names
+                }
+            }
+            // Numbered keys merge into their base (`tickle2` into `tickle`), in the order they
+            // appear: an old app plays the base's string and ignores the rest, a new one gets the
+            // whole list. A numbered key with no base stays as it is; nothing asks for it.
+            for (k in reactions.keys.toList()) {
+                val m = NUMBERED_REACTION.matchEntire(k) ?: continue
+                val n = m.groupValues[2].toIntOrNull() ?: continue
+                if (n < 2) continue
+                val base = m.groupValues[1]
+                val list = reactions[base] ?: continue
+                reactions[base] = list + reactions.getValue(k)
+                reactions.remove(k)
+            }
             (root["roam"] as? Map<*, *>)?.get("anim")?.let { ref(it, "roam") }
             val playMs = LinkedHashMap<String, Long>()
             ((root["timings"] as? Map<*, *>)?.get("playMs") as? Map<*, *>)?.forEach { (k, v) ->

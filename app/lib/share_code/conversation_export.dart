@@ -8,6 +8,7 @@ import 'dart:typed_data';
 import 'package:dsh_client/dsh_client.dart';
 
 import '../l10n/l10n.dart';
+import '../state/app_notes.dart';
 import '../state/chat_state.dart' show CommandNotice;
 import '../ui/chat/dsh_ui/dsh_ui_model.dart' show dshUiPlainText;
 import '../ui/chat/tool_view.dart';
@@ -131,8 +132,7 @@ class ConversationExport {
     bool inRoundRange(int seq) => seq >= lo && seq < hi;
     // A message is in when picked; the rest by the turns of the picks.
     bool inRange(int seq) => picked == null ? inRoundRange(seq) : picked.turns.any((t) => t.contains(seq));
-    bool workInRange(int seq) =>
-        picked == null ? inRoundRange(seq) : picked.replyTurns.any((t) => t.contains(seq));
+    bool workInRange(int seq) => picked == null ? inRoundRange(seq) : picked.replyTurns.any((t) => t.contains(seq));
     bool messageIn(ChatItem item, int seq) => picked == null ? inRoundRange(seq) : only!.contains(item.key);
 
     final times = <int, DateTime>{for (final e in source.events) e.seq: e.time};
@@ -183,7 +183,7 @@ class ConversationExport {
             for (final file in item.files)
               FileRef(name: redactPaths(file.name ?? appL10n.pluginsFile), size: file.bytes),
           ];
-          final text = redactText(item.text);
+          final text = redactText(withoutAppNotes(item.text));
           timed.add((
             seq: seq,
             at: item.time,
@@ -407,7 +407,7 @@ class ConversationExport {
       for (final s in turnStarts) {
         if (s < user.seq && (previous == null || s > previous)) start = s;
       }
-      out.add(ExportRound(index: i + 1, startSeq: start, prompt: _oneLine(user.text)));
+      out.add(ExportRound(index: i + 1, startSeq: start, prompt: _oneLine(withoutAppNotes(user.text))));
       previous = user.seq;
     }
     return out;

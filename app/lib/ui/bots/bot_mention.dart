@@ -1,4 +1,6 @@
-// Portions derived from DS Bot (https://github.com/Fei2411/DeepSeek-Bot), Apache-2.0, Copyright 2026 Fei2411 and the DS Bot contributors. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 Fei2411 and the DS Bot contributors
+// SPDX-License-Identifier: Apache-2.0
+// See THIRD_PARTY_NOTICES.md.
 // Modified: the mention rules of `ds-bot/src/shared/mentions.js` (the everyone word, no
 // mention right after an address character) applied to a Flutter `@` picker.
 // The `@` picker of a group chat: the group's members (and 「所有人」) above
@@ -322,7 +324,7 @@ class MentionKey extends StatelessWidget {
 
   final VoidCallback? onPressed;
 
-  static const size = 40.0;
+  static const size = 36.0;
 
   @override
   Widget build(BuildContext context) {
@@ -345,7 +347,7 @@ class MentionKey extends StatelessWidget {
             decoration: BoxDecoration(color: scheme.onSurface.withValues(alpha: 0.06), shape: BoxShape.circle),
             child: Icon(
               AppIcons.mention,
-              size: 22,
+              size: 20,
               color: enabled ? scheme.onSurface : scheme.onSurface.withValues(alpha: 0.38),
             ),
           ),

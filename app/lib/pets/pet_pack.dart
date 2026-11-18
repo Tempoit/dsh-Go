@@ -105,10 +105,16 @@ class PetPack {
     this.idlePool = const [],
     this.idleEvery = const PetEvery(),
     this.bonus = const {},
+    this.dir,
   });
 
-  /// Folder name under `assets/pets/`.
+  /// Folder name under `assets/pets/`, or under the brought pets' folder
+  /// (pet_library.dart).
   final String id;
+
+  /// Where a brought pet's sheets are on disk; null for the built-in ones,
+  /// which come from the app's assets.
+  final String? dir;
   final String name;
   final String? author;
   final String? license;
@@ -147,8 +153,9 @@ class PetPack {
   /// Animation name → how long a one-off play lasts, ms.
   final Map<String, int> playMs;
 
-  /// tapLeft / tapRight / tickle / drag → animation.
-  final Map<String, String> reactions;
+  /// Reaction name (tapLeft / tapRight / tickle / drag / annoyed / …) → its
+  /// animations: one plays as written, several are picked one per play.
+  final Map<String, List<String>> reactions;
 
   final String? roamAnim;
 
@@ -215,7 +222,15 @@ class PetPack {
     for (final name in (states[state.name] ?? const <String>[]).skip(1)) animations[name]!,
   ];
 
-  PetAnimation? reaction(String key) => animations[reactions[key]];
+  /// [key]'s fixed animation: the first variant (drag, a lone tap reaction).
+  PetAnimation? reaction(String key) => animations[reactions[key]?.firstOrNull];
+
+  /// [key]'s animation for this play: one of its variants, picked with [random].
+  PetAnimation? reactionOutOf(String key, math.Random random) {
+    final names = reactions[key];
+    if (names == null || names.isEmpty) return null;
+    return animations[names.length == 1 ? names.first : names[random.nextInt(names.length)]];
+  }
 
   PetAnimation get roam => animations[roamAnim] ?? animFor(PetStateName.idle);
 
@@ -242,7 +257,7 @@ class PetPack {
 
   /// Parses pack.json. A pack that fails its checks throws [FormatException]
   /// (a broken pack is not loaded at all).
-  factory PetPack.parse(Map<String, Object?> json) {
+  factory PetPack.parse(Map<String, Object?> json, {String? dir}) {
     if (json['schema'] != schema) throw const FormatException('pack.json: schema');
     final id = _string(json['id']);
     if (id == null || id.isEmpty) throw const FormatException('pack.json: id');
@@ -291,6 +306,29 @@ class PetPack {
     String known(Object? name, String where) {
       if (name is String && animations.containsKey(name)) return name;
       throw FormatException('pack.json: $where → $name');
+    }
+
+    /// Reaction name → its animations. `tickle2`, `tickle3`… (a number after
+    /// a plain name this map already has) are further alternatives: older apps
+    /// read only the plain name and ignore the rest, so a shared pack still
+    /// works there while this one picks among all of them.
+    Map<String, List<String>> reactionMap(Object? raw) {
+      final map = <String, List<String>>{};
+      for (final MapEntry(:key, :value) in _map(raw).entries) {
+        final names = [
+          for (final name in value is List ? value : [value]) known(name, 'reactions.$key'),
+        ];
+        if (names.isNotEmpty) map[key] = names;
+      }
+      for (final key in map.keys.toList()) {
+        final match = RegExp(r'^(.*?)(\d+)$').firstMatch(key);
+        final base = match?.group(1);
+        // From 2 on: `tickle` is the first, `tickle2` the second.
+        if (base == null || !map.containsKey(base) || int.parse(match!.group(2)!) < 2) continue;
+        final extra = map.remove(key)!;
+        map.update(base, (names) => [...names, ...extra]);
+      }
+      return map;
     }
 
     final states = <String, List<String>>{
@@ -361,9 +399,7 @@ class PetPack {
       minDisplay: ms(timings['minDisplay']),
       autoReturn: ms(timings['autoReturn']),
       playMs: ms(timings['playMs']),
-      reactions: {
-        for (final MapEntry(:key, :value) in _map(json['reactions']).entries) key: known(value, 'reactions.$key'),
-      },
+      reactions: reactionMap(json['reactions']),
       roamAnim: roam['anim'] == null ? null : known(roam['anim'], 'roam'),
       // An explicit `flip: false` keeps front-facing art unmirrored.
       roamFacing: roam['flip'] == false ? PetFacing.front : PetFacing.values.asNameMap()[faces] ?? PetFacing.front,
@@ -378,6 +414,7 @@ class PetPack {
         max: (_num(every['max']) ?? 300000).round(),
       ),
       bonus: bonus,
+      dir: dir,
     );
   }
 
@@ -390,7 +427,12 @@ class PetPack {
   }
 
   static String? _string(Object? v) => v is String ? v : null;
-  static double? _num(Object? v) => v is num ? v.toDouble() : null;
+  static double? _num(Object? v) {
+    if (v is! num) return null;
+    final number = v.toDouble();
+    if (!number.isFinite) throw const FormatException('pack.json: non-finite number');
+    return number;
+  }
   static Map<String, Object?> _map(Object? v) =>
       v is Map ? {for (final MapEntry(:key, :value) in v.entries) '$key': value} : const {};
   static List<Object?> _list(Object? v) => v is List ? v : const [];

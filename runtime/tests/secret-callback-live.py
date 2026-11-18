@@ -89,7 +89,7 @@ try:
  for ops in [[{'op':'set','path':['direct'],'value':'SYNTH_CB_R1_POST_REJECTED'}],[{'op':'unset','path':['direct']}],[{'op':'set','path':['count'],'value':9},{'op':'set','path':['ancestor'],'value':{'token':'SYNTH_CB_R1_POST_REJECTED'}}],[{'op':'set','path':['custom_object'],'value':'SYNTH_CB_R1_POST_REJECTED'}]]:
   status,denied=post(op,current,ops);assert status==400
   assert 'SYNTH_CB_R1_'not in json.dumps(denied);assert snapshot('after-denied-'+str(len(audit)))==after_write
- status,failed=post(op,current,[{'op':'set','path':['count'],'value':13}]);assert status==422 and failed['code']=='invalid-config';assert 'SYNTH_CB_R1_'not in json.dumps(failed)
+ status,failed=post(op,current,[{'op':'set','path':['count'],'value':13}]);assert status==422 and failed['error']['code']=='invalid-config';assert 'SYNTH_CB_R1_'not in json.dumps(failed)
  assert snapshot('after-validation-failure')==after_write
  final=view(op);assert final['value']['count']==2
  status,last=request(op,'/callback-observer');assert status==200 and last['actualConfigIdentity']and last['entry']['state']==2

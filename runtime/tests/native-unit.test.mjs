@@ -2,8 +2,10 @@
 //   node --test runtime/tests/native-unit.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+import fs, { mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import { Duplex } from "node:stream";
 
@@ -11,6 +13,7 @@ const LIB = new URL("../bridge/dsh-go-bridge/lib/native/", import.meta.url);
 const { checkManifest, parseManifest, renderPlugin } = await import(new URL("manifest.js", LIB));
 const { checkEffects, normalize, splitPending, validate } = await import(new URL("effects.js", LIB));
 const util = await import(new URL("util.js", LIB));
+const { createNativeRoutes } = await import(new URL("routes.js", LIB));
 const { NativeCore } = await import(new URL("core.js", LIB));
 const { LIMITS, effectiveLimits } = await import(new URL("limits.js", LIB));
 const { WsConnection, encodeFrame } = await import(new URL("ws.js", LIB));
@@ -132,6 +135,29 @@ test("effects: shorthand, whitelist, limits", () => {
   assert.ok(validate({ type: "open", page: "panel:other" }, { panels: new Set(["usage"]) }).issue);
   assert.ok(validate({ type: "open", page: "settings" }, { panels: new Set() }).effect);
   assert.ok(validate({ type: "refresh" }, { panels: new Set(["a"]), source: "a", static: true }).issue);
+});
+
+test("effects: overflow diagnostics survive unknown and unnegotiated entries", () => {
+  const known = Array.from({ length: 6 }, (_, i) => ({ type: "toast", text: String(i + 1) }));
+  const unknown = { type: "future-effect" };
+  const audio = { type: "audio", op: "play", instance: "reading", src: "media:speech" };
+  const opts = { panels: new Set(), capabilities: { declared: ["audio"], features: [], media: ["speech"] } };
+  const results = [
+    normalize(known, opts),
+    normalize([unknown, ...known.slice(0, 4)], opts),
+    normalize([audio, ...known.slice(0, 4)], opts),
+    normalize([unknown, ...known], opts),
+    normalize([audio, ...known], opts),
+  ];
+  assert.deepEqual(results.map((r) => r.effects), results.map(() => known.slice(0, 4)));
+  assert.deepEqual(results.map((r) => r.violation), [true, false, false, true, true]);
+  assert.deepEqual(results.map((r) => codes(r.issues)), [
+    ["too-many@/runtime/effects/4"],
+    ["unknown-effect@/runtime/effects/0"],
+    ["unknown-effect@/runtime/effects/0"],
+    ["unknown-effect@/runtime/effects/0", "too-many@/runtime/effects/5"],
+    ["unknown-effect@/runtime/effects/0", "too-many@/runtime/effects/5"],
+  ]);
 });
 
 // ------------------------------------------------------------------ manifest
@@ -276,6 +302,93 @@ test("core: scan, cache invalidation by toggle and package.json edit", async () 
   await new Promise((r) => setTimeout(r, 400));
   assert.ok(changed >= 1, "changed was broadcast");
   core.dispose();
+});
+
+test("core: manifest read failures recover while malformed content stays cached", (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1000000 });
+  const a = pkgDir("manifest-retry", { v: 1, title: "Initial", contributes: {} });
+  const core = new NativeCore(fakeHost([a]).ctx, LIMITS, "test");
+  const path = join(a.dir, "package.json");
+  assert.equal(core.contributions(CAPS).plugins[0].title, "Initial");
+  const original = fs.readFileSync;
+  let reads = 0, fail = false;
+  const spy = t.mock.method(fs, "readFileSync", (file, ...args) => {
+    if (file === path) {
+      reads++;
+      if (fail) throw Object.assign(new Error("descriptor limit"), { code: "EMFILE" });
+    }
+    return original(file, ...args);
+  });
+  syncBuiltinESMExports();
+  t.after(() => { spy.mock.restore(); syncBuiltinESMExports(); core.dispose(); });
+
+  writeFileSync(path, "{");
+  t.mock.timers.tick(2000);
+  assert.equal(core.contributions(CAPS).plugins.length, 0);
+  t.mock.timers.tick(2000);
+  assert.equal(core.contributions(CAPS).plugins.length, 0);
+  assert.equal(reads, 1, "malformed JSON keeps its negative cache at the same stamp");
+
+  writeFileSync(path, JSON.stringify({ ...a.pkg, dshGo: { ...a.pkg.dshGo, title: "Recovered" } }));
+  fail = true;
+  t.mock.timers.tick(2000);
+  assert.equal(core.contributions(CAPS).plugins.length, 0);
+  assert.equal(reads, 2);
+  fail = false;
+  t.mock.timers.tick(2000);
+  assert.equal(core.contributions(CAPS).plugins[0]?.title, "Recovered", "I/O recovery needs no further edit or markDirty");
+  assert.equal(reads, 3);
+});
+
+for (const code of ["EMFILE", "ENFILE"]) test(`core: first locate retries after ${code} without changing static contributions`, (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1000000 });
+  const a = pkgDir(`locate-retry-${code}`, { v: 1, contributes: {
+    "composer.actions": [{ id: "draft", label: "Draft", effect: { type: "insert", text: "static text" } }],
+  } });
+  const core = new NativeCore(fakeHost([a]).ctx, LIMITS, "test");
+  const path = join(a.dir, "package.json"), original = fs.readFileSync;
+  let reads = 0, fail = true;
+  const spy = t.mock.method(fs, "readFileSync", (file, ...args) => {
+    if (file === path) {
+      reads++;
+      if (fail) throw Object.assign(new Error("descriptor limit"), { code });
+    }
+    return original(file, ...args);
+  });
+  syncBuiltinESMExports();
+  t.after(() => { spy.mock.restore(); syncBuiltinESMExports(); core.dispose(); });
+  assert.equal(core.contributions(CAPS).plugins.length, 0);
+  assert.equal(reads, 1);
+  fail = false;
+  t.mock.timers.tick(2000);
+  const recovered = core.contributions(CAPS);
+  assert.equal(recovered.plugins.length, 1, "release descriptors then query; no edit or markDirty");
+  assert.deepEqual(recovered.plugins[0].contributes["composer.actions"][0].effect, [{ type: "insert", text: "static text" }]);
+  assert.equal(recovered.plugins[0].contributes["composer.actions"][0].ready, true);
+  assert.equal(reads, 3, "successful locate and manifest read exactly once each");
+});
+
+test("core: first locate keeps malformed and missing package negative caches", (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1000000 });
+  const broken = pkgDir("locate-malformed", { v: 1, contributes: {} });
+  const missing = pkgDir("locate-missing", { v: 1, contributes: {} });
+  const plain = pkgDir("locate-no-contributions", undefined);
+  const paths = [broken, missing, plain].map(a => join(a.dir, "package.json"));
+  writeFileSync(paths[0], "{");
+  const core = new NativeCore(fakeHost([broken, missing, plain]).ctx, LIMITS, "test");
+  const original = fs.readFileSync, reads = [0, 0, 0];
+  const spy = t.mock.method(fs, "readFileSync", (file, ...args) => {
+    const index = paths.indexOf(file);
+    if (index >= 0) reads[index]++;
+    if (index === 1) throw Object.assign(new Error("package disappeared before read"), { code: "ENOENT" });
+    return original(file, ...args);
+  });
+  syncBuiltinESMExports();
+  t.after(() => { spy.mock.restore(); syncBuiltinESMExports(); core.dispose(); });
+  assert.equal(core.contributions(CAPS).plugins.length, 0);
+  t.mock.timers.tick(2000);
+  assert.equal(core.contributions(CAPS).plugins.length, 0);
+  assert.deepEqual(reads, [1, 1, 2], "malformed/missing locations and a valid no-dshGo manifest stay cached");
 });
 
 test("core: service attribution, registration lifecycle, undeclared", () => {
@@ -508,4 +621,178 @@ test("deferred: splitPending shapes, clamps and the deferred whitelist", () => {
     assert.equal(r.violation, true);
     assert.match(r.issues[0].message, /deferred/);
   }
+});
+
+
+test("JSON helpers preserve own prototype-named keys", () => {
+  const value = JSON.parse('{"__proto__":{"label":"own"},"nested":{"__proto__":7},"constructor":"data"}');
+  assert.deepEqual(util.withoutNulls(value), value);
+  const added = util.mergeDiff({}, value);
+  assert.deepEqual(added, value);
+  assert.deepEqual(util.mergeApply({}, added), value);
+  const removed = util.mergeDiff(value, {});
+  assert.deepEqual(util.mergeApply(value, removed), {});
+  assert.equal(Object.getPrototypeOf(util.mergeApply({}, value)), Object.prototype);
+});
+
+test("core: real panel feed retains prototype-named JSON keys in data and patches", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 1000000 });
+  const a = pkgDir("own-keys", { v: 1, contributes: { panels: [{ id: "p", title: "P" }] } });
+  const host = fakeHost([a]);
+  const core = new NativeCore(host.ctx, LIMITS, "test");
+  t.after(() => core.dispose());
+  let emit;
+  const first = JSON.parse('{"__proto__":{"label":"first"},"nested":{"__proto__":7}}');
+  core.service.panel.call({ ctx: host.callerOf(host.entries[0]) }, "p", { view: {}, data: (_, e) => { emit = e; e(first); } });
+  const scope = util.normalizeScope({ sessionId: "s" });
+  const feed = core.feed("own-keys", "p", "panel", scope);
+  t.mock.timers.tick(1);
+  const messages = [];
+  feed.attach({ id: "own", send: m => messages.push(JSON.parse(JSON.stringify(m))) });
+  assert.deepEqual(messages[0].data, first);
+  const next = JSON.parse('{"__proto__":{"label":"second"},"nested":{"__proto__":8}}');
+  emit(next);
+  t.mock.timers.tick(250);
+  assert.equal(messages.at(-1).t, "patch");
+  assert.deepEqual(messages.at(-1).merge, JSON.parse('{"__proto__":{"label":"second"},"nested":{"__proto__":8}}'));
+  assert.deepEqual(util.mergeApply(first, messages.at(-1).merge), next);
+  const normalized = normalize({ type: "patch", id: "p", data: JSON.parse('{"__proto__":{"extra":true}}') }, { panels: new Set(["p"]) });
+  assert.equal(normalized.violation, false);
+  core.patchFeed("own-keys", "p", scope, normalized.effects[0].data);
+  t.mock.timers.tick(250);
+  assert.deepEqual(feed.data, JSON.parse('{"__proto__":{"label":"second","extra":true},"nested":{"__proto__":8}}'));
+  const removed = { nested: {} };
+  emit(removed);
+  t.mock.timers.tick(250);
+  assert.deepEqual(messages.at(-1).merge, JSON.parse('{"__proto__":null,"nested":{"__proto__":null}}'));
+  assert.deepEqual(util.mergeApply(next, messages.at(-1).merge), removed);
+});
+
+
+test("core: completed first-data deadlines release their waiters while the feed stays live", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 10000 });
+  const a = pkgDir("waiter-a", { v: 1, contributes: { panels: [{ id: "p", title: "P" }] } });
+  const host = fakeHost([a]);
+  const core = new NativeCore(host.ctx, LIMITS, "test");
+  const routes = createNativeRoutes(core);
+  t.after(() => { routes.dispose(); core.dispose(); });
+  const svc = { ...core.service, ctx: host.callerOf(host.entries[0]), panel: core.service.panel };
+  let emit;
+  let cancelled = 0;
+  svc.panel("p", { view: { type: "text", text: "Waiting" }, data: (_scope, send) => {
+    emit = send;
+    return () => cancelled++;
+  } });
+  const feed = core.feed("waiter-a", "p", "panel", util.normalizeScope({}));
+  const messages = [];
+  const sub = { id: "panel", send: (message) => messages.push(message) };
+  feed.attach(sub);
+  for (let i = 0; i < 3; i++) {
+    const url = new URL("http://local/dsh-go/v1/views/waiter-a/p");
+    let status;
+    let body;
+    const res = { headersSent: false, writeHead(code) { status = code; this.headersSent = true; }, end(value) { body = JSON.parse(value); } };
+    const response = routes.handle({ method: "GET", headers: {} }, res, url.pathname, url);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(feed.waiters.length, 1, "one active first-data wait per GET");
+    t.mock.timers.tick(LIMITS.firstDataWaitMs);
+    assert.equal(await response, true);
+    assert.equal(status, 200);
+    assert.equal(body.live, true);
+    assert.equal(body.data, null);
+    assert.equal(feed.waiters.length, 0, "completed deadline must not stay retained by the live feed");
+  }
+  assert.equal(cancelled, 0);
+  emit({ ready: true });
+  t.mock.timers.tick(250);
+  assert.deepEqual(messages.at(-1).data, { ready: true });
+  feed.detach(sub);
+  t.mock.timers.tick(LIMITS.feedLingerMs);
+  assert.equal(cancelled, 1);
+});
+
+test("core: concurrent first-data waits settle once on data or stop", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 10000 });
+  const a = pkgDir("waiter-b", { v: 1, contributes: { panels: [{ id: "p", title: "P" }] } });
+  const host = fakeHost([a]);
+  const core = new NativeCore(host.ctx, LIMITS, "test");
+  t.after(() => core.dispose());
+  const svc = { ...core.service, ctx: host.callerOf(host.entries[0]), panel: core.service.panel };
+  let emit;
+  svc.panel("p", { view: {}, data: (_scope, send) => { emit = send; } });
+  const feed = core.feed("waiter-b", "p", "panel", util.normalizeScope({}));
+  let settled = 0;
+  const first = feed.waitFirst(100).then(() => settled++);
+  const second = feed.waitFirst(200).then(() => settled++);
+  t.mock.timers.tick(100);
+  await first;
+  assert.equal(feed.waiters.length, 1, "only the unfinished wait remains");
+  emit({ value: 1 });
+  t.mock.timers.tick(1);
+  await second;
+  assert.equal(feed.waiters.length, 0);
+  t.mock.timers.tick(200);
+  assert.equal(settled, 2);
+  const other = core.feed("waiter-b", "p", "panel", util.normalizeScope({ sessionId: "other" }));
+  const stopped = other.waitFirst(100);
+  other.stop();
+  await stopped;
+  assert.equal(other.waiters.length, 0);
+  t.mock.timers.tick(100);
+});
+
+
+for (const keepOld of [true, false]) test(`core: plugin reload resolves its new package directory, old retained=${keepOld}`, (t) => {
+  const pkg = `location-move-${keepOld}`;
+  const old = pkgDir(`${pkg}-old`, { v: 1, title: "Old package", contributes: {} });
+  const next = pkgDir(`${pkg}-new`, { v: 1, title: "New package manifest", contributes: {} });
+  writeFileSync(join(old.dir, "package.json"), JSON.stringify({ ...old.pkg, name: pkg }));
+  writeFileSync(join(next.dir, "package.json"), JSON.stringify({ ...next.pkg, name: pkg, version: "2.0.0" }));
+  const profile = join(tmp, `home-${pkg}`, "profiles", "web");
+  mkdirSync(join(profile, "node_modules"), { recursive: true });
+  const link = join(profile, "node_modules", pkg);
+  symlinkSync(old.dir, link, "junction");
+  const baseUrl = pathToFileURL(profile + "/").href;
+  const host = fakeHost([old]);
+  const entry = host.entries[0];
+  entry.options.name = pkg;
+  entry.parent.tree.ctx.baseUrl = baseUrl;
+  const resolved = [];
+  const loader = { entries: () => host.entries, internal: { version: "v2", resolveSync(base, request) {
+    assert.equal(base, baseUrl);
+    assert.equal(request.specifier, pkg);
+    // The live loader is an explicit peer; directory movement and manifest reads are real.
+    const url = pathToFileURL(realpathSync(join(link, "index.js"))).href;
+    resolved.push(url);
+    return { url };
+  } } };
+  const core = new NativeCore({ ...host.ctx, get: (name) => name === "loader" ? loader : undefined }, LIMITS, "test");
+  t.after(() => core.dispose());
+  const before = core.contributions(CAPS);
+  assert.equal(before.plugins[0].title, "Old package");
+  assert.equal(core.contributions(CAPS), before);
+  assert.equal(resolved.length, 1, "same generation uses its location cache");
+
+  host.entries.splice(0, 1);
+  entry.fiber.uid = null;
+  core.markDirty();
+  assert.deepEqual(core.contributions(CAPS).plugins, []);
+  unlinkSync(link);
+  symlinkSync(next.dir, link, "junction");
+  if (!keepOld) rmSync(old.dir, { recursive: true, force: true });
+  assert.equal(realpathSync(join(link, "index.js")), join(next.dir, "index.js"));
+  const replacement = { ...entry, options: { ...entry.options } };
+  replacement.fiber = { uid: 101, entry: replacement, parent: { fiber: null } };
+  host.entries.push(replacement);
+  core.markDirty();
+
+  const after = core.contributions(CAPS);
+  assert.equal(after.plugins.length, 1, "the newly enabled plugin stays discoverable");
+  assert.equal(after.plugins[0].title, "New package manifest");
+  assert.equal(after.plugins[0].version, "2.0.0");
+  assert.equal(core.plugin(pkg).dir, next.dir);
+  assert.notEqual(after.rev, before.rev);
+  assert.equal(resolved.length, 2, "new generation asks the live loader again");
+  assert.equal(core.contributions(CAPS), after);
+  assert.equal(resolved.length, 2, "new generation is cached again");
 });

@@ -159,6 +159,18 @@ void main() {
     expect(client.mux.state, DshConnectionState.connected);
   });
 
+  test('an explicit reconnect opens a new link now, not after the backoff', () async {
+    final carrier = _MemoryCarrier();
+    const slowRetry = MuxOptions(readyTimeout: Duration(seconds: 2), retryCaps: [Duration(seconds: 30)]);
+    final client = await DshClient.connectCarrier(carrier, muxOptions: slowRetry);
+    addTearDown(client.close);
+    client.mux.reconnect();
+    await client.mux.ready(timeout: const Duration(seconds: 2));
+    expect(carrier.links, hasLength(2));
+    expect(carrier.links.first.closed, isTrue);
+    expect(client.mux.generation!.clientId, 'memory-2');
+  });
+
   test('uplink and allow-list follow the carrier', () async {
     final carrier = _MemoryCarrier()
       ..uplink = false

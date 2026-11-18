@@ -180,8 +180,15 @@ class FakePhoneNative {
   List<Map<String, Object?>> log;
   Map<String, Object?> screen = {'ok': true, 'text': sampleScreenText};
 
+  /// Optional barriers for settings writes and their subsequent real channel readback.
+  Future<Map<String, Object?>?> Function()? onStatus;
+  Future<Map<String, Object?>> Function(Map<String, Object?>)? onSetBackgroundParallelLimit;
+
   /// Reply of `setEnabled` / `setPolicies`.
   bool accept = true;
+
+  Future<Map<String, Object?>?> Function()? onGetPolicies;
+  Future<bool> Function(Map<String, Object?>)? onSetPolicies;
 
   /// Reply of `finishTask`; null: closed, and back in the app exactly when asked to reopen.
   Map<String, Object?>? finish;
@@ -192,8 +199,12 @@ class FakePhoneNative {
   /// Private engine-approval UI; production PhoneChannel still encodes/parses.
   Future<Map<String, Object?>> Function(Map<String, Object?>)? onPresentPrompt;
 
+  /// Gate cleanup's asynchronous native response, without rerunning a probe.
+  Future<bool> Function(String)? onAcknowledgeInterruption;
+  Future<bool> Function()? onRetryInterruption;
+
   /// The 悬浮条 settings as the native side keeps them.
-  Map<String, Object?> overlay = {'idleOpacity': 0.7, 'autoCollapse': false};
+  Map<String, Object?> overlay = {'idleOpacity': 0.7, 'autoCollapse': true};
 
   /// Replies for `{ok, reason}` methods, by method name (default ok).
   final results = <String, Map<String, Object?>>{};
@@ -244,14 +255,36 @@ class FakePhoneNative {
     final args = call.arguments is Map ? (call.arguments as Map).cast<String, Object?>() : const <String, Object?>{};
     switch (call.method) {
       case 'status':
-        return status;
+        return onStatus?.call() ?? status;
       case 'setEnabled':
         if (accept) status = {...status, 'enabled': args['enabled']};
         return accept;
-      case 'openAccessibilitySettings' || 'openAppDetails' || 'stopTask':
+      case 'openAccessibilitySettings' || 'openAppDetails' || 'stopTask' || 'resumeTask' || 'retryTaskCleanup':
         return true;
+      case 'acknowledgeTaskInterruption':
+        return onAcknowledgeInterruption?.call(args['batchToken'] as String) ?? false;
+      case 'retryTaskInterruptionStorage':
+        return onRetryInterruption?.call() ?? false;
       case 'testScreen':
         return screen;
+      case 'setBackgroundViewport':
+        final viewportResult = results[call.method] ?? {'ok': true};
+        if (viewportResult['ok'] == true) {
+          status = {...status, 'background': {..._background, 'viewport': {'v': 1, 'preset': args['preset']}}};
+        }
+        return viewportResult;
+      case 'setBackgroundParallelLimit':
+        if (onSetBackgroundParallelLimit != null) return onSetBackgroundParallelLimit!(args);
+        final capacityResult = results[call.method] ?? {'ok': true};
+        if (capacityResult['ok'] == true) {
+          final old = (_background['parallelism'] as Map).cast<String, Object?>();
+          final limit = args['limit'] as int;
+          final current = old['effectiveLimit'] as int;
+          status = {...status, 'background': {..._background, 'parallelism': {
+            ...old, 'configuredLimit': limit, 'effectiveLimit': current > limit ? limit : current,
+          }}};
+        }
+        return capacityResult;
       case 'setBackgroundMode':
         final r = results[call.method] ?? {'ok': true};
         if (r['ok'] == true) {
@@ -281,8 +314,9 @@ class FakePhoneNative {
         }
         return result;
       case 'getPolicies':
-        return policies;
+        return onGetPolicies != null ? onGetPolicies!() : policies;
       case 'setPolicies':
+        if (onSetPolicies != null) return onSetPolicies!(args);
         // As natively: what isn't sent stays, inside `unlocks` too.
         if (accept) {
           final unlocks = args['unlocks'];

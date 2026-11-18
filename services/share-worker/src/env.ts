@@ -1,8 +1,22 @@
 import type { RateLimiter } from './limits';
 
 export interface Env {
+  /** Emergency switches. Absent/"1" is enabled; "0" pauses the new capability. */
+  WORKSHOP_UPLOAD_ENABLED?: string;
+  WORKSHOP_COMPANION_ENABLED?: string;
+  /** "1": a submission that passes the archive checks is approved as soon as
+   *  it is uploaded. Absent/"0": it waits in the review queue as pending. */
+  WORKSHOP_AUTO_APPROVE?: string;
+  /** Public client id of the GitHub OAuth App the App signs authors in with;
+   *  empty or malformed: capabilities announce `clientId: null`. */
+  WORKSHOP_GITHUB_CLIENT_ID?: string;
+  /** Tests and the local rehearsal only: an HTTPS origin standing in for
+   *  https://api.github.com. Never set in production; never request-supplied. */
+  WORKSHOP_GITHUB_API_URL?: string;
   /** HTTPS publication root; defaults to dsh-go-market GitHub Pages. */
   MARKET_SOURCE_URL?: string;
+  /** "1": cron also verifies and mirrors pets/adapters from the same market. */
+  PET_MARKET_ENABLED?: string;
   /** Static files (public/): the site, and the viewer the Worker serves at /c/<id>. */
   ASSETS: { fetch(request: Request): Promise<Response> };
   /** Ciphertexts, under the tier prefixes of ids.ts. */

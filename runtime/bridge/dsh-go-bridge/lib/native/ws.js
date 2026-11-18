@@ -26,10 +26,14 @@ export function encodeFrame(opcode, payload, { mask = false, fin = true } = {}) 
 }
 
 /**
- * Completes the handshake on an upgrade request. Returns a WsConnection, or undefined after
- * answering 400 for a request that is not a valid version-13 WebSocket upgrade.
+ * Completes the handshake on a live upgrade request. Returns a WsConnection, or undefined if
+ * the socket has ended or after answering 400 for an invalid version-13 WebSocket upgrade.
  */
 export function acceptUpgrade(req, socket, head, { maxMessage }) {
+  if (socket.destroyed || socket.readableEnded) {
+    socket.destroy();
+    return undefined;
+  }
   const key = req.headers["sec-websocket-key"];
   const upgrade = String(req.headers.upgrade ?? "").toLowerCase();
   const valid = req.method === "GET" && upgrade === "websocket" && req.headers["sec-websocket-version"] === "13"
@@ -49,6 +53,7 @@ export class WsConnection extends EventEmitter {
   closed = false;
   #socket;
   #buf = Buffer.alloc(0);
+  #storage;
   #fragments = [];
   #fragmentBytes = 0;
   #maxMessage;
@@ -59,9 +64,14 @@ export class WsConnection extends EventEmitter {
     this.#socket = socket;
     this.#maxMessage = maxMessage;
     socket.on("data", (chunk) => this.#onData(chunk));
-    socket.on("close", () => this.#finish(1006));
+    socket.on("close", () => { clearTimeout(this.#closeTimer); this.#finish(1006); });
     // An upgraded HTTP socket may remain half-open after peer FIN. Release owners now.
-    socket.on("end", () => { socket.end(); this.#finish(1006); });
+    socket.on("end", () => {
+      socket.end();
+      this.#closeTimer ??= setTimeout(() => this.#socket.destroy(), 1000);
+      this.#closeTimer.unref?.();
+      this.#finish(1006);
+    });
     socket.on("error", () => this.#finish(1006));
     if (head && head.length > 0) queueMicrotask(() => this.#onData(head));
   }
@@ -96,12 +106,32 @@ export class WsConnection extends EventEmitter {
   #finish(code) {
     if (this.closed) return;
     this.closed = true;
+    this.#storage = undefined;
+    this.#buf = Buffer.alloc(0);
     this.emit("close", code);
   }
 
   #onData(chunk) {
     if (this.closed) return;
-    this.#buf = this.#buf.length === 0 ? chunk : Buffer.concat([this.#buf, chunk]);
+    const previous = this.#buf;
+    const size = previous.length + chunk.length;
+    // Keep complete socket chunks borrowed. Only partial frames need owned storage.
+    // The cap is one maximum frame, not a limit on a TCP chunk containing many frames.
+    const capacity = this.#maxMessage + 14;
+    if (previous.length === 0) this.#buf = chunk;
+    else if (size > capacity) this.#buf = Buffer.concat([previous, chunk]);
+    else {
+      let storage = this.#storage;
+      if (!storage || storage.length < size) {
+        storage = Buffer.alloc(Math.min(capacity, Math.max(size, (storage?.length ?? 32) * 2)));
+      }
+      if (previous.buffer !== storage.buffer || previous.byteOffset !== storage.byteOffset) {
+        previous.copy(storage, 0);
+      }
+      chunk.copy(storage, previous.length);
+      this.#storage = storage;
+      this.#buf = storage.subarray(0, size);
+    }
     while (!this.closed) {
       const b = this.#buf;
       if (b.length < 2) return;
@@ -141,7 +171,8 @@ export class WsConnection extends EventEmitter {
         if (opcode === 0x0 && this.#fragments.length === 0) return this.close(1002, "unexpected continuation");
         this.#fragmentBytes += payload.length;
         if (this.#fragmentBytes > this.#maxMessage) return this.close(1009, "message too big");
-        this.#fragments.push(payload);
+        // Keep the first fragment as the message marker, without accumulating empty continuations.
+        if (payload.length > 0 || this.#fragments.length === 0) this.#fragments.push(payload);
         if (!fin) return;
         const whole = this.#fragments.length === 1 ? this.#fragments[0] : Buffer.concat(this.#fragments);
         this.#fragments = [];
@@ -157,6 +188,8 @@ export class WsConnection extends EventEmitter {
         if (!this.closed) {
           try { this.#socket.write(encodeFrame(0x8, payload.subarray(0, 2))); } catch {}
           this.#socket.end();
+          this.#closeTimer = setTimeout(() => this.#socket.destroy(), 1000);
+          this.#closeTimer.unref?.();
         }
         this.#finish(code);
         return;

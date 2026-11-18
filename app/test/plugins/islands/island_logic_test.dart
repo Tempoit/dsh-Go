@@ -62,7 +62,7 @@ void main() {
     final book = IslandRecipeBook.parse(File('assets/islands/recipes.json').readAsStringSync());
 
     test('the shipped book reads', () {
-      expect(book.release, '0.2.1-rc.4');
+      expect(book.release, '0.2.2-rc.1');
       expect(book.officialSettings, containsAll(['general', 'models']));
       expect(book.recipeFor('settings.section')!.stretch, IslandStretch.scroller);
       expect(book.recipeFor('main')!.stretch, IslandStretch.child);
@@ -94,6 +94,27 @@ void main() {
         'then': {'plugin': '@a/b', 'row': 'voice'},
       });
       expect(book.targetFor(_spec('plugins.row.config', cell: 'no-row')), isNull);
+    });
+
+    test('long-tail pages require package and cell and navigate their real owner', () {
+      const slots = ['sidebar.footer.action', 'settings.plugins.tab', 'plugins.detail.section'];
+      for (final slot in slots) {
+        expect(book.recipeFor(slot)!.forms, {IslandForm.page});
+        expect(book.targetFor(_spec(slot, cell: 'entry')), isNull);
+        expect(book.targetFor(_spec(slot, package: 'one')), isNull);
+      }
+      expect(book.targetFor(_spec(slots[0], cell: 'entry', package: 'one')), {
+        'web': {'sidebar': true},
+        'then': {'sidebar': true},
+      });
+      expect(book.targetFor(_spec(slots[1], cell: 'entry', package: 'one')), {
+        'web': {'settings': 'plugins'},
+        'then': {'settingsPlugin': 'entry'},
+      });
+      expect(book.targetFor(_spec(slots[2], cell: 'entry', package: 'one')), {
+        'web': {'panel': 'plugins'},
+        'then': {'plugin': 'one'},
+      });
     });
 
     test('conversation slots need a conversation', () {

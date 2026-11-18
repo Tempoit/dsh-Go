@@ -54,6 +54,10 @@ ROWS.dshgo_usage = [
   use('2026-10-28', 'u5', 3),
   use('2026-10-28', 'u6', 4), use('2026-10-28', 'u6', 6, { app: '0.9.10', build: 11020000 }), // updated that day
   use('2026-11-04', 'u1', 7), use('2026-11-04', 'u2', 2, { maker: 'xiaomi', engine: 'direct' }),
+  // v3: the tavern, the room, calls and tokens; a repeat keeps the larger counts.
+  use('2026-11-05', 'u1', 1, { v: 3, tavern: 4, room: 1, calls: 0, tok_in: 12000, tok_out: 800 }),
+  use('2026-11-05', 'u1', 1, { v: 3, tavern: 5, room: 1, calls: 0, tok_in: 15000, tok_out: 900 }),
+  use('2026-11-05', 'u2', 0, { maker: 'xiaomi', engine: 'direct', v: 3, tavern: 0, room: 2, calls: 1, tok_in: 0, tok_out: 0 }),
 ];
 
 let server: Server;
@@ -118,6 +122,9 @@ describe('stats.sh', () => {
     expect(text).toContain('2026-10-28 6 20 6 0 0 0 12');
     expect(text).toContain('2026-11-04 2 9 2 0 0 0 4');
     expect(text).toContain('2026-10-28 5 2 40%');
+    // v3: installs that used each, and how often; tokens in, out, per install with any.
+    expect(text).toContain('2026-11-05 2 1 5 2 3 1 1');
+    expect(text).toContain('2026-11-05 1 15,000 900 15,000 900');
     expect(text).toContain('分布（窗口内 6 个安装，各取最近一次上报）');
     expect(text).toContain('版本：0.9.9 83% · 0.9.10 17%');
     expect(text).toContain('厂商：vivo 67% · xiaomi 17% · huawei 17%');

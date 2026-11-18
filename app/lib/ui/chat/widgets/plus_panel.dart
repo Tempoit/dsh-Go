@@ -22,9 +22,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../l10n/l10n.dart';
+import '../../../plugins/native/native_model.dart';
+import '../../../plugins/native/native_state.dart';
 import '../../../state/chat_state.dart';
 import '../../../state/connection_state.dart';
 import '../../../state/features_state.dart';
+import '../../../state/hosts_state.dart';
 import '../../../state/phone_state.dart';
 import '../../../state/session_modes.dart';
 import '../../common/app_sheet.dart';
@@ -57,6 +60,17 @@ final class GenerateChoice extends PlusChoice {
   const GenerateChoice();
 }
 
+/// 「语音通话」: a call with this conversation (speech/call/).
+final class CallChoice extends PlusChoice {
+  const CallChoice();
+}
+
+/// A plugin's tool: the caller runs it, in front of the composer.
+final class NativeToolChoice extends PlusChoice {
+  const NativeToolChoice(this.action);
+  final NativeAction action;
+}
+
 /// The panel's measured geometry; `test/chat/plus_panel_test.dart` checks it.
 abstract final class PlusPanelMetrics {
   /// Panel edge → first / last tile, and → the cards below.
@@ -70,9 +84,15 @@ abstract final class PlusPanelMetrics {
 }
 
 /// The ＋ panel. [files] false (DSH Remote stages no files) leaves 文件 out;
-/// [generate] adds 生成; [sessionId] adds 本对话 (a new chat has no
-/// conversation to set yet).
-Future<PlusChoice?> showPlusPanel(BuildContext context, {bool files = true, bool generate = false, String? sessionId}) {
+/// [generate] adds 生成; [call] adds 语音通话; [sessionId] adds 本对话 (a new
+/// chat has no conversation to set yet).
+Future<PlusChoice?> showPlusPanel(
+  BuildContext context, {
+  bool files = true,
+  bool generate = false,
+  bool call = false,
+  String? sessionId,
+}) {
   return showAppSheet<PlusChoice>(
     context,
     isScrollControlled: true,
@@ -80,7 +100,7 @@ Future<PlusChoice?> showPlusPanel(BuildContext context, {bool files = true, bool
       top: false,
       child: SingleChildScrollView(
         child: SheetNavigator(
-          root: (_) => _PlusRoot(files: files, generate: generate, sessionId: sessionId),
+          root: (_) => _PlusRoot(files: files, generate: generate, call: call, sessionId: sessionId),
         ),
       ),
     ),
@@ -102,10 +122,11 @@ Future<void> showPermissionSheet(BuildContext context, String sessionId) {
 }
 
 class _PlusRoot extends ConsumerWidget {
-  const _PlusRoot({required this.files, required this.generate, required this.sessionId});
+  const _PlusRoot({required this.files, required this.generate, required this.call, required this.sessionId});
 
   final bool files;
   final bool generate;
+  final bool call;
   final String? sessionId;
 
   @override
@@ -118,6 +139,7 @@ class _PlusRoot extends ConsumerWidget {
       (AttachChoice(AttachSource.camera), AppIcons.camera, l10n.chatTakePhoto, 2),
       if (files) (AttachChoice(AttachSource.files), AppIcons.files, l10n.chatFile, 4),
       if (generate) (const GenerateChoice(), AppIcons.generateMedia, l10n.mediaGenerateTile, 6),
+      if (call) (const CallChoice(), AppIcons.call, l10n.speechCallTile, 1),
     ];
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -135,10 +157,51 @@ class _PlusRoot extends ConsumerWidget {
             ],
           ),
         ),
+        const _PluginTools(),
         if (sessionId != null) ...[const SizedBox(height: 16), _ThisChatCard(sessionId: sessionId)],
         if (phoneOn) ...[const SizedBox(height: 24), const _PhoneCard()],
         const SizedBox(height: 20),
       ],
+    );
+  }
+}
+
+/// Plugins' tools on the attachment tiles' grid, four to a row; nothing without any.
+class _PluginTools extends ConsumerWidget {
+  const _PluginTools();
+
+  static const _perRow = 4;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tools = ref.watch(nativeComposerToolsProvider);
+    if (tools.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      key: const ValueKey('plus-plugin-tools'),
+      padding: const EdgeInsets.fromLTRB(PlusPanelMetrics.side, 16, PlusPanelMetrics.side, 0),
+      child: Column(
+        spacing: PlusPanelMetrics.gap,
+        children: [
+          for (var start = 0; start < tools.length; start += _perRow)
+            Row(
+              spacing: PlusPanelMetrics.gap,
+              children: [
+                for (var i = start; i < start + _perRow; i++)
+                  Expanded(
+                    child: i < tools.length
+                        ? PlusTile(
+                            key: ValueKey('plus-tool|${tools[i].package}|${tools[i].id}'),
+                            icon: tools[i].icon ?? AppIcons.plugin,
+                            label: tools[i].label,
+                            tint: 1,
+                            onTap: () => Navigator.pop(context, NativeToolChoice(tools[i])),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+              ],
+            ),
+        ],
+      ),
     );
   }
 }
@@ -162,6 +225,7 @@ class PlusTile extends StatelessWidget {
     return Semantics(
       button: true,
       label: label,
+      onTap: onTap,
       excludeSemantics: true,
       child: InkWell(
         onTap: onTap,
@@ -305,9 +369,10 @@ class _SessionPermissionPageState extends ConsumerState<SessionPermissionPage> {
   }
 
   Future<void> _makeDefault(String value, int revision) async {
+    final owner = ref.read(activeHostProvider);
     final client = ref.read(activeConnectionProvider).value?.client;
     if (client == null || _busy) return;
-    if (!await confirmPermission(context, value) || !mounted) return;
+    if (!await confirmPermission(context, value) || !mounted || ref.read(activeHostProvider) != owner) return;
     setState(() => _busy = true);
     final problem = await writePermissionDefault(ref, client, value, revision);
     if (!mounted) return;

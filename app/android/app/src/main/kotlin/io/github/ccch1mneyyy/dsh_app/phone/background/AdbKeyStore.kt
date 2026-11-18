@@ -21,6 +21,11 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
  * Generated once, then reused so a paired device stays paired.
  */
 class AdbKeyStore(context: Context) {
+    private companion object {
+        // Display and Android Shell use independent managers but the same private identity.
+        val identityLock = Any()
+    }
+
     private val dir = File(context.filesDir, "phone-adb").apply { mkdirs() }
     private val keyFile = File(dir, "adbkey.pk8")
     private val certFile = File(dir, "adbkey.crt")
@@ -33,11 +38,11 @@ class AdbKeyStore(context: Context) {
     @Synchronized
     fun certificate(): Certificate = load().second
 
-    private fun load(): Pair<PrivateKey, Certificate> {
-        cached?.let { return it }
+    private fun load(): Pair<PrivateKey, Certificate> = synchronized(identityLock) {
+        cached?.let { return@synchronized it }
         val pair = if (keyFile.isFile && certFile.isFile) read() else generate()
         cached = pair
-        return pair
+        pair
     }
 
     private fun read(): Pair<PrivateKey, Certificate> {
@@ -61,8 +66,23 @@ class AdbKeyStore(context: Context) {
         )
         val signer = JcaContentSignerBuilder("SHA256withRSA").build(keyPair.private)
         val cert = JcaX509CertificateConverter().getCertificate(builder.build(signer))
-        keyFile.writeBytes(PKCS8EncodedKeySpec(keyPair.private.encoded).encoded)
-        certFile.writeBytes(cert.encoded)
+        val keyBytes = PKCS8EncodedKeySpec(keyPair.private.encoded).encoded
+        val certBytes = cert.encoded
+        var createdKey = false
+        var createdCert = false
+        try {
+            // A failed write can leave two regular files, which load() would
+            // thereafter treat as a complete identity. Roll back only names
+            // created by this attempt; existing files retain the old policy.
+            createdKey = keyFile.createNewFile()
+            keyFile.writeBytes(keyBytes)
+            createdCert = certFile.createNewFile()
+            certFile.writeBytes(certBytes)
+        } catch (e: Exception) {
+            if (createdKey) runCatching { keyFile.delete() }
+            if (createdCert) runCatching { certFile.delete() }
+            throw e
+        }
         runCatching {
             android.system.Os.chmod(keyFile.path, "600".toInt(8))
             android.system.Os.chmod(certFile.path, "600".toInt(8))

@@ -12,7 +12,7 @@ const require = createRequire(join(resolve(process.env.DSH_TEST_PREFIX ?? proces
 const { Context } = await import(pathToFileURL(require.resolve('@deepseek-ai/cordis')));
 const { LocalFileSystem } = await import(pathToFileURL(require.resolve('@deepseek-ai/dsh-fs-local')));
 const errno = (code) => Object.assign(new Error(`injected ${code}`), { code });
-const unsupported = ['EPERM', 'EXDEV', 'ENOTSUP', 'EMLINK'];
+const unsupported = ['EACCES', 'EPERM', 'EXDEV', 'ENOTSUP', 'EMLINK'];
 let directory;
 let contexts;
 let fs;
@@ -118,7 +118,7 @@ test('two independent providers racing to create have one winner', async () => {
   await noStaging();
 });
 
-for (const code of ['EACCES', 'EIO', 'ENOSPC', 'ENOENT', 'EEXIST', 'EOPNOTSUPP']) {
+for (const code of ['EIO', 'ENOSPC', 'ENOENT', 'EEXIST', 'EOPNOTSUPP']) {
   test(`does not fall back for ${code}`, async () => {
     const failure = errno(code);
     fs.internals.linkFile = async () => { throw failure; };
@@ -131,6 +131,20 @@ for (const code of ['EACCES', 'EIO', 'ENOSPC', 'ENOENT', 'EEXIST', 'EOPNOTSUPP']
     await noStaging();
   });
 }
+
+test('exclusive creation still reports its own permission failure after link EACCES', async () => {
+  const target = await fs.resolve('new.txt');
+  const failure = errno('EACCES');
+  let attempted = false;
+  fs.internals.linkFile = async () => { throw errno('EACCES'); };
+  fs.internals.openPublicationFile = async () => { attempted = true; throw failure; };
+  await assert.rejects(fs.writeText(target, 'ours', { kind: 'createIfAbsent' }), {
+    code: 'FS_IO_ERROR', cause: failure,
+  });
+  assert.equal(attempted, true);
+  await assert.rejects(stat(target.targetKey), { code: 'ENOENT' });
+  await noStaging();
+});
 
 test('abort between link failure and exclusive open does not create a target', async () => {
   const abort = new AbortController();

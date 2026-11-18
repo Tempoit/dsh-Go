@@ -82,6 +82,8 @@ export function createLookup({ resolvConf, hostsFile, Resolver = dns.Resolver, w
   }
 
   async function resolve(hostname, options) {
+    // A failed config read can recover without another event; a dead watcher cannot.
+    if (configurationError && configurationError.syscall !== 'watch') refresh();
     if (configurationError) throw lookupError(hostname, [{ code: 'ESERVFAIL' }]);
     const snapshot = current;
     const family = options.family === 'IPv4' ? 4 : options.family === 'IPv6' ? 6 : (options.family ?? 0);
@@ -93,15 +95,21 @@ export function createLookup({ resolvConf, hostsFile, Resolver = dns.Resolver, w
       // Loopback alone does not establish Internet reachability. A platform that
       // denies getifaddrs cannot safely infer which family to suppress.
       try {
-        const available = new Set(Object.values(networkInterfaces()).flat().filter((e) => e && !e.internal)
-          .map((e) => e.family === 'IPv6' || e.family === 6 ? 6 : 4));
-        families = families.filter((value) => available.has(value));
+        const entries = Object.values(networkInterfaces()).flat();
+        // An empty observation does not establish that either family is absent.
+        // Nonempty observations retain the existing loopback/family filtering.
+        if (entries.length) {
+          const available = new Set(entries.filter((e) => e && !e.internal)
+            .map((e) => e.family === 'IPv6' || e.family === 6 ? 6 : 4));
+          families = families.filter((value) => available.has(value));
+        }
       } catch { /* retain both families when Android denies interface enumeration */ }
     }
     const hostEntries = snapshot.hosts.get(normalizeHost(hostname));
     const failures = [];
     let answers;
-    if (hostEntries) answers = hostEntries.filter((entry) => families.includes(entry.family));
+    if (hostEntries) answers = hostEntries.filter((entry) => families.includes(entry.family))
+      .map(({ address, family }) => ({ address, family }));
     else {
       const responses = await Promise.all(families.map((value) => new Promise((done) => {
         snapshot.resolvers[value][value === 4 ? 'resolve4' : 'resolve6'](domainToASCII(hostname) || hostname, (error, addresses) => {

@@ -8,7 +8,7 @@ The sequence is: write the bundle, test and check its view, install it on a host
 
 ## 1. Prepare the development environment
 
-The example targets **DSH and dsh-tools 0.2.1-rc.4** (the engine DSH Go ships) and needs Node 22.19 or later (this guide was verified on Node 24).
+The example targets **DSH and dsh-tools 0.2.1-rc.4** and needs Node 22.19 or later (this guide was verified on Node 24). DSH Go now ships 0.2.2-rc.1 (which needs Node 24.9 or later), and the repository's example plugins run their tests on it.
 
 `engines.dsh` and the dsh-tools dependencies name a **tested version range**, the same as the example plugins in this repository: `">=0.2.1-rc.2 <0.3.0-0"`. DSH compares versions with semver when it installs a plugin, so a single exact version gets the plugin refused as soon as the engine moves on (rc.2 → rc.4, say) even if not a line changed. The lower bound is the oldest version you tested; the upper bound stops before the next minor version, because a 0.x minor may break things. To support a version outside the range, run the same tests on it first, then widen the range.
 
@@ -354,6 +354,8 @@ npm view @your-scope/dsh-text-metrics name version repository dist.integrity --j
 The example has no `prepare` or `prepublishOnly` build scripts, so these commands explicitly disable scripts. If later versions require them, complete the build and tests before following the appropriate release process. Uploading a source repository alone does not publish an installable npm package. Refer to [npm's publication documentation](https://docs.npmjs.com/cli/v11/commands/npm-publish/) for account operations and command options.
 
 ## 7. Verify the market index dsh-go actually consumes
+
+> Submission and listing in the official market (dsh-go-market) are covered in [Publishing and listing](market.md). This section is about the default discovery index only.
 
 The app currently reads dshfind's **format-1 index** at `https://api.dshfind.com/market/dsh-index.json`. Website discovery and inclusion in this index have different requirements.
 

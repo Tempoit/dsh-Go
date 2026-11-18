@@ -10,6 +10,12 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.os.Handler
+import android.os.Looper
+import io.github.ccch1mneyyy.dsh_app.phone.DiagnosticsTool
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import android.provider.Settings
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
@@ -36,6 +42,8 @@ class RuntimePlugin :
     private var activity: ActivityPluginBinding? = null
     private var pendingStorageResult: MethodChannel.Result? = null
     private var managedSkillOwner: ManagedSkillOwner? = null
+    @Volatile private var diagnosticsAttached = false
+    private val diagnosticsRefresh: () -> Boolean = { refreshDiagnostics() }
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         appContext = binding.applicationContext
@@ -43,9 +51,13 @@ class RuntimePlugin :
         managedSkillOwner = controller.attachManagedSkillOwner()
         methods = MethodChannel(binding.binaryMessenger, "dsh/runtime").also { it.setMethodCallHandler(this) }
         events = EventChannel(binding.binaryMessenger, "dsh/runtime/events").also { it.setStreamHandler(this) }
+        diagnosticsAttached = true
+        controller.attachDiagnosticsRefresh(diagnosticsRefresh)
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+        diagnosticsAttached = false
+        controller.detachDiagnosticsRefresh(diagnosticsRefresh)
         managedSkillOwner?.let { owner ->
             controller.detachManagedSkillOwner(owner)
         }
@@ -54,6 +66,28 @@ class RuntimePlugin :
         events.setStreamHandler(null)
         sink?.let { controller.removeSink(it) }
         sink = null
+    }
+
+    /** Called only by a bridge worker; Flutter remains free to collect and publish on main. */
+    private fun refreshDiagnostics(): Boolean {
+        if (!diagnosticsAttached || Looper.myLooper() == Looper.getMainLooper()) return false
+        val done = CountDownLatch(1)
+        val success = AtomicBoolean(false)
+        Handler(Looper.getMainLooper()).post {
+            if (!diagnosticsAttached) done.countDown()
+            else try {
+                methods.invokeMethod("refreshDiagnostics", null, object : MethodChannel.Result {
+                    override fun success(result: Any?) {
+                        success.set(diagnosticsAttached && result == true)
+                        done.countDown()
+                    }
+                    override fun error(code: String, message: String?, details: Any?) { done.countDown() }
+                    override fun notImplemented() { done.countDown() }
+                })
+            } catch (_: RuntimeException) { done.countDown() }
+        }
+        if (!done.await(15, TimeUnit.SECONDS)) throw DiagnosticsTool.Failure("diagnostics_timeout")
+        return success.get()
     }
 
     // ActivityAware
@@ -77,7 +111,9 @@ class RuntimePlugin :
             "getStatus" -> result.success(controller.status())
             "publishDiagnostics" -> {
                 val markdown = call.argument<String>("markdown")
-                result.success(if (markdown == null || markdown.length > 256 * 1024) null else controller.publishDiagnostics(markdown))
+                val manual = call.argument<Any?>("manual") == true
+                result.success(if (markdown == null || markdown.length > 256 * 1024) null else controller.publishDiagnostics(markdown, manual = manual,
+                    collectedAt = call.argument<Any?>("collectedAt"), sections = call.argument<Any?>("sections")))
             }
             "installManagedSkill" -> {
                 val owner = managedSkillOwner
@@ -129,11 +165,11 @@ class RuntimePlugin :
             }
             "lastKnownGood" -> controller.lastKnownGoodStatus { result.success(it) }
             "restoreLastKnownGood" -> controller.restoreLastKnownGood { plan, error ->
-                if (error == null) result.success(plan) else result.error("restore_failed", error.message, null)
+                if (error == null) result.success(plan) else result.error(if (error is RuntimeNotStoppedException) "runtime_not_stopped" else "restore_failed", error.message, null)
             }
             "safePreflight" -> controller.safePreflight { result.success(it) }
             "moveAside" -> controller.moveAside(call.argument<List<String>>("paths") ?: emptyList()) { moved, error ->
-                if (error == null) result.success(moved) else result.error("move_failed", error.message, null)
+                if (error == null) result.success(moved) else result.error(if (error is RuntimeNotStoppedException) "runtime_not_stopped" else "move_failed", error.message, null)
             }
             "clearFailure" -> {
                 controller.clearFailure()
@@ -143,9 +179,29 @@ class RuntimePlugin :
                 controller.setAutoSafe(call.argument<Boolean>("enabled") != false)
                 result.success(null)
             }
+            "setWorkspaceRecovery" -> {
+                val enabled = (call.arguments as? Map<*, *>)?.get("enabled") as? Boolean
+                if (enabled == null) result.error("workspace_recovery_invalid", "enabled must be a boolean", null)
+                else controller.setWorkspaceRecovery(enabled) { error ->
+                    if (error == null) result.success(null)
+                    else result.error(
+                        if (error is RuntimeNotStoppedException) "runtime_not_stopped" else "workspace_recovery_save_failed",
+                        error.message,
+                        null,
+                    )
+                }
+            }
             "setDirectEngine" -> {
                 try {
                     controller.setDirectEngine(call.argument<Boolean>("enabled") == true)
+                    result.success(null)
+                } catch (error: IllegalStateException) {
+                    result.error("launch_method_unavailable", error.message, null)
+                }
+            }
+            "setTawcEngine" -> {
+                try {
+                    controller.setTawcEngine(call.argument<Boolean>("enabled") == true)
                     result.success(null)
                 } catch (error: IllegalStateException) {
                     result.error("launch_method_unavailable", error.message, null)
@@ -184,8 +240,7 @@ class RuntimePlugin :
             "requestStorage" -> requestStorage(result)
             "openAllFilesAccess" -> {
                 val intent = PhoneStorage.allFilesAccessIntent(appContext)
-                if (intent != null) runCatching { appContext.startActivity(intent) }
-                result.success(intent != null)
+                result.success(intent != null && runCatching { appContext.startActivity(intent) }.isSuccess)
             }
             else -> result.notImplemented()
         }

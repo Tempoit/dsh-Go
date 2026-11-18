@@ -1,4 +1,6 @@
-// Portions derived from ds-harness-remote (https://github.com/liguobao/ds-harness-remote), MIT, Copyright (c) 2026 DSH Remote contributors. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 DSH Remote contributors
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 // REST client for a ds-harness-remote Server (`/api/v1/*`).
 library;
 
@@ -34,15 +36,21 @@ Uri normalizeServerUrl(Object input) {
 }
 
 bool _isPrivateHost(String host) {
-  if (host == 'localhost' || host == '127.0.0.1' || host == '::1' || host == '[::1]' || host == '10.0.2.2') {
-    return true;
+  // Uri.host keeps brackets around IPv6 literals; parse bytes rather than
+  // prefixes so expanded, compressed and uppercase spellings agree.
+  final literal = host.startsWith('[') && host.endsWith(']') ? host.substring(1, host.length - 1) : host;
+  final address = InternetAddress.tryParse(literal);
+  if (address == null) {
+    return host == 'localhost' || host.endsWith('.local') || host.endsWith('.test') || host.endsWith('.localhost');
   }
-  final m = RegExp(r'^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$').firstMatch(host);
-  if (m == null) {
-    return host.endsWith('.local') || host.endsWith('.test') || host.endsWith('.localhost');
+  final bytes = address.rawAddress;
+  if (address.type == InternetAddressType.IPv6) {
+    return (bytes[0] & 0xfe) == 0xfc ||
+        (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80) ||
+        (bytes.last == 1 && bytes.take(15).every((byte) => byte == 0));
   }
-  final a = int.parse(m.group(1)!);
-  final b = int.parse(m.group(2)!);
+  final a = bytes[0];
+  final b = bytes[1];
   return a == 10 ||
       a == 127 ||
       (a == 172 && b >= 16 && b <= 31) ||
@@ -272,6 +280,17 @@ class AuthorizedPeer {
   final DateTime? lastSeenAt;
   final String? clientVersion;
   final String? harnessVersion;
+}
+
+/// What login discovery says about device pairing.
+class RemoteServerCapabilities {
+  const RemoteServerCapabilities({this.devicePairing, this.devicePairingQr});
+
+  /// `dsh-pairing-v1` when the Server pairs devices by scanning.
+  final String? devicePairing;
+
+  /// `fragment-ticket-v1` when it resolves the short QR code.
+  final String? devicePairingQr;
 }
 
 /// Thin, validating REST client. Bearer tokens are passed per call and
@@ -544,32 +563,98 @@ class RemoteServerApi {
     return result;
   }
 
+  // ---------------------------------------------------------------------------
+  // Device pairing v1 (upstream docs/device-pairing-v1.md)
+
+  /// Login discovery's `capabilities` (`devicePairing`, `devicePairingQr`).
+  /// A Server without the discovery endpoint (404) declares none; any other
+  /// failure is reported, never read as "unsupported".
+  Future<RemoteServerCapabilities> serverCapabilities() async {
+    Object? body;
+    try {
+      body = await _request('GET', '/api/v1/auth/oauth/providers');
+    } on RemoteApiException catch (error) {
+      if (error.status == 404) return const RemoteServerCapabilities();
+      rethrow;
+    }
+    final map = asMap(body);
+    final raw = map?['capabilities'];
+    final capabilities = asMap(raw);
+    if (map == null || map['items'] is! List || (raw != null && capabilities == null)) {
+      throw const RemoteApiException('INVALID_MESSAGE', 'The server returned invalid sign-in capabilities.');
+    }
+    return RemoteServerCapabilities(
+      devicePairing: asString(capabilities?['devicePairing']),
+      devicePairingQr: asString(capabilities?['devicePairingQr']),
+    );
+  }
+
+  /// `POST /api/v1/device-pairing/resolve`: the session behind a short code.
+  /// Read-only on the Server (it does not use up the claim), so a lost
+  /// response may be asked again with the same ticket.
+  Future<Object?> resolvePairing(String ticket) =>
+      _request('POST', '/api/v1/device-pairing/resolve', rawJson: jsonEncode({'ticket': ticket}));
+
+  /// One proof-carrying pairing POST; [rawJson] is sent byte for byte.
+  Future<Object?> pairingPost(String path, String rawJson, String proof) {
+    if (!RegExp(r'^/api/v1/device-pairing/sessions/[0-9a-fA-F-]{36}/[a-z/]+$').hasMatch(path)) {
+      throw ArgumentError.value(path, 'path');
+    }
+    return _request('POST', path, rawJson: rawJson, headers: {'X-DSH-Pairing-Proof': proof});
+  }
+
   void close() {
     if (_ownsClient) _http.close(force: true);
   }
 
   // ---------------------------------------------------------------------------
 
-  Future<Object?> _request(String method, String path, {Object? body, String? bearer}) async {
+  Future<Object?> _request(
+    String method,
+    String path, {
+    Object? body,
+    String? rawJson,
+    Map<String, String> headers = const {},
+    String? bearer,
+  }) async {
     final uri = serverUrl.resolve(path);
     if (uri.origin != serverUrl.origin) {
       throw const RemoteApiException('INVALID_MESSAGE', 'Refusing a cross-origin Server request.');
     }
     HttpClientRequest? request;
+    TimeoutException? expired;
     Future<(int, String)> run() async {
       request = await _http.openUrl(method, uri);
       final req = request!;
+      final deadline = expired;
+      if (deadline != null) {
+        req.done.ignore();
+        req.abort(deadline);
+        throw deadline;
+      }
       req.followRedirects = false;
       req.headers.set(HttpHeaders.acceptHeader, 'application/json');
       if (bearer != null) req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $bearer');
-      if (body != null) {
-        final bytes = utf8.encode(jsonEncode(body));
+      headers.forEach(req.headers.set);
+      if (body != null || rawJson != null) {
+        // [rawJson] goes out byte for byte (a pairing proof signs these bytes).
+        final bytes = utf8.encode(rawJson ?? jsonEncode(body));
         req.headers.contentType = ContentType.json;
         req.contentLength = bytes.length;
         req.add(bytes);
       }
       final response = await req.close();
-      final text = await utf8.decodeStream(response);
+      final String text;
+      try {
+        text = await utf8.decodeStream(response);
+      } on FormatException {
+        if (response.statusCode >= 300) return (response.statusCode, '');
+        throw RemoteApiException(
+          'INVALID_MESSAGE',
+          'The server returned an invalid response body.',
+          status: response.statusCode,
+        );
+      }
       return (response.statusCode, text);
     }
 
@@ -577,7 +662,8 @@ class RemoteServerApi {
     final String text;
     try {
       (status, text) = await run().timeout(timeout);
-    } on TimeoutException {
+    } on TimeoutException catch (error) {
+      expired = error;
       request?.abort();
       throw const RemoteApiException('CONNECTION_FAILED', 'The server request timed out.', retryable: true);
     } on SocketException catch (error) {

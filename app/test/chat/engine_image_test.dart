@@ -66,6 +66,38 @@ void main() {
     expect(find.byWidgetPredicate((w) => w is Image && w.image is NetworkImage), findsNothing);
   });
 
+  testWidgets('a root-relative plugin image uses the authenticated engine reader', (tester) async {
+    const url = '/api/dsh-emoji/assets/deepseek/8/ds_01.png';
+    await tester.pumpWidget(scene(url));
+    await tester.pump();
+    expect(reader.reads, [url]);
+    expect(find.textContaining('离线'), findsNothing);
+    ProviderScope.containerOf(tester.element(find.byType(MarkdownImage))).read(_files.notifier).reconnect();
+    await tester.pump();
+    await tester.pump();
+    expect(reader.reads, [url, url]);
+  });
+
+  testWidgets('an absolute workspace image keeps its file reader', (tester) async {
+    final workspace = _Reader();
+    await tester.pumpWidget(
+      testApp(
+        const MarkdownImageScope(
+          sessionId: 's1',
+          child: MarkdownImage(url: '/root/chart.png'),
+        ),
+        overrides: [
+          artifactFilesProvider.overrideWith((ref) => ref.watch(_files)),
+          engineImageReaderProvider.overrideWithValue(CachedImageReader(reader)),
+          workspaceImageReaderProvider.overrideWithValue(CachedImageReader(workspace)),
+        ],
+      ),
+    );
+    await tester.pump();
+    expect(reader.reads, isEmpty);
+    expect(workspace.reads, ['/root/chart.png']);
+  });
+
   testWidgets('an image on any other address stays a plain web image', (tester) async {
     await tester.pumpWidget(scene('https://example.com/a.png'));
     await tester.pump();

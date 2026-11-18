@@ -42,6 +42,6 @@ test('failed original publication leaves no private digest record',async t=>{
 test('failed index publication preserves foreign index but removes staged digest/original',async t=>{
  const f=await fixture(t);const path=await f.store.stage(data,'png');await writeFile(f.indexPath,'foreign');await assert.rejects(f.store.commit(f.makeMeta(path),{sessionId,createdAt:date}));assert.equal(await f.store.abort(),true);assert.deepEqual(await files(f.cwd),[]);assert.equal(await readFile(f.indexPath,'utf8'),'foreign');
 });
-test('revocation after index link rolls digest record and original back together',async t=>{
+test('revocation after index publication rolls digest record and original back together',async t=>{
  let published=false;const f=await fixture(t,async index=>{try{await readFile(index);published=true;throw Error('revoked')}catch(e){if(e.code!=='ENOENT')throw e}});const path=await f.store.stage(data,'png');await assert.rejects(f.store.commit(f.makeMeta(path),{sessionId,createdAt:date}));assert.equal(published,true);assert.equal(await f.store.abort(),true);assert.deepEqual(await files(f.state),[]);assert.deepEqual(await files(f.cwd),[]);
 });

@@ -1,4 +1,6 @@
-// Portions derived from ds-harness-remote (https://github.com/liguobao/ds-harness-remote), MIT, Copyright (c) 2026 DSH Remote contributors. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 DSH Remote contributors
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 // DataChannel chunking of upstream packages/webrtc/src/rtc-chunking.ts:
 // Noise ciphertext above 8 KiB travels as `RTCH` chunks (some Host WebRTC
 // stacks stall on large SCTP messages). Below Noise, above the DataChannel;

@@ -1,4 +1,6 @@
-// Portions derived from DS Bot (https://github.com/Fei2411/DeepSeek-Bot), Apache-2.0, Copyright 2026 Fei2411 and the DS Bot contributors. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 Fei2411 and the DS Bot contributors
+// SPDX-License-Identifier: Apache-2.0
+// See THIRD_PARTY_NOTICES.md.
 // Modified: the ink table (`src/client/inks.js`) and `fnv1a` / `defaultColor`
 // (`src/client/characters.js`) translated to Dart.
 
@@ -106,17 +108,28 @@ class DsBotHttpTransport implements DsBotTransport {
     late final StreamController<DsBotSseEvent> controller;
     HttpClientRequest? request;
     StreamSubscription<String>? lines;
+    var cancelled = false;
     controller = StreamController<DsBotSseEvent>(
       onListen: () async {
         try {
           final req = request = await _http.openUrl('GET', connection.resolve(feedRoute));
+          if (cancelled) {
+            // Cancellation may have finished before openUrl supplied a request.
+            req.done.ignore();
+            req.abort();
+            return;
+          }
           _applyHost(req.headers);
           if (connection.cookie case final cookie?) req.headers.set(HttpHeaders.cookieHeader, cookie.header);
           req.headers.set(HttpHeaders.acceptHeader, 'text/event-stream');
           req.followRedirects = false;
           final response = await req.close().timeout(connection.connectTimeout);
+          if (cancelled) {
+            await response.listen(null).cancel();
+            return;
+          }
           if (response.statusCode != 200) {
-            await response.drain<void>().catchError((_) {});
+            await response.listen(null).cancel().catchError((_) {});
             throw DshHttpException(response.statusCode, 'HTTP ${response.statusCode} from $feedRoute');
           }
           final parser = SseParser();
@@ -153,6 +166,7 @@ class DsBotHttpTransport implements DsBotTransport {
         }
       },
       onCancel: () async {
+        cancelled = true;
         request?.abort();
         await lines?.cancel();
       },

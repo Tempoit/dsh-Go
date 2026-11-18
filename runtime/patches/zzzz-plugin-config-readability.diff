@@ -1,7 +1,7 @@
-# DSH rc4 after 020: read-only profile ownership probes and plugin-config JSON 503.
+# DSH 0.2.2-rc.1 after 020: read-only profile ownership probes and plugin-config JSON 503.
 --- a/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js
-@@ -1009,11 +1009,12 @@
+@@ -1789,11 +1789,12 @@
  * @param binName - the diagnostic prefix on thrown errors.
  * @param dir - absolute profile package directory.
  * @param installAnchor - absolute path of the owning dsh app's package.json.
@@ -62,7 +62,7 @@
  		const patches = loaded.patches.map((patch) => {
 --- a/node_modules/@deepseek-ai/dsh-host-webserver/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-host-webserver/lib/index.js
-@@ -512,12 +512,15 @@
+@@ -591,12 +591,15 @@
  	async dshGoRejectRequest(route, req, res) {
  		const status = await this.dshGoRouteRejection(route.kind, route.path, req);
  		if (status === void 0) return false;

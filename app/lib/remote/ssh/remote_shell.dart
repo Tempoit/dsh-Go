@@ -21,11 +21,26 @@ abstract class RemoteShell {
   Future<RemoteExecResult> run(String script, {Duration timeout = const Duration(seconds: 30)});
 }
 
+/// SSH can finish a startup script before a background child releases the
+/// session. Ordinary commands keep the full drain-and-exit contract of run.
+abstract interface class RemoteBootstrapShell implements RemoteShell {
+  Future<RemoteExecResult> runBootstrap(String script, {required Duration timeout});
+}
+
+/// A URL query value ends at a query separator, fragment or whitespace.
+String redactRemoteTokens(String text) => text.replaceAll(RegExp(r'token=[^\s&#]+', caseSensitive: false), 'token=•••');
+
 /// Single-quotes [value] for POSIX sh.
 String shQuote(String value) => "'${value.replaceAll("'", r"'\''")}'";
 
 /// `sh -lc '<script>'`: works under bash, zsh, fish and busybox accounts alike.
-String loginShell(String script) => 'sh -lc ${shQuote(script)}';
+String loginShell(String script) {
+  // Unlike POSIX sh, fish interprets \\ and \' inside single quotes. Keep
+  // both backslashes and quotes outside quoted spans so the account shell
+  // passes the same script to sh, including its nested trap quoting.
+  final escaped = script.replaceAllMapped(RegExp(r"['\\]"), (match) => "'\\${match[0]}'");
+  return "sh -lc '$escaped'";
+}
 
 /// Runs scripts with the local `/bin/sh` (tests, and a "remote" that is this
 /// machine).

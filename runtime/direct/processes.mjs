@@ -14,16 +14,21 @@ export function createCommands(config, paths) {
   const nodeNames = new Set(['node', node, '/opt/node/bin/node', '/usr/local/bin/node', `${rootfs}/usr/local/bin/node`]);
   const pnpmNames = new Set(['pnpm', 'pnpx', '/usr/local/bin/pnpm', '/usr/local/bin/pnpx', `${rootfs}/usr/local/bin/pnpm`, `${rootfs}/usr/local/bin/pnpx`]);
   const shellWrappers = new Map();
+  function copyEnvironment(environment) {
+    const copy = Object.create(null);
+    for (const key in environment) copy[key] = environment[key];
+    return copy;
+  }
   function guestOptions(options) {
     const environment = options.env ?? process.env;
     const path = environment.PATH;
-    return { ...options, env: { ...environment, ...(path === undefined ? {} : {
+    return { ...options, env: { ...copyEnvironment(environment), ...(path === undefined ? {} : {
       DSH_GO_GUEST_PATH: path.split(':').filter((entry) => entry !== bin).map(paths.toGuest).join(':'),
     }) } };
   }
   function nodeOptions(options) {
     if (options.env == null) return options;
-    const env = { ...options.env };
+    const env = copyEnvironment(options.env);
     for (const name of ['HOME', 'TMPDIR', 'DSH_HOME', 'DSH_AGENTS_HOME', 'NODE_EXTRA_CA_CERTS', 'SSL_CERT_FILE']) {
       if (typeof env[name] === 'string') env[name] = paths.toHost(env[name]);
     }

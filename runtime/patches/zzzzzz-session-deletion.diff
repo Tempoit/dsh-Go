@@ -1,4 +1,4 @@
-# Safe session deletion: rc4 lifecycle, durable fencing, and derived-state cleanup.
+# Safe session deletion: rc1 lifecycle, durable fencing, and derived-state cleanup.
 --- a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
 @@ -1,3 +1,4 @@
@@ -51,7 +51,7 @@
  		options?.signal?.throwIfAborted();
  		await this.ensureRootEncoding();
  		options?.signal?.throwIfAborted();
-@@ -2638,7 +2650,7 @@
+@@ -2646,7 +2658,7 @@
  			revision: entry.revision
  		});
  		signal?.throwIfAborted();
@@ -60,7 +60,7 @@
  	}
  	/** Resolve and read one stored log, refusing loudly when the artifact is absent. */
  	async requireStoredLog(id, signal) {
-@@ -2965,7 +2977,7 @@
+@@ -2973,7 +2985,7 @@
  	* @returns the held lock.
  	*/
  	acquireLease(id, cwd, dir = sessionDir(this.root, cwd, id)) {
@@ -69,7 +69,7 @@
  	}
  	/**
  	* Acquire the cross-process write lock for a materializing created session,
-@@ -2975,7 +2987,7 @@
+@@ -2983,7 +2995,7 @@
  	*/
  	async acquireWriteLease(header) {
  		await this.rejectOppositeArtifact(header.cwd, header.id);
@@ -78,7 +78,7 @@
  	}
  	/** Decode complete frames and retain complete JSONL records from a torn final frame. */
  	async readZstdPrefix(buffer, signal) {
-@@ -3124,7 +3136,7 @@
+@@ -3132,7 +3144,7 @@
  		for (const outcome of headers) {
  			if (outcome.status === "rejected") throw outcome.reason;
  			const { selected, metadata } = outcome.value;
@@ -87,7 +87,7 @@
  			if (ids.has(metadata.header.id)) throw new Error(`duplicate JSONL session id "${metadata.header.id}" appears in multiple project directories`);
  			ids.add(metadata.header.id);
  			artifacts.push({
-@@ -3193,6 +3205,9 @@
+@@ -3201,6 +3213,9 @@
  	}
  	/** Atomically write the header line + first batch (temp-write, fsync, publish). */
  	async materialize(meta, inheritedEventCount, events) {
@@ -97,7 +97,7 @@
  		const project = projectDir(this.root, meta.cwd);
  		const dir = sessionDir(this.root, meta.cwd, meta.id);
  		const finalPath = logPath(this.root, meta.cwd, meta.id, this.compression);
-@@ -3442,6 +3457,7 @@
+@@ -3450,6 +3465,7 @@
  	}
  	/** Find the unique authoritative generation for an id across project directories. */
  	async findLog(id, signal) {
@@ -107,17 +107,17 @@
  			signal?.throwIfAborted();
 --- a/node_modules/@deepseek-ai/dsh-session/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-session/lib/index.js
-@@ -1852,6 +1852,7 @@
+@@ -1868,6 +1868,7 @@
  	*/
  	enter(session) {
  		const id = session.id;
 +		this.ctx.get("sessionPersistence")?.dshGoDeletion?.assertAdmit(id);
  		const carrier = scopeTarget(session, scopeOf(this.ctx));
  		if (this.store.has(id)) throw new Error(`session "${id}" already exists`);
- 		if (attachments.has(session)) throw new Error(`session "${id}" is already attached to a store`);
+ 		if (attachments.get(session) != null) throw new Error(`session "${id}" is already attached to a store`);
 --- a/node_modules/@deepseek-ai/dsh-agent-loop/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-agent-loop/lib/index.js
-@@ -798,6 +798,8 @@
+@@ -562,6 +562,8 @@
  		if (status !== previousStatus) this.dispatch.emit("agent/status", { status });
  	}
  	send(message, target, wakeup) {
@@ -126,7 +126,7 @@
  		const wakingAfterAbort = wakeup && this.phase.kind !== "idle" && this.phase.abort.signal.aborted;
  		const resolvedTarget = wakingAfterAbort ? "next-turn" : target;
  		this.inbox.splice(resolvedTarget, Infinity, 0, [message]);
-@@ -820,6 +822,8 @@
+@@ -584,6 +586,8 @@
  		if (this.phase.kind !== "idle") this.phase.abort.abort(cause);
  	}
  	runMaintenance(job) {
@@ -135,7 +135,7 @@
  		if (this.phase.kind !== "idle") throw new Error(`agent "${this.id}" already has active work`);
  		const done = Promise.withResolvers();
  		const maintenance = {
-@@ -852,6 +856,8 @@
+@@ -616,6 +620,8 @@
  	*   the inbox insertion so a reentrant cancel cannot reclassify it.
  	*/
  	wakeDriver(wakeAfterAbort = false) {
@@ -144,36 +144,42 @@
  		if (this.phase.kind !== "idle") {
  			if (abortedCancelCause(this.phase.abort.signal)?.kind !== "disposed" && (this.phase.kind === "maintenance" || wakeAfterAbort)) this.phase.wakeRequested = true;
  			return;
-@@ -1678,7 +1684,21 @@
- 	* BEFORE publication, so a mid-setup unload rolls everything back; `signal`
- 	* fuses caller cancellation with lifecycle teardown for setup awaits.
+@@ -1452,6 +1458,18 @@
+ 	* @param options - acquired Session/write handle, loop options, start source, parent Agent, setup, and cancellation.
+ 	* @returns the initialized Agent and its shared disposer.
  	*/
-+	dshGoDeletionVersion = 1;
-+	async dshGoDisposeForDeletion(id) {
++	dshGoDeletionVersion = 2;
++	async dshGoDisposeForDeletion(id, options) {
 +		const agent = this.runtime.ctx.agents.get(id);
 +		if (agent === void 0) return;
-+		if (agent.session.header.origin === "subagent" || (agent.session.header.delegationDepth ?? 0) > 0)
++		if (!options?.cascade && (agent.session.header.origin === "subagent" || (agent.session.header.delegationDepth ?? 0) > 0))
 +			throw Object.assign(new Error("related agent"), { code: "session-related" });
-+		if (agent.phase?.kind !== "idle" || agent.inbox.hasPending)
++		if (agent.phase?.kind !== "idle")
 +			throw Object.assign(new Error("active agent"), { code: "session-active" });
 +		if (typeof agent.dshGoDispose !== "function") throw Object.assign(new Error("writer held"), { code: "writer-held" });
 +		agent.dshGoDeleting = true;
 +		await agent.dshGoDispose();
 +	}
- 	prepare(ownerCtx, id, options, session, callerSignal, handle, parentAgent) {
-+		ownerCtx.get("sessionPersistence")?.dshGoDeletion?.assertAdmit(id);
-+		if (parentAgent !== void 0) ownerCtx.get("sessionPersistence")?.dshGoDeletion?.assertAdmit(parentAgent.id);
- 		assertAgentOptions(options);
- 		ownerCtx.fiber.assertActive();
- 		/* v8 ignore next -- unreachable backstop, see above */
-@@ -1779,6 +1799,7 @@
+ 	async initializeAgent(ownerCtx, options) {
+ 		const { session, agentOptions, source, stored, setup, signal: callerSignal, parentAgent } = options;
+ 		const id = session.id;
+@@ -1518,6 +1536,8 @@
+ 		};
+ 		const untrack = this.ownership.track(dispose);
+ 		try {
++			ownerCtx.get("sessionPersistence")?.dshGoDeletion?.assertAdmit(id);
++			if (parentAgent !== void 0) ownerCtx.get("sessionPersistence")?.dshGoDeletion?.assertAdmit(parentAgent.id);
+ 			assertAgentOptions(agentOptions);
+ 			ownerCtx.fiber.assertActive();
+ 			/* v8 ignore next -- unreachable backstop for factory ownership */
+@@ -1561,6 +1581,7 @@
  			/* v8 ignore next -- a synchronous effect exhausts the generator before returning */
  			if (machine === void 0) throw new Error(`agent "${id}" lifecycle did not construct its driver`);
  			const agent = machine;
 +			agent.dshGoDispose = dispose;
  			assertLive();
- 			return {
- 				agent,
+ 			return await agent.runMaintenance(async () => {
+ 				publication = Promise.withResolvers();
 --- a/node_modules/@deepseek-ai/dsh-session-projection-cache/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-session-projection-cache/lib/index.js
 @@ -166,6 +166,7 @@
@@ -263,33 +269,41 @@
  		const persistedRows = db.prepare("SELECT id, revision, generation FROM persisted_sessions").all();
 --- a/node_modules/@deepseek-ai/dsh-schedule/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-schedule/lib/index.js
-@@ -8,6 +8,7 @@
- import { SessionId, SessionLogOffset } from "@deepseek-ai/dsh-session";
+@@ -11,6 +11,7 @@
+ import { Cron, MAX_FOUR_DIGIT_YEAR_MS, MIN_FOUR_DIGIT_YEAR_MS, RRule, canonicalizeTimeZone, formatFourDigitYearInstant, fourDigitYearEpoch, isFourDigitYearInstant, parseLocalCalendar, parseOffsetInstant, resolveLocalInstant } from "@deepseek-ai/dsh-util-time";
  import { z as z$1 } from "zod";
  import { MessageId } from "@deepseek-ai/dsh-llm/brand";
 +import { readFile } from "node:fs/promises";
  import { defineDomain, domainTable } from "@deepseek-ai/dsh-storage-domain";
- import { isDeepStrictEqual } from "node:util";
  //#region lib/types/domain.js
-@@ -2098,6 +2099,7 @@
- 				if (refusal !== void 0) throw new ScheduleInputError("subagent_session", refusal.message);
- 				const domain = await this.getDomain();
- 				signal?.throwIfAborted();
-+				this.ctx.sessionPersistence.dshGoDeletion?.assertAdmit(sessionId);
- 				await domain.table("tasks").put(id, {
- 					sessionId,
- 					record,
-@@ -2252,6 +2254,7 @@
- 		* @returns The stable refusal for a delegated child's Session, or undefined when the Session is eligible.
- 		*/
- 		reminderTargetRefusal(sessionId) {
-+			this.ctx.sessionPersistence.dshGoDeletion?.assertAdmit(sessionId);
- 			const agent = this.ctx.agents.get(sessionId);
- 			if (agent === void 0 || delegationDepthOf(agent) === 0) return void 0;
- 			return {
-@@ -2290,9 +2293,29 @@
- 				if (failure !== void 0) throw failure;
- 			});
+ /**
+@@ -2254,6 +2255,7 @@
+ 						earlierRecordsPruned: false
+ 					}
+ 				});
++				for (const sessionId of task.involvedSessionIds) this.ctx.sessionPersistence.dshGoDeletion?.assertAdmit(sessionId);
+ 				await domain.table("tasks").put(id, task);
+ 				this.emitChanged();
+ 				this.runtime?.requestDrive();
+@@ -2432,6 +2434,7 @@
+ 					signal?.throwIfAborted();
+ 				}
+ 				const task = revisedTask(current, request.patch, target, actorSessionId, Date.now());
++				for (const sessionId of task.involvedSessionIds) this.ctx.sessionPersistence.dshGoDeletion?.assertAdmit(sessionId);
+ 				await tasks.put(request.id, task);
+ 				this.emitChanged();
+ 				this.runtime?.requestDrive();
+@@ -2494,6 +2497,7 @@
+ 		}
+ 		/** Check arming prerequisites without activating a Session; repeated inside the mutation FIFO. */
+ 		async validateTarget(target, signal) {
++			if (target.kind !== "new") this.ctx.sessionPersistence.dshGoDeletion?.assertAdmit(target.sessionId);
+ 			if (target.kind === "new") {
+ 				this.requireSessionCreation();
+ 				return;
+@@ -2618,9 +2622,29 @@
+ 			if (rearm) this.runtime?.requestDrive();
+ 			return removed;
  		}
 +		dshGoDeletionVersion = 1;
 +		async dshGoInspectDeletion(id) {
@@ -300,9 +314,9 @@
 +			let document;
 +			try { document = JSON.parse(await readFile(unit.path, "utf8")); }
 +			catch (error) { if (error.code === "ENOENT") return false; throw error; }
-+			if (document.unit?.name !== "schedule" || document.unit.version !== 1 || !document.tables?.tasks)
++			if (document.unit?.name !== "schedule" || ![1, 2].includes(document.unit.version) || !document.tables?.tasks)
 +				throw Object.assign(new Error("invalid schedule storage"), { code: "unavailable" });
-+			return Object.values(document.tables.tasks).some((task) => task.sessionId === id);
++			return Object.values(document.tables.tasks).some((task) => task.sessionId === id || task.target?.sessionId === id || task.involvedSessionIds?.includes(id));
 +		}
 +		async dshGoCanDelete() {
 +			const unit = (await this.getDomain()).unit;
@@ -352,15 +366,15 @@
  		await this.indexHeaders(await this.listStoredHeaders());
 --- a/node_modules/@deepseek-ai/dsh-storage-json/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-storage-json/lib/index.js
-@@ -263,6 +263,19 @@
+@@ -277,6 +277,19 @@
  		return records;
  	}
- 	publish() {
+ 	async publish() {
 +		const seam = this.dshGoDeletion?.();
 +		if (seam !== void 0) {
 +			if (this.descriptor.name === "schedule") {
 +				const tasks = this.state.tables.get("tasks");
-+				for (const [id, task] of tasks ?? []) if (seam.deleted(task.sessionId)) tasks.delete(id);
++				for (const [id, task] of tasks ?? []) if ((task.involvedSessionIds ?? [task.sessionId]).some((sessionId) => sessionId !== void 0 && seam.deleted(sessionId))) tasks.delete(id);
 +			}
 +			if (this.descriptor.name === "workspace") {
 +				for (const [id, record] of this.state.tables.get("workspaces") ?? [])
@@ -372,7 +386,7 @@
  		const write = writeAtomic(this.path, serialize(this.descriptor.name, this.state));
  		this.inFlight.add(write);
  		write.catch(() => {}).finally(() => this.inFlight.delete(write));
-@@ -583,6 +596,7 @@
+@@ -668,6 +681,7 @@
  			await unit.close();
  			throw new StorageError("closed", "json backend is closed");
  		}
@@ -380,7 +394,7 @@
  		this.open.set(descriptor.name, unit);
  		return unit;
  	}
-@@ -603,6 +617,7 @@
+@@ -688,6 +702,7 @@
  */
  function apply(ctx, config) {
  	const backend = new JsonStorageBackend(config.root);

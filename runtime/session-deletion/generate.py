@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Generate the rc4 deletion patch/pins from read-only vetted npm code.
+"""Generate the rc1 deletion patch/pins from read-only vetted npm code.
 
-Run by the Lead; never writes the input prefix. Existing patch chains are applied
-in memory first, so installed and original npm code produce the same result.
+Run by the Lead; never writes the input prefix. Earlier patch chains are applied
+in memory first; the input must be the untouched 0.2.2-rc.1 npm prefix.
 """
 import argparse
 import difflib
@@ -72,21 +72,22 @@ def transforms():
     add('dsh-agent-loop', '\twakeDriver(wakeAfterAbort = false) {', '''\twakeDriver(wakeAfterAbort = false) {
 \t\tif (this.dshGoDeleting) throw new Error("session is being deleted");
 \t\tthis.loopCtx.get("sessionPersistence")?.dshGoDeletion?.assertAdmit(this.id);''')
-    add('dsh-agent-loop', '\tprepare(ownerCtx, id, options, session, callerSignal, handle, parentAgent) {', '''\tdshGoDeletionVersion = 1;
-\tasync dshGoDisposeForDeletion(id) {
+    add('dsh-agent-loop', '\tasync initializeAgent(ownerCtx, options) {', '''\tdshGoDeletionVersion = 2;
+\tasync dshGoDisposeForDeletion(id, options) {
 \t\tconst agent = this.runtime.ctx.agents.get(id);
 \t\tif (agent === void 0) return;
-\t\tif (agent.session.header.origin === "subagent" || (agent.session.header.delegationDepth ?? 0) > 0)
+\t\tif (!options?.cascade && (agent.session.header.origin === "subagent" || (agent.session.header.delegationDepth ?? 0) > 0))
 \t\t\tthrow Object.assign(new Error("related agent"), { code: "session-related" });
-\t\tif (agent.phase?.kind !== "idle" || agent.inbox.hasPending)
+\t\tif (agent.phase?.kind !== "idle")
 \t\t\tthrow Object.assign(new Error("active agent"), { code: "session-active" });
 \t\tif (typeof agent.dshGoDispose !== "function") throw Object.assign(new Error("writer held"), { code: "writer-held" });
 \t\tagent.dshGoDeleting = true;
 \t\tawait agent.dshGoDispose();
 \t}
-\tprepare(ownerCtx, id, options, session, callerSignal, handle, parentAgent) {
-\t\townerCtx.get("sessionPersistence")?.dshGoDeletion?.assertAdmit(id);
-\t\tif (parentAgent !== void 0) ownerCtx.get("sessionPersistence")?.dshGoDeletion?.assertAdmit(parentAgent.id);''')
+\tasync initializeAgent(ownerCtx, options) {''')
+    add('dsh-agent-loop', '\t\t\tassertAgentOptions(agentOptions);', '''\t\t\townerCtx.get("sessionPersistence")?.dshGoDeletion?.assertAdmit(id);
+\t\t\tif (parentAgent !== void 0) ownerCtx.get("sessionPersistence")?.dshGoDeletion?.assertAdmit(parentAgent.id);
+\t\t\tassertAgentOptions(agentOptions);''')
     add('dsh-agent-loop', '\t\t\tconst agent = machine;\n\t\t\tassertLive();',
         '\t\t\tconst agent = machine;\n\t\t\tagent.dshGoDispose = dispose;\n\t\t\tassertLive();')
 
@@ -144,9 +145,9 @@ def transforms():
 \t\t\tlet document;
 \t\t\ttry { document = JSON.parse(await readFile(unit.path, "utf8")); }
 \t\t\tcatch (error) { if (error.code === "ENOENT") return false; throw error; }
-\t\t\tif (document.unit?.name !== "schedule" || document.unit.version !== 1 || !document.tables?.tasks)
+\t\t\tif (document.unit?.name !== "schedule" || ![1, 2].includes(document.unit.version) || !document.tables?.tasks)
 \t\t\t\tthrow Object.assign(new Error("invalid schedule storage"), { code: "unavailable" });
-\t\t\treturn Object.values(document.tables.tasks).some((task) => task.sessionId === id);
+\t\t\treturn Object.values(document.tables.tasks).some((task) => task.sessionId === id || task.target?.sessionId === id || task.involvedSessionIds?.includes(id));
 \t\t}
 \t\tasync dshGoCanDelete() {
 \t\t\tconst unit = (await this.getDomain()).unit;
@@ -157,11 +158,12 @@ def transforms():
 \t\t\t\tconst seam = this.ctx.sessionPersistence.dshGoDeletion;
 \t\t\t\treturn seam === void 0 ? work() : seam.withMutation(work);
 \t\t\t});''')
-    add('dsh-schedule', '\t\treminderTargetRefusal(sessionId) {',
-        '\t\treminderTargetRefusal(sessionId) {\n\t\t\tthis.ctx.sessionPersistence.dshGoDeletion?.assertAdmit(sessionId);')
-    # getDomain() can yield before a create/update commit, so check again at actual storage admission.
-    add('dsh-schedule', '\t\t\t\tawait domain.table("tasks").put(id, {',
-        '\t\t\t\tthis.ctx.sessionPersistence.dshGoDeletion?.assertAdmit(sessionId);\n\t\t\t\tawait domain.table("tasks").put(id, {')
+    add('dsh-schedule', '\t\tasync validateTarget(target, signal) {',
+        '\t\tasync validateTarget(target, signal) {\n\t\t\tif (target.kind !== "new") this.ctx.sessionPersistence.dshGoDeletion?.assertAdmit(target.sessionId);')
+    add('dsh-schedule', '\t\t\t\tawait domain.table("tasks").put(id, task);',
+        '\t\t\t\tfor (const sessionId of task.involvedSessionIds) this.ctx.sessionPersistence.dshGoDeletion?.assertAdmit(sessionId);\n\t\t\t\tawait domain.table("tasks").put(id, task);')
+    add('dsh-schedule', '\t\t\t\tawait tasks.put(request.id, task);',
+        '\t\t\t\tfor (const sessionId of task.involvedSessionIds) this.ctx.sessionPersistence.dshGoDeletion?.assertAdmit(sessionId);\n\t\t\t\tawait tasks.put(request.id, task);')
     add('dsh-schedule', 'import { defineDomain, domainTable } from "@deepseek-ai/dsh-storage-domain";',
         'import { readFile } from "node:fs/promises";\nimport { defineDomain, domainTable } from "@deepseek-ai/dsh-storage-domain";')
 
@@ -189,12 +191,12 @@ def transforms():
         '\t\tunit.dshGoDeletion = () => this.dshGoDeletion?.();\n\t\tthis.open.set(descriptor.name, unit);')
     add('dsh-storage-json', '\tconst backend = new JsonStorageBackend(config.root);',
         '\tconst backend = new JsonStorageBackend(config.root);\n\tbackend.dshGoDeletion = () => ctx.get("sessionPersistence")?.dshGoDeletion;')
-    add('dsh-storage-json', '\tpublish() {\n\t\tconst write = writeAtomic', '''\tpublish() {
+    add('dsh-storage-json', '\tasync publish() {\n\t\tconst write = writeAtomic', '''\tasync publish() {
 \t\tconst seam = this.dshGoDeletion?.();
 \t\tif (seam !== void 0) {
 \t\t\tif (this.descriptor.name === "schedule") {
 \t\t\t\tconst tasks = this.state.tables.get("tasks");
-\t\t\t\tfor (const [id, task] of tasks ?? []) if (seam.deleted(task.sessionId)) tasks.delete(id);
+\t\t\t\tfor (const [id, task] of tasks ?? []) if ((task.involvedSessionIds ?? [task.sessionId]).some((sessionId) => sessionId !== void 0 && seam.deleted(sessionId))) tasks.delete(id);
 \t\t\t}
 \t\t\tif (this.descriptor.name === "workspace") {
 \t\t\t\tfor (const [id, record] of this.state.tables.get("workspaces") ?? [])
@@ -208,27 +210,20 @@ def transforms():
 
 
 def build(prefix):
-    pins = json.loads((RUNTIME / 'patches/pins.json').read_text())
     changes = {}
+    names = rt.patch_names(RUNTIME / 'patches')
+    preceding = names[:names.index(PATCH_NAME)]
     for rel, edits in transforms().items():
         raw = (prefix / rel).read_text()
-        # Normalize all older patches in memory, refusing custom code.
-        stages = []
-        for patch in sorted((RUNTIME / 'patches').glob('*.diff')):
-            if patch.name == PATCH_NAME:
-                continue
-            pin = pins['patches'].get(patch.name, {}).get('0.2.1-rc.4', {}).get(rel)
-            if pin:
-                hunks = dict(rt.parse_unified_diff(patch.read_text()))[rel]
-                stages.append((pin, hunks))
-        if stages:
-            digest = hashlib.sha256(raw.encode()).hexdigest()
-            known = [pin['before'] for pin, _ in stages] + [stages[-1][0]['after']]
-            if digest not in known:
-                raise ValueError('unvetted input ' + rel + ': ' + digest)
-            for pin, hunks in stages:
-                if hashlib.sha256(raw.encode()).hexdigest() == pin['before']:
-                    raw = rt.apply_hunks(raw, hunks, rel)
+        # Input is the untouched rc1 npm prefix; replay the same explicit order as the build.
+        package = prefix / Path(rel).parent.parent / 'package.json'
+        if json.loads(package.read_text())['version'] != '0.2.2-rc.1':
+            raise ValueError('expected unpatched 0.2.2-rc.1 input: ' + rel)
+        for name in preceding:
+            patch = RUNTIME / 'patches' / name
+            hunks = dict(rt.parse_unified_diff(patch.read_text())).get(rel)
+            if hunks:
+                raw = rt.apply_hunks(raw, hunks, rel)
         updated = raw
         for old, new in edits:
             updated = replace(updated, old, new)
@@ -241,7 +236,7 @@ def main():
     parser.add_argument('--source', type=Path, required=True)
     args = parser.parse_args()
     changes = build(args.source.resolve())
-    patch = '# Safe session deletion: rc4 lifecycle, durable fencing, and derived-state cleanup.\n'
+    patch = '# Safe session deletion: rc1 lifecycle, durable fencing, and derived-state cleanup.\n'
     new_pins = {}
     for rel, (before, after) in changes.items():
         patch += ''.join(difflib.unified_diff(before.splitlines(True), after.splitlines(True), 'a/' + rel, 'b/' + rel))
@@ -249,7 +244,7 @@ def main():
     (RUNTIME / 'patches' / PATCH_NAME).write_text(patch)
     path = RUNTIME / 'patches/pins.json'
     pins = json.loads(path.read_text())
-    pins['patches'][PATCH_NAME] = {'0.2.1-rc.4': new_pins}
+    pins['patches'][PATCH_NAME] = {'0.2.2-rc.1': new_pins}
     path.write_text(json.dumps(pins, indent=2) + '\n')
     print('Generated', PATCH_NAME, 'with', len(changes), 'vetted files; input prefix untouched.')
 

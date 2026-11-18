@@ -5,6 +5,8 @@
 // fall through everywhere but the body, panels that send it away, reactions,
 // sleep, the menu and the bubble.
 
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:dsh_app/pets/pet_mood.dart';
@@ -94,6 +96,24 @@ Rect hitBox(WidgetTester tester, PetPack pack, [String anim = 'idle']) {
     canvas.left + box.right * s,
     canvas.top + math.min(box.bottom, pack.baseline) * s,
   );
+}
+
+/// The shipped Deepy pack with parts of its pack.json replaced (reactions, bonus).
+PetPack deepyWith(Map<String, Object?> changes) => PetPack.parse({
+  ...jsonDecode(File('assets/pets/deepy-whale/pack.json').readAsStringSync()) as Map<String, Object?>,
+  ...changes,
+});
+
+/// A [math.Random] that always draws zero: any chance is hit and index 0 picked.
+class _ZeroRandom implements math.Random {
+  @override
+  bool nextBool() => false;
+
+  @override
+  double nextDouble() => 0;
+
+  @override
+  int nextInt(int max) => 0;
 }
 
 void main() {
@@ -321,6 +341,82 @@ void main() {
       expect(petLayer(tester).playing!.name, 'idle');
     });
 
+    testWidgets('six quick taps without an annoyed reaction: it keeps tickling', (tester) async {
+      await pumpPet(tester, warm: ['react-left', 'react-right', 'react-double']);
+      final body = hitBox(tester, deepy);
+      Future<void> tap() async {
+        await tester.tapAt(body.center);
+        await tester.pump(const Duration(milliseconds: 50));
+        clock.advance(const Duration(milliseconds: 150));
+      }
+
+      for (var i = 0; i < 3; i++) {
+        await tap();
+      }
+      expect(petLayer(tester).playing!.name, 'react-double', reason: 'three quick taps tickle');
+      for (var i = 0; i < 3; i++) {
+        await tap();
+      }
+      expect(petLayer(tester).playing!.name, 'react-double', reason: 'no annoyed reaction to move on to');
+    });
+
+    testWidgets('tapped on to six with an annoyed reaction: annoyed, then the tap loop again', (tester) async {
+      final pack = deepyWith({
+        'reactions': {
+          'tapLeft': 'react-left',
+          'tapRight': 'react-right',
+          'tickle': 'react-double',
+          'drag': 'react-drag',
+          'annoyed': 'error',
+        },
+      });
+      await pumpPet(tester, pack: pack, warm: ['react-left', 'react-right', 'react-double', 'error']);
+      final body = hitBox(tester, pack);
+      Future<void> tap() async {
+        await tester.tapAt(body.center);
+        await tester.pump(const Duration(milliseconds: 50));
+        clock.advance(const Duration(milliseconds: 150));
+      }
+
+      for (var i = 0; i < 5; i++) {
+        await tap();
+      }
+      expect(petLayer(tester).playing!.name, 'react-double', reason: 'the fourth and fifth keep tickling');
+      await tap();
+      expect(petLayer(tester).playing!.name, 'error', reason: 'the sixth taps it out');
+      await tap();
+      expect(petLayer(tester).playing!.name, 'react-right', reason: 'the count was cleared: a plain poke again');
+    });
+
+    testWidgets('a bare pack (idle only, no reactions): taps and states fall back quietly', (tester) async {
+      final bare = deepyWith({
+        'states': {'idle': ['idle']},
+        'reactions': <String, Object?>{},
+        'bonus': <String, Object?>{},
+        'tiers': <String, Object?>{},
+      });
+      await pumpPet(tester, pack: bare);
+      final body = hitBox(tester, bare);
+      for (var i = 0; i < 6; i++) {
+        await tester.tapAt(body.center);
+        await tester.pump(const Duration(milliseconds: 50));
+        clock.advance(const Duration(milliseconds: 150));
+      }
+      expect(tester.takeException(), isNull, reason: 'a reaction the pack does not write is skipped, not a crash');
+      expect(petLayer(tester).playing!.name, 'idle');
+      container
+          .read(testSignalsProvider.notifier)
+          .set(
+            PetSignals(
+              lastInteraction: clock.now,
+              focus: const PetFocus(host: HostRef.local, sessionId: 'a', activity: PetActivity.thinking),
+            ),
+          );
+      await tester.pump();
+      await tester.pump();
+      expect(petLayer(tester).playing!.name, 'idle', reason: 'no thinking state: idle is the fallback');
+    });
+
     testWidgets('long press: 换宠物 · 藏起来 1 小时 · 宠物设置; hiding it hides it', (tester) async {
       await pumpPet(tester);
       await tester.longPressAt(hitBox(tester, deepy).center);
@@ -367,6 +463,30 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 600));
       expect(petLayer(tester).playing!.name, 'music', reason: 'on the composer: everything — a and b run, tier 2');
+    });
+
+    testWidgets('bonus also plays on a state that is not attention', (tester) async {
+      final pack = deepyWith({
+        'bonus': {
+          'thinking': {'anims': ['error'], 'chance': 0.5},
+        },
+      });
+      // A die that always draws zero: the chance is hit, the lone extra picked.
+      PetLayer.random = _ZeroRandom();
+      await pumpPet(tester, pack: pack, warm: ['thinking', 'error']);
+      container
+          .read(testSignalsProvider.notifier)
+          .set(
+            PetSignals(
+              lastInteraction: clock.now,
+              focus: const PetFocus(host: HostRef.local, sessionId: 'a', activity: PetActivity.thinking),
+            ),
+          );
+      await tester.pump();
+      await tester.pump();
+      expect(petLayer(tester).playing!.name, 'error', reason: 'the thinking bonus, not the plain thinking animation');
+      await tester.pump(Duration(milliseconds: pack.playOf(pack.animations['error']!) + 1));
+      expect(petLayer(tester).playing!.name, 'thinking', reason: 'one pass of the extra, then back to the state');
     });
   });
 

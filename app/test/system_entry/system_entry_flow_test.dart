@@ -8,6 +8,7 @@ import 'dart:io';
 
 import 'package:dsh_app/links/app_links.dart';
 import 'package:dsh_app/state/chat_state.dart';
+import 'package:dsh_app/state/draft_store.dart';
 import 'package:dsh_app/state/hosts_state.dart';
 import 'package:dsh_app/state/sessions_state.dart';
 import 'package:dsh_app/state/voice_state.dart';
@@ -204,6 +205,36 @@ void main() {
     await _unmount(tester);
   });
 
+  testWidgets('consecutive shares keep all draft text but only the latest warning', (tester) async {
+    natives(tester);
+    final harness = ChatHarness();
+    await _pump(tester, harness);
+    Future<void> share(String name) => _shares.push({
+      'text': name,
+      'skipped': [
+        {'name': '$name.bin', 'reason': 'too_large'},
+      ],
+    });
+    await share('first');
+    await _settle(tester, () => _composerText(tester) == 'first');
+    expect(find.text('「first.bin」太大，未添加'), findsOneWidget);
+
+    // Native arrivals can finish while the first warning is still exiting.
+    await share('middle');
+    await share('latest');
+    await tester.idle();
+    await pumpFrames(tester);
+    expect(_composerText(tester), 'first\n\nmiddle\n\nlatest');
+    expect(find.text('「latest.bin」太大，未添加'), findsOneWidget);
+    expect(find.text('「middle.bin」太大，未添加'), findsNothing);
+    expect(harness.controllers.values.every((c) => c.sent.isEmpty), isTrue);
+    await _settle(tester, () => tester.widget<SnackBar>(find.byType(SnackBar)).animation!.isCompleted);
+    await tester.pump(const Duration(seconds: 2));
+    await pumpFrames(tester);
+    expect(find.byType(SnackBar), findsNothing);
+    await _unmount(tester);
+  });
+
   testWidgets('a lone share-code file goes to the importer, not to a chat', (tester) async {
     natives(tester);
     final code = cached('读书笔记.dshgo', utf8.encode('{"dshgo":1}'));
@@ -245,6 +276,65 @@ void main() {
     expect(container.read(currentSessionProvider), isNull);
     expect(_voice.calls, containsAllInOrder(['permission', 'recognizer']));
     expect(tester.widget<Composer>(find.byType(Composer)).voice!.active, isTrue);
+    await _unmount(tester);
+  });
+
+  testWidgets('a pet screenshot opens an editable image draft without sending or losing text', (tester) async {
+    natives(tester);
+    final image = cached('screenshot.png', tinyPng);
+    final harness = ChatHarness(session: 's1', states: {'s1': const ChatState(loading: false, running: true)});
+    final container = await _pump(tester, harness);
+    final field = find.descendant(of: find.byType(Composer), matching: find.byType(TextField));
+    await tester.enterText(field, 'old chat draft');
+    container.read(draftStoreProvider.notifier).save('new', 'existing question', const []);
+
+    await _entries.push({'kind': 'screenshot', 'path': image.path});
+    await _settle(tester, () => _tray(tester).isNotEmpty);
+
+    expect(container.read(currentSessionProvider), isNull);
+    expect(_composerText(tester), 'existing question');
+    expect(_tray(tester), ['screenshot.png']);
+    expect(_composerFocused(tester), isTrue);
+    final drafts = container.read(draftStoreProvider).drafts;
+    expect(drafts['s1']!.text, 'old chat draft');
+    expect(drafts['new']!.attachments.single.bytes, tinyPng);
+    expect(harness.controllers.values.every((c) => c.sent.isEmpty), isTrue);
+    expect(image.existsSync(), isFalse);
+
+    await tester.enterText(field, 'what does this mean?');
+    await tester.pump();
+    expect(_tray(tester), ['screenshot.png']);
+    expect(harness.controllers.values.every((c) => c.sent.isEmpty), isTrue);
+    await _unmount(tester);
+  });
+
+  testWidgets('a screenshot waiting at startup is attached once when the composer is ready', (tester) async {
+    natives(tester);
+    final image = cached('startup-screen.png', tinyPng);
+    await _entries.push({'kind': 'screenshot', 'path': image.path});
+    final harness = ChatHarness(session: 's1');
+    final container = await _pump(tester, harness);
+    await _settle(tester, () => _tray(tester).isNotEmpty);
+
+    expect(container.read(currentSessionProvider), isNull);
+    expect(_tray(tester), ['startup-screen.png']);
+    expect(_composerText(tester), isEmpty);
+    expect(_composerFocused(tester), isTrue);
+    expect(image.existsSync(), isFalse);
+    expect(harness.controllers.values.every((c) => c.sent.isEmpty), isTrue);
+    await _unmount(tester);
+  });
+
+  testWidgets('an unreadable screenshot reports the problem rather than submitting a message', (tester) async {
+    natives(tester);
+    final harness = ChatHarness(session: 's1');
+    final container = await _pump(tester, harness);
+    await _entries.push({'kind': 'screenshot', 'path': '${dir.path}/missing.png'});
+    await _settle(tester, () => container.read(currentSessionProvider) == null);
+
+    expect(_tray(tester), isEmpty);
+    expect(find.text('没能读取「missing.png」'), findsOneWidget);
+    expect(harness.controllers.values.every((c) => c.sent.isEmpty), isTrue);
     await _unmount(tester);
   });
 

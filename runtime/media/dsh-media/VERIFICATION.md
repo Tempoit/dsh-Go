@@ -1,4 +1,18 @@
-# 0.2.0 验证与复现
+# Media 验证与复现
+
+## 0.3.0 兼容性集成 — 2026-11-07
+
+本节基于最新 main 基线 3a91fab9 的隔离工作树，不沿用旧工作树的 320 项通过结论。保留 main 已有 owner teardown、暂存清理和 storage 错误分类修复及测试；没有改动生产 runtime 锁、补丁或媒体执行代码。
+
+- DSH 0.2.2-rc.1：完整 Node suite 325 通过，4 个 DSH_PREFIX 门控用例跳过；另以 rc.1 的真实服务执行 owner 生命周期 4/4 通过（无跳过）。headless 图片与视频均通过，分别 27/38 个事件。
+- DSH 0.2.1-rc.4：完整 Node suite 325 通过，4 个仅针对 rc.1 的 DSH_PREFIX 用例跳过；headless 图片与视频均通过，分别 27/38 个事件。
+- 两版测试 prefix 由各自已有 runtime lock 派生，仅补入精确 SRI 的 mock-server 和 image-size；compatibility.test 逐条比对原 lock 的所有非根记录，并验证真实 host compatibility evaluator 的正/负版本门禁。
+- headless 等到实际 video job settled 再取结果；rc.1 保留显式 native executor 开启/PTC executor 关闭，只有 rc.4 使用旧 tools.mode 配置。
+- Linux arm64 / Android PRoot，Node v24.22.1，本地 HTTP/LLM mock，无真实付费供应商、App 安装、媒体查看器或市场发布验证。
+
+复现：prepare.mjs 默认选 0.2.2-rc.1；旧版加 --dsh-version 0.2.1-rc.4。每版单独 npm ci --ignore-scripts，串行切换源码的 node_modules 测试链接。不要省略当前平台的 native loader/system optional binding。真实 owner 生命周期用例另设置 DSH_PREFIX 为 rc.1 prefix 后运行，跳过不能写成通过。
+
+## 历史：0.2.0 验证与复现
 
 运行环境：Linux，Node v24.21.0，DSH npm `0.2.1-rc.4`，`TZ=Asia/Shanghai`。现有 rc.4 runtime lock 的 628 个非根记录全部保留，只加入精确 integrity 的 `dsh-llm-mock-server@0.2.1-rc.4` 与 `image-size@2.0.2`；不混用其他版本的 jobs。
 
@@ -7,7 +21,7 @@
 从仓库根执行，`/absolute/media-deps` 与 `/absolute/media-evidence` 必须是新目录。安装步骤不运行 npm 生命周期脚本；实际工作区的 node_modules 已存在时不要覆盖，先核对其来源。
 
 ```sh
-node runtime/media/dsh-media/test/headless-v2/prepare.mjs --out /absolute/media-deps
+node runtime/media/dsh-media/test/headless-v2/prepare.mjs --dsh-version 0.2.1-rc.4 --out /absolute/media-deps
 npm ci --ignore-scripts --prefix /absolute/media-deps
 ln -s /absolute/media-deps/node_modules runtime/media/dsh-media/node_modules
 TZ=Asia/Shanghai node --test runtime/media/dsh-media/test/*.test.js

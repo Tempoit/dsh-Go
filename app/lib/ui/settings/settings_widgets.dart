@@ -1,6 +1,9 @@
-// Layout idea after PiPilot (https://github.com/CikeSeven/pi_pilot), MIT, Copyright (c) 2026 CikeSeven. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 CikeSeven
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../common/app_sheet.dart';
 import '../common/list_page_row.dart' show ListPageRow;
@@ -162,7 +165,7 @@ class SettingsTile extends StatelessWidget {
       spot,
       InkWell(
         onTap: onTap,
-        splashFactory: NoSplash.splashFactory,
+        splashFactory: rowSplash(context),
         highlightColor: scheme.onSurface.withValues(alpha: 0.05),
         child: ConstrainedBox(
           constraints: BoxConstraints(
@@ -248,6 +251,12 @@ class SettingsSwitchTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final fluid = AppMotion.fluid(context);
+    void change(bool next) {
+      if (fluid) HapticFeedback.selectionClick();
+      onChanged!(next);
+    }
+
     return MergeSemantics(
       child: SettingsTile(
         icon: icon,
@@ -256,8 +265,8 @@ class SettingsSwitchTile extends StatelessWidget {
         subtitle: subtitle,
         tint: tint,
         tinted: tinted,
-        onTap: onChanged == null ? null : () => onChanged!(!value),
-        trailing: Switch(value: value, onChanged: onChanged),
+        onTap: onChanged == null ? null : () => change(!value),
+        trailing: Switch(value: value, onChanged: onChanged == null ? null : change),
       ),
     );
   }
@@ -386,9 +395,12 @@ class SettingsSegmentTile<T> extends StatelessWidget {
     this.tint = 0,
     this.title,
     this.spot,
+    this.subtitle,
+    this.subtitleAction,
     required this.segments,
     required this.selected,
     required this.onChanged,
+    this.onReselect,
     this.tinted = true,
   }) : assert(title != null || spot != null);
 
@@ -398,9 +410,18 @@ class SettingsSegmentTile<T> extends StatelessWidget {
   /// Defaults to [spot]'s title.
   final String? title;
   final SettingSpot? spot;
+
+  /// A line under the control (so the control stays put when it comes and goes).
+  final String? subtitle;
+
+  /// Something to tap right after [subtitle]; on the next line when it doesn't fit.
+  final Widget? subtitleAction;
   final List<PillSegment<T>> segments;
   final T selected;
   final ValueChanged<T>? onChanged;
+
+  /// See [SegmentedPill.onReselect].
+  final ValueChanged<T>? onReselect;
   final bool tinted;
 
   @override
@@ -436,10 +457,28 @@ class SettingsSegmentTile<T> extends StatelessWidget {
               segments: segments,
               selected: selected,
               onChanged: onChanged,
+              onReselect: onReselect,
               expand: !inline,
             );
+            final note = switch (subtitle) {
+              final sub? => Padding(
+                padding: EdgeInsets.only(left: lead, top: 6, bottom: 2),
+                child: Wrap(
+                  spacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      sub,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: DshColors.of(context).textTertiary),
+                    ),
+                    ?subtitleAction,
+                  ],
+                ),
+              ),
+              null => null,
+            };
             if (inline) {
-              return ConstrainedBox(
+              final row = ConstrainedBox(
                 constraints: const BoxConstraints(minHeight: SettingsMetrics.rowHeight - 16),
                 child: Row(
                   children: [
@@ -450,6 +489,8 @@ class SettingsSegmentTile<T> extends StatelessWidget {
                   ],
                 ),
               );
+              if (note == null) return row;
+              return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [row, note]);
             }
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -469,6 +510,7 @@ class SettingsSegmentTile<T> extends StatelessWidget {
                   child: pill,
                 ),
                 const SizedBox(height: 4),
+                ?note,
               ],
             );
           },

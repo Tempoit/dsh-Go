@@ -6,9 +6,11 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:dsh_app/ui/common/app_sheet.dart';
 import 'package:dsh_app/ui/chat/widgets/question_card.dart';
+import 'package:dsh_app/ui/chat/widgets/schedule_question_body.dart';
 import 'package:dsh_app/runtime/runtime_state.dart';
 import 'package:dsh_app/state/connection_state.dart';
 import 'package:dsh_app/state/hosts_state.dart';
@@ -53,7 +55,7 @@ class _Sessions extends SessionsController {
   Future<List<SessionSummary>> build() async => [_session('s1', '修复登录按钮重复提交'), _session('s2', '每天的构建检查')];
 
   @override
-  Future<String> create() async {
+  Future<String> create({bool autoApprove = true}) async {
     creates++;
     return 'new-1';
   }
@@ -86,6 +88,13 @@ Map<String, Object?> _entry(String id, String kind, Map<String, Object?> fields,
 };
 
 final _daily = _entry('sch-1', 'daily', {'time': '09:00:00.000', 'timeZone': 'Asia/Shanghai'});
+
+final _rrule = {
+  ..._entry('sch-2', 'rrule', {'rrule': 'DTSTART;TZID=Asia/Shanghai:20261025T090000\nRRULE:FREQ=DAILY;COUNT=3'}),
+  'target': {'kind': 'new'},
+  'involvedSessionIds': ['s1'],
+  'updatedAt': '2026-10-24T00:00:00.000Z',
+};
 
 ScheduleTask _task(Map<String, Object?> entry) => ScheduleTask.fromJson(entry)!;
 
@@ -134,6 +143,62 @@ void main() {
   test('schedule authorization uses real mux replay and scoped human responses', runScheduleAuthorizationChecks);
 
   group('authorization', () {
+    testWidgets('complete Host task is readable and can be explicitly authorized from the editor', (tester) async {
+      final result = Completer<Object?>();
+      final payload = jsonDecode(File('test/chat/fixtures/schedule_authorization_request.json').readAsStringSync());
+      carrier.handlers[r'$events/result'] = (_) => null;
+      carrier.handlers['schedule/update'] = (_) {
+        carrier.link!.push({
+          'type': 'waterfall',
+          'event': 'user-questions/request',
+          'eventId': 'complete-question',
+          'agentId': 's1',
+          'request': payload,
+        });
+        return result.future;
+      };
+      await pump(tester, ScheduleEditorPage(task: _task(_daily), now: _now));
+      await tester.enterText(find.widgetWithText(TextField, '日报提醒'), '新名字');
+      await tester.tap(find.text('保存'));
+      await pumpFrames(tester);
+      expect(find.text('合成每日检查'), findsOneWidget);
+      expect(find.textContaining('1. 检查合成项目，保留完整结果与换行。\n2.'), findsOneWidget);
+      final submit = find.widgetWithText(FilledButton, '提交');
+      await tester.ensureVisible(submit);
+      await pumpFrames(tester);
+      expect(submit.hitTestable(), findsOneWidget);
+      expect(find.text('授权 / Authorize').hitTestable(), findsOneWidget);
+      expect(tester.widget<FilledButton>(submit).onPressed, isNull);
+      final scroll = find.descendant(of: find.byType(ScheduleQuestionBody), matching: find.byType(Scrollable));
+      await tester.scrollUntilVisible(find.text('null'), 220, scrollable: scroll, maxScrolls: 40);
+      expect(find.text('null').hitTestable(), findsOneWidget);
+      expect(carrier.argsOf(r'$events/result'), isEmpty);
+      await tester.tap(find.text('授权 / Authorize'));
+      await tester.pump();
+      expect(carrier.argsOf(r'$events/result'), isEmpty);
+      await tester.tap(submit);
+      await pumpFrames(tester);
+      expect(carrier.argsOf(r'$events/result').single, {
+        'clientId': 'client-1',
+        'eventId': 'complete-question',
+        'outcome': {
+          'kind': 'result',
+          'value': {
+            'answers': [
+              {
+                'id': 'dsh-go-schedule-authorization-synthetic',
+                'selected': ['授权 / Authorize'],
+              },
+            ],
+          },
+        },
+      });
+      expect(find.byType(QuestionCard), findsNothing);
+      result.complete({'id': 'sch-1', 'updated': false, 'code': 'schedule_conflict'});
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+
     Future<Completer<Object?>> pendingEdit(WidgetTester tester) async {
       final result = Completer<Object?>();
       carrier.handlers[r'$events/result'] = (_) => null;
@@ -261,6 +326,32 @@ void main() {
   });
 
   group('edit', () {
+    testWidgets('a custom rule is shown as such and a new name leaves it alone', (tester) async {
+      carrier.handlers['schedule/edit'] = (args) {
+        final request = args['request']! as Map<String, Object?>;
+        return {..._rrule, ...(request['patch']! as Map<String, Object?>)};
+      };
+      usePhoneView(tester);
+      await tester.pumpWidget(
+        testApp(
+          ScheduleEditorPage(task: _task(_rrule), now: _now),
+          overrides: overrides(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('自定义'), findsOneWidget);
+      expect(find.text('仅一次'), findsNothing, reason: 'not the one-shot the builder would read it as');
+
+      await tester.enterText(find.widgetWithText(TextField, '日报提醒'), '周报提醒');
+      await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, '保存'));
+      await tester.pumpAndSettle();
+
+      final request = carrier.argsOf('schedule/edit').single['request']! as Map<String, Object?>;
+      expect(request['patch'], {'title': '周报提醒'}, reason: 'the rule is not sent back');
+    });
+
     testWidgets('switching to 工作日 sends a weekly change with the new name', (tester) async {
       carrier.handlers['schedule/update'] = (args) {
         final request = args['request']! as Map<String, Object?>;

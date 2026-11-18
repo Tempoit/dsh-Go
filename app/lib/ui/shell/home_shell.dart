@@ -1,4 +1,6 @@
-// Portions derived from PiPilot (https://github.com/CikeSeven/pi_pilot), MIT, Copyright (c) 2026 CikeSeven. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 CikeSeven
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 
 import 'dart:async';
 import 'dart:math' as math;
@@ -35,6 +37,7 @@ import '../session/session_detail_page.dart';
 import '../settings/search/settings_search_page.dart';
 import '../settings/settings_screen.dart';
 import '../share_code/share_code_host.dart';
+import '../tavern/tavern_intake.dart';
 import '../star/star_prompt_host.dart';
 import '../theme/theme.dart';
 import '../update/update_launch_check.dart';
@@ -133,8 +136,11 @@ class _HomeShellState extends ConsumerState<HomeShell> with TickerProviderStateM
   );
 
   /// [QuickPanel.width], plus what it covers on a phone on its side.
-  double _quickPanelWidth(BuildContext context) =>
-      math.min(QuickPanel.width + MediaQuery.paddingOf(context).right, MediaQuery.sizeOf(context).width - 56);
+  double _quickPanelWidth(BuildContext context) => math.min(
+    (ref.read(currentSessionProvider) == null ? QuickPanel.width : QuickPanel.conversationWidth) +
+        MediaQuery.paddingOf(context).right,
+    MediaQuery.sizeOf(context).width - 56,
+  );
 
   void _slideOpen(AnimationController side) {
     FocusManager.instance.primaryFocus?.unfocus();
@@ -290,7 +296,9 @@ class _HomeShellState extends ConsumerState<HomeShell> with TickerProviderStateM
     // No quick panel beside a sidebar (the swipes are off there), or once
     // it's turned off: one left open goes, at once, as the window changes.
     final sidebar = layout.left == LeftPane.sidebar;
-    final quickPanelOn = !sidebar && ref.watch(quickPanelProvider.select((p) => p.available));
+    // With a conversation open the panel has that to show, whatever shortcuts it lists.
+    final quickPanelOn =
+        !sidebar && ref.watch(quickPanelProvider.select((p) => p.available || (p.swipe && sessionId != null)));
     if (!quickPanelOn && _quickPanel.value > 0) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _quickPanel.value = 0;
@@ -298,7 +306,7 @@ class _HomeShellState extends ConsumerState<HomeShell> with TickerProviderStateM
     }
     final chat = widget.chatBuilder?.call(_onMenu) ?? ChatScreen(onOpenDrawer: _onMenu, backdrop: false);
     // The floating pet outside the app hears every pet state.
-    ref.watch(petOverlayBridgeProvider);
+    ref.listen<void>(petOverlayBridgeProvider, (_, _) {});
     return SafeModeNoticeListener(
       child: PhoneStopWatcher(
         child: PopScope(
@@ -343,6 +351,8 @@ class _HomeShellState extends ConsumerState<HomeShell> with TickerProviderStateM
                       const LinkHost(),
                       // Share codes (分享码): registers its links and files with the router.
                       const ShareCodeHost(),
+                      // Character cards opened with the app: into 酒馆.
+                      const TavernIntakeHost(),
                       // Share sheet, launcher shortcuts, the tile: into the chat (draws nothing).
                       SystemEntryHost(onReveal: _revealChat),
                       // Forum links (sign-in return, topics): registers them with the router.
@@ -351,37 +361,43 @@ class _HomeShellState extends ConsumerState<HomeShell> with TickerProviderStateM
                       const BotAlertsHost(),
                       ExcludeSemantics(
                         excluding: _open || _quickPanelOpen,
-                        child: AdaptiveScaffold(
-                          layout: layout,
-                          // Stored choices arriving at launch snap into place.
-                          animate: prefs.loaded,
-                          body: RawGestureDetector(
-                            // translucent: join the hit chain without swallowing taps
-                            // meant for the chat; wraps the whole chat column so empty
-                            // areas still drag. Not 对话详情 beside it: its tabs swipe.
-                            // No drawer to pull while the sidebar shows.
-                            behavior: HitTestBehavior.translucent,
-                            gestures: {if (!sidebar) ..._drawerGestures, if (quickPanelOn) ..._quickPanelGestures},
-                            child: chat,
+                        child: _SideParallax(
+                          drawer: _drawer,
+                          drawerWidth: width,
+                          quickPanel: _quickPanel,
+                          quickPanelWidth: _quickPanelWidth(context),
+                          child: AdaptiveScaffold(
+                            layout: layout,
+                            // Stored choices arriving at launch snap into place.
+                            animate: prefs.loaded,
+                            body: RawGestureDetector(
+                              // translucent: join the hit chain without swallowing taps
+                              // meant for the chat; wraps the whole chat column so empty
+                              // areas still drag. Not 对话详情 beside it: its tabs swipe.
+                              // No drawer to pull while the sidebar shows.
+                              behavior: HitTestBehavior.translucent,
+                              gestures: {if (!sidebar) ..._drawerGestures, if (quickPanelOn) ..._quickPanelGestures},
+                              child: chat,
+                            ),
+                            sidebar: SessionsDrawer(
+                              key: const ValueKey('persistent-sidebar'),
+                              // It stays: picking a conversation just shows it.
+                              onClose: () {},
+                              onOpen: _openDestination,
+                            ),
+                            rail: AdaptiveRail(
+                              onMenu: _onMenu,
+                              menuTooltip: AdaptiveChrome.menuTooltipFor(layout),
+                              onSearch: _search,
+                              onHost: () =>
+                                  showHostSheet(context, onManage: () => _openDestination(DrawerDestination.remote)),
+                              onWeb: () => _openDestination(DrawerDestination.web),
+                              onSettings: () => _openDestination(DrawerDestination.settings),
+                            ),
+                            panel: layout.panelAvailable && sessionId != null
+                                ? SessionDetailPage.panel(key: ValueKey(sessionId), sessionId: sessionId)
+                                : null,
                           ),
-                          sidebar: SessionsDrawer(
-                            key: const ValueKey('persistent-sidebar'),
-                            // It stays: picking a conversation just shows it.
-                            onClose: () {},
-                            onOpen: _openDestination,
-                          ),
-                          rail: AdaptiveRail(
-                            onMenu: _onMenu,
-                            menuTooltip: AdaptiveChrome.menuTooltipFor(layout),
-                            onSearch: _search,
-                            onHost: () =>
-                                showHostSheet(context, onManage: () => _openDestination(DrawerDestination.remote)),
-                            onWeb: () => _openDestination(DrawerDestination.web),
-                            onSettings: () => _openDestination(DrawerDestination.settings),
-                          ),
-                          panel: layout.panelAvailable && sessionId != null
-                              ? SessionDetailPage.panel(key: ValueKey(sessionId), sessionId: sessionId)
-                              : null,
                         ),
                       ),
                       Positioned.fill(
@@ -411,7 +427,11 @@ class _HomeShellState extends ConsumerState<HomeShell> with TickerProviderStateM
                             animation: _quickPanel,
                             width: _quickPanelWidth(context),
                             fromRight: true,
-                            drawer: QuickPanel(motion: _quickPanel, onOpen: _openDestination),
+                            drawer: QuickPanel(
+                              motion: _quickPanel,
+                              onOpen: _openDestination,
+                              sessionId: _quickPanelOpen ? sessionId : null,
+                            ),
                             onClose: _closeQuickPanel,
                           ),
                         ),
@@ -477,6 +497,39 @@ class _DrawerNoticeTheme extends StatelessWidget {
 /// panel keeps its state when closed, while Visibility suppresses painting,
 /// semantics and tickers until the first drag frame reveals it. [QuickPanel]
 /// comes the same way, [fromRight].
+/// The fluid tier: as a side panel slides over, the page below drifts a little the
+/// same way. Only a translation: scaling would make its glass re-sample at a new size.
+class _SideParallax extends StatelessWidget {
+  const _SideParallax({
+    required this.drawer,
+    required this.drawerWidth,
+    required this.quickPanel,
+    required this.quickPanelWidth,
+    required this.child,
+  });
+
+  final Animation<double> drawer;
+  final double drawerWidth;
+  final Animation<double> quickPanel;
+  final double quickPanelWidth;
+  final Widget child;
+
+  static const _share = 0.14;
+
+  @override
+  Widget build(BuildContext context) {
+    final fluid = AppMotion.fluid(context);
+    return AnimatedBuilder(
+      animation: Listenable.merge([drawer, quickPanel]),
+      child: child,
+      builder: (context, child) => Transform.translate(
+        offset: Offset(fluid ? _share * (drawer.value * drawerWidth - quickPanel.value * quickPanelWidth) : 0, 0),
+        child: child,
+      ),
+    );
+  }
+}
+
 class _DrawerOverlay extends StatelessWidget {
   const _DrawerOverlay({
     required this.animation,

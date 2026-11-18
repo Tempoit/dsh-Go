@@ -339,6 +339,37 @@ void main() {
     expect(read().tabs, hasLength(1));
   });
 
+  test('a Host that turned the terminal off says so, also inside the first parallel load', () async {
+    final fake = FakeTerminalBackend()
+      ..listError = const DshRemoteException('TERMINAL_DISABLED', 'off', {'remote': true});
+    final workspace = await open(fake);
+    expect(read().error, TerminalCopy.disabledOnHost, reason: 'not "engine unreachable"');
+    fake.listError = null;
+    await workspace.reload();
+    await _settle();
+    expect(read().error, isNull);
+  });
+
+  test('a Remote Host that announced no terminal opens on that message and still retries', () async {
+    final fake = FakeTerminalBackend()..offOnHost = true;
+    final workspace = await open(fake);
+    expect(read().error, TerminalCopy.disabledOnHost);
+    expect(fake.calls, isEmpty);
+    await workspace.reload();
+    await _settle();
+    expect(read().error, isNull, reason: 'the owner may have turned it on since: calls work without reconnecting');
+  });
+
+  test('the link coming back lists again when nothing could be listed', () async {
+    final fake = FakeTerminalBackend()..offOnHost = true;
+    await open(fake);
+    expect(read().error, TerminalCopy.disabledOnHost);
+    fake.reconnects.add(null);
+    await _settle();
+    expect(read().error, isNull, reason: 'the owner turned it on and the link returned');
+    expect(read().tabs, hasLength(1));
+  });
+
   test('connections without terminal support and no connection', () async {
     await open(FakeTerminalBackend(supported: false));
     expect(read().supported, isFalse);

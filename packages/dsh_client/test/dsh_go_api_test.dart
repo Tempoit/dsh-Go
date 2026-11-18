@@ -238,6 +238,136 @@ void main() {
       await host.close();
     });
 
+    test('bridge capabilities distinguish legacy unknown, an empty list, and future names', () async {
+      expect(await client.readDshGoBridgeCapabilities(), isNull);
+      host.capabilities = {'v': 1, 'bridge': '0.4.0', 'capabilities': <String>[]};
+      final empty = await client.readDshGoBridgeCapabilities();
+      expect(empty?.v, 1);
+      expect(empty?.capabilities, isEmpty);
+      host.capabilities = {
+        'v': 1,
+        'bridge': '999.0.0',
+        'capabilities': ['native-ui', 'future-capability'],
+      };
+      final next = await client.readDshGoBridgeCapabilities();
+      expect(next?.bridge, '999.0.0', reason: 'bridge version is diagnostic, v determines support');
+      expect(next?.capabilities, {'native-ui', 'future-capability'});
+      expect(host.requests.last.rawPath, dshGoCapabilitiesPath);
+      expect(host.requests.last.cookie, contains(_FakeHost.cookieName));
+    });
+
+    test('negotiation rejects unsupported majors and malformed capability declarations', () async {
+      host.capabilities = {'v': 2};
+      await expectLater(
+        client.readDshGoBridgeCapabilities(),
+        throwsA(isA<DshRemoteException>().having((e) => e.code, 'code', 'dsh-go/unsupported-version')),
+      );
+      for (final body in [
+        {'bridge': '0.4.0', 'capabilities': []},
+        {'v': '1', 'bridge': '0.4.0', 'capabilities': []},
+        {'v': 1, 'bridge': '0.4.0'},
+        {'v': 1, 'capabilities': []},
+        {
+          'v': 1,
+          'bridge': '0.4.0',
+          'capabilities': ['native-ui', 7],
+        },
+      ]) {
+        host.capabilities = body;
+        await expectLater(client.readDshGoBridgeCapabilities(), throwsA(isA<DshProtocolException>()));
+      }
+    });
+
+    test('structured contributions resource errors propagate without a negotiation request', () async {
+      host.status = 404;
+      for (final body in [
+        {
+          'error': {'code': 'not-found', 'message': 'resource missing'},
+        },
+        {'code': 'not-found', 'message': 'resource missing'},
+      ]) {
+        host.body = jsonEncode(body);
+        host.requests.clear();
+        await expectLater(
+          client.readDshGoContributions(),
+          throwsA(isA<DshRemoteException>().having((e) => e.code, 'code', 'dsh-go/not-found')),
+        );
+        expect(host.requests.map((r) => r.rawPath), [dshGoContributionsPath]);
+      }
+      host.body = jsonEncode({
+        'error': {'code': 'route-not-found', 'message': 'route missing'},
+      });
+      host.requests.clear();
+      expect(await client.readDshGoContributions(), isNull);
+      expect(host.requests.map((r) => r.rawPath), [dshGoContributionsPath]);
+    });
+
+    test('ambiguous contributions 404 is checked against a fresh capability declaration', () async {
+      host.status = 404;
+      host.body = 'not found';
+      host.capabilities = {'v': 1, 'bridge': '0.4.0', 'capabilities': <String>[]};
+      host.requests.clear();
+      expect(await client.readDshGoContributions(), isNull);
+      expect(host.requests.map((r) => r.rawPath), [dshGoContributionsPath, dshGoCapabilitiesPath]);
+      host.capabilities = {
+        'v': 1,
+        'bridge': '0.4.0',
+        'capabilities': ['native-ui'],
+      };
+      await expectLater(
+        client.readDshGoContributions(),
+        throwsA(isA<DshRemoteException>().having((e) => e.code, 'code', 'dsh-go/http-404')),
+      );
+      host.capabilities = null;
+      expect(await client.readDshGoContributions(), isNull, reason: 'legacy unknown is not cached as absence');
+    });
+
+    test('negotiation failures never become unsupported-bridge null', () async {
+      host.status = 404;
+      for (final status in [401, 403, 503]) {
+        host.capabilitiesStatus = status;
+        await expectLater(
+          client.readDshGoContributions(),
+          throwsA(isA<DshRemoteException>().having((e) => e.code, 'code', 'dsh-go/http-$status')),
+        );
+      }
+      host.capabilitiesStatus = 404;
+      host.capabilitiesBody = jsonEncode({
+        'error': {'code': 'not-found', 'message': 'resource missing'},
+      });
+      await expectLater(
+        client.readDshGoContributions(),
+        throwsA(isA<DshRemoteException>().having((e) => e.code, 'code', 'dsh-go/not-found')),
+      );
+      host.capabilitiesBody = jsonEncode({
+        'error': {'code': 'route-not-found', 'message': 'route missing'},
+      });
+      expect(await client.readDshGoContributions(), isNull);
+      host.capabilitiesBody = null;
+      host.capabilitiesStatus = null;
+      host.capabilities = {'v': 2};
+      await expectLater(
+        client.readDshGoContributions(),
+        throwsA(isA<DshRemoteException>().having((e) => e.code, 'code', 'dsh-go/unsupported-version')),
+      );
+    });
+
+    test('successful contributions and 304 need no negotiation and reject unknown protocol majors', () async {
+      host.contributions = {..._contributions, 'bridge': '999.0.0'};
+      host.requests.clear();
+      final first = await client.readDshGoContributions();
+      expect(first?.bridge, '999.0.0');
+      expect(identical(await client.readDshGoContributions(previous: first), first), isTrue);
+      expect(host.requests.map((r) => r.rawPath), [dshGoContributionsPath, dshGoContributionsPath]);
+      host.contributions = {..._contributions, 'v': 2};
+      await expectLater(
+        client.readDshGoContributions(),
+        throwsA(isA<DshRemoteException>().having((e) => e.code, 'code', 'dsh-go/unsupported-version')),
+      );
+      host.contributions = {'plugins': []};
+      await expectLater(client.readDshGoContributions(), throwsA(isA<DshProtocolException>()));
+    });
+
     test('contributions: no bridge, caps, ETag round trip, refusal, bad body', () async {
       expect(client.canReachDshGo, isTrue);
       expect(await client.readDshGoContributions(), isNull);
@@ -334,6 +464,40 @@ void main() {
       );
     });
 
+    test('HTTP errors accept nested and legacy flat codes, with nested taking precedence', () async {
+      host.status = 422;
+      for (final body in [
+        {
+          'error': {'code': 'invalid-config', 'message': 'check field'},
+          'code': 'obsolete-code',
+          'message': 'obsolete message',
+        },
+        {'v': 1, 'code': 'invalid-config', 'message': 'check field'},
+      ]) {
+        host.body = jsonEncode(body);
+        await expectLater(
+          client.readDshGoView('p', 'view'),
+          throwsA(
+            isA<DshRemoteException>()
+                .having((e) => e.code, 'code', 'dsh-go/invalid-config')
+                .having((e) => e.message, 'message', 'check field'),
+          ),
+        );
+      }
+      host.status = 503;
+      for (final body in ['Service Unavailable', '<html>upstream failure</html>']) {
+        host.body = body;
+        await expectLater(
+          client.readDshGoView('p', 'view'),
+          throwsA(
+            isA<DshRemoteException>()
+                .having((e) => e.code, 'code', 'dsh-go/http-503')
+                .having((e) => e.message, 'message', '${dshGoViewPath('p', 'view')}: HTTP 503'),
+          ),
+        );
+      }
+    });
+
     test('stream over a real socket: hello, sub, data, patch, changed, unsub', () async {
       final stream = client.openDshGoStream(locale: 'zh-CN');
       addTearDown(stream.close);
@@ -402,6 +566,154 @@ void main() {
       await sub.cancel();
       await changed.cancel();
       await _settle(() => stream.link == DshGoLink.idle);
+    });
+
+    group('host end over a real socket', () {
+      test('last surface ends and its App-style cancel closes the idle socket', () async {
+        final stream = client.openDshGoStream();
+        addTearDown(stream.close);
+        final ended = Completer<void>();
+        final events = <DshGoEvent>[];
+        late final StreamSubscription<DshGoEvent> subscription;
+        subscription = stream.subscribe(pkg: '@acme/usage', id: 'cost').listen((event) {
+          events.add(event);
+          if (event is DshGoEnded) {
+            // NativeSurfaceController._onEvent calls _stop(), which cancels.
+            unawaited(subscription.cancel().then((_) => ended.complete()));
+          }
+        });
+        expect((await host.socketMessages.next)['t'], 'hello');
+        final sub = await host.socketMessages.next;
+        expect(sub['t'], 'sub');
+        host.push({'t': 'welcome', 'v': 1, 'bridge': '0.3.0', 'conn': 'c1', 'hb': 25});
+        host.push({'t': 'end', 'sub': sub['sub'], 'reason': 'not-found'});
+
+        await ended.future.timeout(const Duration(seconds: 5));
+        expect(events.single, isA<DshGoEnded>().having((e) => e.reason, 'reason', 'not-found'));
+        expect(stream.subscriptionCount, 0);
+        expect(stream.link, DshGoLink.idle);
+        expect(stream.conn, isNull);
+        expect(await host.socketClosed.future.timeout(const Duration(seconds: 5)), 1000);
+      });
+
+      test('another surface survives until its own final end', () async {
+        final stream = client.openDshGoStream();
+        addTearDown(stream.close);
+        final aDone = Completer<void>();
+        final bDone = Completer<void>();
+        final bData = Completer<DshGoData>();
+        final aEvents = <DshGoEvent>[];
+        final bEvents = <DshGoEvent>[];
+        stream.subscribe(pkg: '@acme/usage', id: 'a').listen(aEvents.add, onDone: aDone.complete);
+        stream.subscribe(pkg: '@acme/usage', id: 'b').listen((event) {
+          bEvents.add(event);
+          if (event is DshGoData) bData.complete(event);
+        }, onDone: bDone.complete);
+        expect((await host.socketMessages.next)['t'], 'hello');
+        final a = await host.socketMessages.next;
+        final b = await host.socketMessages.next;
+        expect([a['id'], b['id']], ['a', 'b']);
+        host.push({'t': 'welcome', 'v': 1, 'bridge': '0.3.0', 'conn': 'c1', 'hb': 25});
+        host.push({'t': 'end', 'sub': a['sub'], 'reason': 'not-found'});
+
+        await aDone.future.timeout(const Duration(seconds: 5));
+        expect(aEvents.single, isA<DshGoEnded>());
+        expect(stream.subscriptionCount, 1);
+        expect(stream.link, DshGoLink.open);
+        expect(host.socketClosed.isCompleted, isFalse);
+        host.push({
+          't': 'data',
+          'sub': b['sub'],
+          'rev': 'r1',
+          'data': {'text': 'still live'},
+        });
+        expect((await bData.future.timeout(const Duration(seconds: 5))).data, {'text': 'still live'});
+        host.push({'t': 'end', 'sub': b['sub'], 'reason': 'degraded'});
+
+        await bDone.future.timeout(const Duration(seconds: 5));
+        expect(bEvents.last, isA<DshGoEnded>().having((e) => e.reason, 'reason', 'degraded'));
+        expect(stream.subscriptionCount, 0);
+        expect(stream.link, DshGoLink.idle);
+        expect(await host.socketClosed.future.timeout(const Duration(seconds: 5)), 1000);
+      });
+
+      test('an explicit hold keeps deferred results alive after the last surface ends', () async {
+        final stream = client.openDshGoStream();
+        addTearDown(stream.close);
+        final ended = Completer<void>();
+        stream.subscribe(pkg: '@acme/usage', id: 'cost').listen((_) {}, onDone: ended.complete);
+        final connection = stream.hold();
+        expect((await host.socketMessages.next)['t'], 'hello');
+        final sub = await host.socketMessages.next;
+        host.push({'t': 'welcome', 'v': 1, 'bridge': '0.3.0', 'conn': 'c1', 'hb': 25});
+        expect(await connection, 'c1');
+        final outcome = stream.outcome('p1', timeout: const Duration(seconds: 5));
+        host.push({'t': 'end', 'sub': sub['sub'], 'reason': 'not-found'});
+
+        await ended.future.timeout(const Duration(seconds: 5));
+        expect(stream.subscriptionCount, 0);
+        expect(stream.link, DshGoLink.open);
+        expect(stream.conn, 'c1');
+        expect(host.socketClosed.isCompleted, isFalse);
+        host.push({
+          't': 'done',
+          'pending': 'p1',
+          'effects': [
+            {'type': 'toast', 'text': 'done'},
+          ],
+        });
+        expect(await outcome, isA<DshGoDone>().having((e) => e.effects.single['text'], 'text', 'done'));
+
+        stream.release();
+        expect(stream.link, DshGoLink.idle);
+        expect(await host.socketClosed.future.timeout(const Duration(seconds: 5)), 1000);
+      });
+
+      test('a micro subscription keeps receiving after the last surface ends', () async {
+        final stream = client.openDshGoStream(features: const ['micro']);
+        addTearDown(stream.close);
+        final panelDone = Completer<void>();
+        final microDone = Completer<void>();
+        final microData = Completer<DshGoData>();
+        final microEvents = <DshGoEvent>[];
+        stream.subscribe(pkg: '@acme/usage', id: 'cost').listen((_) {}, onDone: panelDone.complete);
+        stream.subscribeMicro(pkg: '@acme/usage', id: 'caption').listen((event) {
+          microEvents.add(event);
+          if (event is DshGoData) microData.complete(event);
+        }, onDone: microDone.complete);
+        expect((await host.socketMessages.next)['features'], ['micro']);
+        final panel = await host.socketMessages.next;
+        expect(panel['t'], 'sub');
+        host.push({
+          't': 'welcome',
+          'v': 1,
+          'bridge': '0.3.0',
+          'conn': 'c1',
+          'hb': 25,
+          'features': ['micro'],
+        });
+        final micro = await host.socketMessages.next;
+        expect(micro['t'], 'micro.sub');
+        host.push({'t': 'end', 'sub': panel['sub'], 'reason': 'not-found'});
+
+        await panelDone.future.timeout(const Duration(seconds: 5));
+        expect(stream.subscriptionCount, 0);
+        expect(stream.link, DshGoLink.open);
+        expect(host.socketClosed.isCompleted, isFalse);
+        host.push({
+          't': 'micro.data',
+          'sub': micro['sub'],
+          'rev': '0123456789abcdef.1',
+          'data': {'text': 'still live'},
+        });
+        expect((await microData.future.timeout(const Duration(seconds: 5))).data, {'text': 'still live'});
+        host.push({'t': 'micro.end', 'sub': micro['sub'], 'reason': 'not-found'});
+
+        await microDone.future.timeout(const Duration(seconds: 5));
+        expect(microEvents.last, isA<DshGoEnded>());
+        expect(stream.link, DshGoLink.idle);
+        expect(await host.socketClosed.future.timeout(const Duration(seconds: 5)), 1000);
+      });
     });
   });
 
@@ -650,6 +962,9 @@ class _FakeHost {
   final requests = <_Request>[];
 
   Map<String, Object?>? contributions;
+  Map<String, Object?>? capabilities;
+  int? capabilitiesStatus;
+  String? capabilitiesBody;
   Map<String, Object?>? view;
   Map<String, Object?>? invoke;
   String? body;
@@ -657,6 +972,7 @@ class _FakeHost {
   int? lastStatus;
   Object? lastBody;
   WebSocket? _socket;
+  final socketClosed = Completer<int?>();
   final _socketIn = StreamController<Map<String, Object?>>();
   late final socketMessages = _Queue(_socketIn.stream);
 
@@ -691,14 +1007,22 @@ class _FakeHost {
     if (path == dshGoStreamPath && WebSocketTransformer.isUpgradeRequest(request)) {
       final ws = await WebSocketTransformer.upgrade(request);
       _socket = ws;
-      ws.listen((m) => _socketIn.add(jsonDecode(m as String) as Map<String, Object?>), onError: (_) {});
+      ws.listen(
+        (m) => _socketIn.add(jsonDecode(m as String) as Map<String, Object?>),
+        onError: (_) {},
+        onDone: () => socketClosed.complete(ws.closeCode),
+      );
       return;
     }
+    final replyStatus = path == dshGoCapabilitiesPath ? capabilitiesStatus : status;
+    final replyBody = path == dshGoCapabilitiesPath ? capabilitiesBody : body;
     Object? payload;
-    if (path == dshGoContributionsPath) {
+    if (path == dshGoCapabilitiesPath) {
+      payload = capabilities;
+    } else if (path == dshGoContributionsPath) {
       payload = contributions;
       final rev = contributions?['rev'];
-      if (rev != null && etag == '"$rev"' && status == null) {
+      if (rev != null && etag == '"$rev"' && replyStatus == null) {
         response.statusCode = lastStatus = 304;
         await response.close();
         return;
@@ -709,10 +1033,10 @@ class _FakeHost {
       lastBody = jsonDecode(await utf8.decodeStream(request));
       payload = invoke;
     }
-    if (status case final s?) {
+    if (replyStatus case final s?) {
       response.statusCode = s;
-      if (body case final b?) response.write(b);
-    } else if (body case final b?) {
+      if (replyBody case final b?) response.write(b);
+    } else if (replyBody case final b?) {
       response.write(b);
     } else if (payload != null) {
       response.headers.contentType = ContentType.json;

@@ -11,6 +11,7 @@ import '../../runtime/runtime_state.dart';
 import '../../state/app_info.dart';
 import '../../state/connection_state.dart';
 import '../../state/hosts_state.dart';
+import '../common/app_dialog.dart';
 import '../common/ask_ai.dart';
 import '../common/overview_card.dart';
 import '../common/status_chip.dart';
@@ -23,6 +24,7 @@ import 'host_key_dialog.dart';
 import 'host_status.dart';
 import 'link_progress.dart';
 import 'network_details_sheet.dart';
+import 'pairing_page.dart';
 import 'relay_credit.dart';
 import 'relay_login_sheet.dart';
 import 'ssh_host_form.dart';
@@ -96,6 +98,18 @@ class RemoteScreen extends ConsumerWidget {
       children: [
         _ActiveCard(active: active),
         _RelaySection(onUse: (h) => _use(context, ref, h)),
+        SettingsSection(
+          title: l10n.remoteTransferSettings,
+          children: [
+            SettingsSwitchTile(
+              key: const ValueKey('remote-compact-history'),
+              spot: Spots.remoteCompactHistory,
+              subtitle: l10n.remoteCompactHistoryHint,
+              value: ref.watch(remoteCompactHistoryProvider),
+              onChanged: (value) => unawaited(ref.read(remoteCompactHistoryProvider.notifier).set(value)),
+            ),
+          ],
+        ),
         SettingsSection(
           title: l10n.remoteSshHosts,
           footer: Text(l10n.remoteSshRequirements),
@@ -210,6 +224,20 @@ class _ActiveCard extends ConsumerWidget {
                     ? (
                         l10n.remoteSignInAgain,
                         () async {
+                          if (ref.read(relayAccountProvider).value?.user?.provider == 'password') {
+                            final backend = ref.read(relayBackendProvider);
+                            final signedIn = await showSelfHostedLogin(
+                              context,
+                              initialServer: ref.read(relayServerProvider) ?? defaultRelayServer,
+                            );
+                            if (signedIn == true &&
+                                context.mounted &&
+                                ref.read(activeHostProvider) == active &&
+                                identical(backend, ref.read(relayBackendProvider))) {
+                              reconnect();
+                            }
+                            return;
+                          }
                           await ref.read(relayAccountProvider.notifier).login();
                           if (context.mounted && (ref.read(relayAccountProvider).value?.signedIn ?? false)) reconnect();
                         },
@@ -437,6 +465,13 @@ class _RelaySection extends ConsumerWidget {
               active: active == HostRef.relay(h.id),
               onTap: h.online || active == HostRef.relay(h.id) ? () => onUse(HostRef.relay(h.id, name: h.name)) : null,
             ),
+        if (ref.watch(relayPairingSupportProvider).value ?? false)
+          SettingsTile(
+            icon: AppIcons.qrCode,
+            tinted: false,
+            title: l10n.remotePairAddComputer,
+            onTap: () => Navigator.of(context).push(RemotePairingPage.route()),
+          ),
       ],
     );
   }
@@ -451,7 +486,7 @@ class _RelaySection extends ConsumerWidget {
 
   Future<void> _confirmLogout(BuildContext context, RelayAccountController notifier) async {
     final l10n = context.l10n;
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
       context: context,
       builder: (dialog) => AlertDialog(
         title: Text(l10n.remoteRelaySignOutTitle),
@@ -512,6 +547,21 @@ class _LoginCard extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 14),
+          if (!account.loggingIn && available && (ref.watch(relayPairingSupportProvider).value ?? false)) ...[
+            FilledButton.tonalIcon(
+              onPressed: () => Navigator.of(context).push(RemotePairingPage.route()),
+              icon: const Icon(AppIcons.qrCode, size: 18),
+              label: Text(l10n.remotePairEntry),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 6, 4, 12),
+              child: Text(
+                l10n.remotePairEntryHint,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(color: colors.textTertiary),
+              ),
+            ),
+          ],
           if (account.loggingIn)
             _Waiting(url: account.loginUrl, onCancel: notifier.cancelLogin)
           else if (account.providers.isEmpty)

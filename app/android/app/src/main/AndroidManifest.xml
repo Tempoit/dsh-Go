@@ -15,6 +15,10 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Composer voice input (voice/VoicePlugin.kt), asked for on the first tap of the mic. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Remote 扫码配对电脑 (ui/remote/pairing_page.dart, mobile_scanner), asked for when the
+         scanner opens; the photo and paste paths work without it. Never required. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <!-- TODO(targetSdk >= 30): package visibility hides recognition services from
          SpeechRecognizer.isRecognitionAvailable unless declared; add to <queries>:
          <intent><action android:name="android.speech.RecognitionService" /></intent> -->
@@ -39,8 +43,8 @@
     <!-- libadb-android declares no targetSdk, so the merger implies READ_PHONE_STATE ("读取手机状态");
          nothing here reads it. -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" tools:node="remove" />
-    <!-- flutter_webrtc's AudioSwitch asks for these; DSH Remote's direct path is data only and
-         never routes audio. -->
+    <!-- flutter_webrtc's AudioSwitch asks for these; DSH Remote is data only and must not
+         manage system audio routing. Its native audio module uses media attributes (webrtc_peer.dart). -->
     <uses-permission android:name="android.permission.BLUETOOTH" tools:node="remove" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" tools:node="remove" />
 
@@ -208,6 +212,27 @@
             android:taskAffinity=""
             android:theme="@android:style/Theme.NoDisplay" />
 
+        <!-- The privileged gate starts only this inert receiver. Ordinary apps cannot launch it. -->
+        <activity
+            android:name=".phone.background.BackgroundProbeActivity"
+            android:exported="true"
+            android:permission="android.permission.INJECT_EVENTS"
+            android:process=":input_probe"
+            android:launchMode="standard"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|uiMode"
+            android:theme="@android:style/Theme.Material.NoActionBar" />
+
+        <!-- Local self-check only: App UID starts this fixed inert target on its leased display. -->
+        <activity
+            android:name=".phone.selfcheck.PhoneSelfCheckTargetActivity"
+            android:exported="false"
+            android:launchMode="standard"
+            android:taskAffinity="${applicationId}.phone.selfcheck"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+
         <!-- Quick Settings tile 「新对话」 (tile/NewChatTileService.kt). -->
         <service
             android:name=".tile.NewChatTileService"
@@ -273,6 +298,19 @@
             </intent-filter>
         </receiver>
 
+        <!-- 伙伴小屋 on the home screen (companion/CompanionWidget.kt). -->
+        <receiver
+            android:name=".companion.CompanionWidgetProvider"
+            android:exported="false"
+            android:label="@string/companion_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/companion_widget_info" />
+        </receiver>
+
         <receiver android:name=".notify.NotifyActionReceiver" android:exported="false" />
         <receiver android:name=".phone.a11y.A11yKeeper$Receiver" android:exported="false">
             <intent-filter>
@@ -305,6 +343,11 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Initialized on demand by Remote pairing or an admitted local OCR call, never at app startup. -->
+        <provider
+            android:name="com.google.mlkit.common.internal.MlKitInitProvider"
+            android:authorities="${applicationId}.mlkitinitprovider"
+            tools:node="remove" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
@@ -315,6 +358,11 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- 伙伴小屋's voice (CompanionVoicePlugin): finding the system's speech engine once the
+             target SDK reaches 30. Harmless at 28. -->
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE"/>
         </intent>
     </queries>
 </manifest>

@@ -1,5 +1,5 @@
-// The centrepiece of the first-run runtime setup screen.
-// Inspired by PiPilot's `EditorialOrnament` breathing (3.6 s, "alive but quiet").
+// The centrepiece of the first-run runtime setup screen: a 3.6 s breathing loop
+// that reads as "alive but quiet".
 
 import 'dart:math' as math;
 

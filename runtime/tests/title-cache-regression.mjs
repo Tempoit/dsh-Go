@@ -4,6 +4,8 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 const prefix=resolve(process.argv[2]);
 const pkg=prefix+'/node_modules/@deepseek-ai/';
+const { Context } = await import(pathToFileURL(pkg+'cordis/lib/index.js'));
+const owner = new Context();
 const temporary=pkg+`dsh-api-session-controller/lib/title-cache-test-export-${process.pid}.mjs`;
 await writeFile(temporary,(await readFile(pkg+'dsh-api-session-controller/lib/index.js','utf8'))+'\nexport { ApiSessionList };\n');
 try {
@@ -12,7 +14,7 @@ try {
  const {z}=await import(pathToFileURL(prefix+'/node_modules/zod/index.js'));
  let raw={title:'old'}, pause, writes=0,reads=0;
  const unit={loadAll:async()=>({tables:{sessions:{s:raw}},global:null}),readRecord:async()=>{reads++;return raw},statRecord:async()=>undefined,putRecord:async(t,k,v)=>{writes++;if(pause)await pause;raw=v},close:async()=>{}};
- const ctx={emit(){},logger:{warn(){},error(){}},storage:{backend:{get:()=>({kv:{open:async()=>unit}})}}};
+ const ctx={fiber:owner.fiber,emit(){},logger:{warn(){},error(){}},storage:{backend:{get:()=>({kv:{open:async()=>unit}})}}};
  const facility=new DomainFacility(ctx,{backend:'json'});
  const domain=await facility.open(defineDomain({name:'cache_test',version:1,tables:{sessions:domainTable(z.object({title:z.string()}))}}));
  const table=domain.table('sessions');
@@ -50,7 +52,7 @@ try {
  const persistence={identity:{},stat:async()=>{stats++;return missing?undefined:{revision,header}}};
  const cache={refresh:async()=>{refreshes++},cachedSnapshot:()=>record,cachedPredecessorTitle:()=>undefined};
  const contexts={sessionProjectionCache:cache,sessionPersistence:persistence};
- const listctx={logger:{warn(){}},inject(){},sessionProjections:{register(){}},sessions:{get(){}},get:n=>contexts[n],sessionQuery:{listSessions:async()=>[{header,formatStatus:'current'}],observeSession:async()=>{observations++;return {revision,header,projections:block('log '+revision),[Symbol.dispose](){}}}}};
+ const listctx={logger:{warn(){}},inject(){},sessionProjections:{register(){},summaryKeys(){return ["title","sessionListMetadata"]}},sessions:{get(){}},get:n=>contexts[n],sessionQuery:{listSessions:async()=>[{header,formatStatus:'current'}],observeSession:async()=>{observations++;return {revision,header,projections:block('log '+revision),[Symbol.dispose](){}}}}};
  const list=new ApiSessionList(listctx,10);
  record=block('disk1');assert.equal((await list.list())[0].projections.values.title,'disk1');assert.equal(observations,0);assert.equal(stats,0);
  record=block('disk2');assert.equal((await list.list())[0].projections.values.title,'disk2');assert.equal(observations,0);
@@ -61,4 +63,4 @@ try {
  const abort=new AbortController();abort.abort();await assert.rejects(list.list(abort.signal));
  console.log(JSON.stringify({case:'list-call-counts',refreshes,observations,stats}));
  console.log('PASS list: cached record never observes log, changed record refreshes, miss LRU avoids repeat observe, revision invalidates, deletion skipped, abort propagates');
-} finally {await unlink(temporary);}
+} finally {await owner.fiber.dispose();await unlink(temporary);}

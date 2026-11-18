@@ -57,6 +57,39 @@ export async function readCapped(request: Request, limit: number): Promise<Uint8
   return out;
 }
 
+/** A body whose length is already known, read straight into one buffer: a
+ *  large upload is held once, not as chunks plus their concatenation. Longer
+ *  than [size]: null. Not finished within [withinMs]: 'timeout'. Shorter: the
+ *  bytes that came. */
+export async function readExactly(request: Request, size: number, withinMs: number): Promise<Uint8Array | null | 'timeout'> {
+  const out = new Uint8Array(size);
+  if (!request.body) return out.subarray(0, 0);
+  const reader = request.body.getReader();
+  const copy = async (): Promise<Uint8Array | null> => {
+    let at = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return out.subarray(0, at);
+      if (value.byteLength > size - at) {
+        await reader.cancel().catch(() => {});
+        return null;
+      }
+      out.set(value, at);
+      at += value.byteLength;
+    }
+  };
+  // One race for the whole copy: racing each read would keep every chunk
+  // reachable from the deadline promise until the end.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<'timeout'>(resolve => { timer = setTimeout(() => resolve('timeout'), withinMs); });
+  try {
+    const result = await Promise.race([copy(), late]);
+    if (result === 'timeout') await reader.cancel().catch(() => {});
+    return result;
+  } finally { if (timer !== undefined) clearTimeout(timer); }
+}
+
+
 function randomToken(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -103,14 +136,15 @@ export async function upload(request: Request, env: Env): Promise<Response> {
   for (let attempt = 0; attempt < 4; attempt++) {
     const id = newId(ttl);
     const key = tier.prefix + id;
-    // 58 random bits make a clash vanishingly rare; check anyway.
-    if (await env.BUCKET.head(key)) continue;
+    // Check absence atomically with the write, without a separate R2 read.
     const stored = await env.BUCKET.put(key, body, {
+      onlyIf: new Headers({ 'If-None-Match': '*' }),
       httpMetadata: { contentType: 'application/octet-stream' },
       customMetadata: { dt: tokenHash },
     });
+    if (stored === null) continue;
     await quota.commit();
-    const expires = expiresAt(tier, stored?.uploaded ?? new Date());
+    const expires = expiresAt(tier, stored.uploaded);
     return json(201, { id, deleteToken, expiresAt: expires ? expires.toISOString() : null });
   }
   return error(503, 'try_again');
@@ -146,7 +180,8 @@ export async function remove(request: Request, env: Env, id: string): Promise<Re
   const auth = request.headers.get('Authorization') ?? '';
   const bearer = /^Bearer\s+([A-Za-z0-9_-]{16,128})$/.exec(auth.trim())?.[1] ?? null;
   if (admin === null && bearer === null) return error(401, 'unauthorized');
-  if (admin === null && !(await burstAllowed(env.READ_LIMIT, clientKey(request)))) {
+  const adminAllowed = admin !== null && !!env.ADMIN_KEY && env.ADMIN_KEY.length >= 32 && (await sameSecret(admin, env.ADMIN_KEY));
+  if (!adminAllowed && !(await burstAllowed(env.READ_LIMIT, clientKey(request)))) {
     return error(429, 'rate_limited', { 'Retry-After': '60' });
   }
 
@@ -155,10 +190,8 @@ export async function remove(request: Request, env: Env, id: string): Promise<Re
   const object = await env.BUCKET.head(key);
   if (!object) return error(404, 'not_found');
 
-  let allowed = false;
-  if (admin !== null) {
-    allowed = !!env.ADMIN_KEY && env.ADMIN_KEY.length >= 32 && (await sameSecret(admin, env.ADMIN_KEY));
-  } else if (bearer !== null) {
+  let allowed = adminAllowed;
+  if (admin === null && bearer !== null) {
     const stored = object.customMetadata?.dt ?? '';
     allowed = stored.length === 64 && (await sameSecret(await sha256Hex(bearer), stored));
   }

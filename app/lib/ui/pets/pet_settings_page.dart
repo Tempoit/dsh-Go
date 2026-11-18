@@ -8,6 +8,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
+import '../../pets/pet_library.dart';
+import '../../pets/pet_pack.dart';
 import '../../pets/pet_prefs.dart';
 import '../../pets/pet_signals.dart';
 import '../../pets/pet_state.dart';
@@ -15,7 +17,9 @@ import '../common/expand_reveal.dart';
 import '../settings/settings_widgets.dart';
 import '../theme/app_icons.dart';
 import '../shell/page_frame.dart';
+import '../workshop/workshop_screen.dart';
 import 'overlay_settings_tile.dart';
+import 'pet_custom_size.dart';
 import 'pet_picker.dart';
 
 /// 设置 › 宠物: the chosen pet (or 不显示) on the right; opens
@@ -58,7 +62,25 @@ class PetSettingsPage extends ConsumerWidget {
     return AppPage.list(
       title: l10n.botsPets,
       children: [
-        SettingsSection(footer: Text(l10n.botsPetSource), children: const [PetPicker()]),
+        SettingsSection(
+          footer: Text(_source(l10n, prefs.packId, ref.watch(petPackProvider(prefs.packId)).value)),
+          children: const [PetPicker(importable: true)],
+        ),
+        // 创意工坊: pets other people made. Only where this build has one to open.
+        if (ref.watch(workshopAvailableProvider))
+          SettingsSection(
+            children: [
+              SettingsTile(
+                spot: Spots.workshop,
+                icon: AppIcons.workshop,
+                tinted: false,
+                subtitle: l10n.workshopEntrySubtitle,
+                onTap: () => unawaited(
+                  Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const WorkshopScreen())),
+                ),
+              ),
+            ],
+          ),
         ExpandReveal(
           open: prefs.enabled,
           child: Column(
@@ -73,6 +95,7 @@ class PetSettingsPage extends ConsumerWidget {
                     selected: prefs.size,
                     onChanged: (s) => unawaited(notifier.setSize(s)),
                   ),
+                  ExpandReveal(open: prefs.size == PetSize.custom, child: const PetCustomSizePanel()),
                   SettingsSwitchTile(
                     spot: Spots.petQuiet,
                     subtitle: l10n.botsPetQuietSubtitle,
@@ -95,6 +118,15 @@ class PetSettingsPage extends ConsumerWidget {
         ),
       ],
     );
+  }
+
+  /// Who made the chosen pet, as its pack says (docs/design/pets.md §9), and
+  /// how to bring your own.
+  static String _source(L10n l10n, String id, PetPack? pack) {
+    final made = !isUserPet(id)
+        ? l10n.botsPetSource
+        : [?pack?.author, ?pack?.license].where((s) => s.trim().isNotEmpty).join(' · ');
+    return [if (made.isNotEmpty) made, l10n.botsPetImportHint].join('\n');
   }
 
   static String _clock(DateTime t) => '${t.hour}:${t.minute.toString().padLeft(2, '0')}';

@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/l10n.dart';
 import '../../state/sessions_state.dart';
 import '../../state/ui_mode_state.dart';
+import '../modes/mode_switch.dart';
 import '../shell/home_shell.dart';
 import '../shell/page_frame.dart';
 import '../theme/app_icons.dart';
@@ -58,11 +59,14 @@ class _ModeHomeState extends ConsumerState<ModeHome> {
             child: widget.web?.call(_handoff) ?? WebHome(initial: _handoff),
           )
         : KeyedSubtree(key: const ValueKey(UiMode.native), child: widget.native ?? const HomeShell());
-    return AnimatedSwitcher(
-      duration: AppMotion.of(context, AppMotion.page),
-      switchInCurve: AppMotion.enter,
-      switchOutCurve: AppMotion.exit,
-      child: home,
+    // A launch into 伙伴 or 酒馆 opens that page over the home first.
+    return ModeLaunch(
+      child: AnimatedSwitcher(
+        duration: AppMotion.of(context, AppMotion.page),
+        switchInCurve: AppMotion.enter,
+        switchOutCurve: AppMotion.exit,
+        child: home,
+      ),
     );
   }
 }
@@ -71,9 +75,10 @@ class _ModeHomeState extends ConsumerState<ModeHome> {
 /// 新对话 beside it, with 界面's own mark (the globe at the drawer's foot
 /// opens the web page on top; this one makes it the home).
 class WebModeKey extends ConsumerWidget {
-  const WebModeKey({super.key, this.size = 36});
+  const WebModeKey({super.key, this.size = 36, this.tier = GlassTier.chrome});
 
   final double size;
+  final GlassTier tier;
 
   static String get tooltip => appL10n.webSwitchToWeb;
 
@@ -83,6 +88,7 @@ class WebModeKey extends ConsumerWidget {
       icon: AppIcons.swap,
       tooltip: context.l10n.webSwitchToWeb,
       size: size,
+      tier: tier,
       onPressed: () => unawaited(ref.read(uiModeProvider.notifier).set(UiMode.web)),
     );
   }

@@ -92,9 +92,11 @@ try:
  (root/'results.json').write_text(json.dumps(results,ensure_ascii=False,indent=2)+'\n')
  print(json.dumps({'result':'PASS','path_kind':kind,'cases':['settings describe volatile only','ordinary write refused by settings','volatile update no remount','ordinary edit persists and remounts','failed apply rolls file and runtime back','secret excluded from readback'],'profile_entries':len(before['activeConfigEntries']),'initial_uid':before['uid'],'after_live_uid':afterLive['uid'],'after_ordinary_uid':afterOrdinary['uid']},ensure_ascii=False))
 finally:
- if 'results' in locals(): (root/'results.partial.json').write_text(json.dumps(results,ensure_ascii=False,indent=2)+'\n')
- p.terminate()
- try:p.wait(timeout=10)
- except subprocess.TimeoutExpired:p.kill();p.wait()
- f.close()
- (root/'host.log').write_text(redact(logpath.read_text()))
+ try:
+  if 'results' in locals(): (root/'results.partial.json').write_text(json.dumps(results,ensure_ascii=False,indent=2)+'\n')
+ finally:
+  p.terminate()
+  try:p.wait(timeout=10)
+  except subprocess.TimeoutExpired:p.kill();p.wait()
+  f.close()
+  (root/'host.log').write_text(redact(logpath.read_text()))
