@@ -41,7 +41,14 @@ jobs:
           restore-keys: toolchain-${{ runner.os }}-
 
       - name: Toolchain (JDK 17, Flutter, Android SDK/NDK)
-        run: bash tooling/setup-toolchain.sh
+        # 缓存 7 天过期，冷启动要下 ~7GB；网络抖一次就整步失败，所以整步重试。
+        run: |
+          for i in 1 2 3; do
+            if bash tooling/setup-toolchain.sh; then exit 0; fi
+            echo "toolchain 第 $i 次失败，30 秒后重试"
+            sleep 30
+          done
+          exit 1
 
       - name: Fonts for widget tests
         run: |

@@ -49,8 +49,10 @@ install_flutter() {
   if [ -x "$FLUTTER_DIR/bin/flutter" ] && [ ! -f "$FLUTTER_DIR/.dsh-toolchain-incomplete" ]; then log "Flutter present"; return; fi
   local name="flutter_linux_${FLUTTER_VERSION}-stable.tar.xz"
   local url="https://storage.flutter-io.cn/flutter_infra_release/releases/stable/linux/$name"
+  local alt="https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/$name"
   log "Flutter: $name"
-  download_cached "$DL/$name" "$url"
+  # 国内镜像偶尔极慢或断流（curl 92）；失败就换官方源重下一次。
+  download_cached "$DL/$name" "$url" || { log "Flutter: 镜像失败，改用官方源"; download_cached "$DL/$name" "$alt"; }
   echo "$FLUTTER_SHA256  $DL/$name" | sha256sum -c -
   mkdir -p "$FLUTTER_DIR"
   touch "$FLUTTER_DIR/.dsh-toolchain-incomplete"
