@@ -457,12 +457,6 @@ internal class OverlayCapsule(
      */
     fun setIdle(alpha: Float, animated: Boolean, durationMs: Long) = OverlayMotion.fadeIdle(surface, alpha, animated, durationMs)
 
-    /**
-     * The whole capsule's opacity: the 闲置时不透明度 when idle, full otherwise. On [surface], so the
-     * window's own alpha stays free for the unfold's swap.
-     */
-    fun setIdle(alpha: Float, animated: Boolean, durationMs: Long) = OverlayMotion.fadeIdle(surface, alpha, animated, durationMs)
-
     val root: FrameLayout = object : FrameLayout(ctx) {
         override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
             if (ev.actionMasked == MotionEvent.ACTION_DOWN) actions.touched()
