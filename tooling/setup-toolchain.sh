@@ -125,6 +125,9 @@ cat > "$(dirname "$0")/env.sh" <<EOF
 export JAVA_HOME="$JDK_DIR"
 export ANDROID_HOME="$SDK_DIR"
 export ANDROID_SDK_ROOT="$SDK_DIR"
+# runner 镜像自带 ANDROID_NDK_HOME（版本和 Flutter 默认的不一定一样），tawcroot 会优先用它，
+# 结果报 needs NDK 28.2.13676358。这里指向我们装的这一个。
+export ANDROID_NDK_HOME="$SDK_DIR/ndk/$NDK_VERSION"
 export PUB_HOSTED_URL="https://pub.flutter-io.cn"
 export FLUTTER_STORAGE_BASE_URL="https://storage.flutter-io.cn"
 export PATH="$JDK_DIR/bin:$FLUTTER_DIR/bin:$SDK_DIR/cmdline-tools/latest/bin:$SDK_DIR/platform-tools:$SDK_DIR/emulator:\$PATH"
