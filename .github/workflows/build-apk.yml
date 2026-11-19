@@ -16,7 +16,7 @@ on:
 jobs:
   arm64:
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    timeout-minutes: 300
     env:
       # CI 不需要模拟器与系统镜像：重复装 cmake 顶掉默认的 x86_64 image，省 2GB 下载。
       SYSTEM_IMAGE: cmake;3.22.1
@@ -27,8 +27,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Cache toolchain and runtime downloads
-        uses: actions/cache@v4
+      - name: Restore toolchain and runtime downloads
+        id: cache
+        uses: actions/cache/restore@v4
         with:
           path: |
             ~/dev
@@ -41,6 +42,7 @@ jobs:
           restore-keys: toolchain-${{ runner.os }}-
 
       - name: Toolchain (JDK 17, Flutter, Android SDK/NDK)
+        id: toolchain
         # 缓存 7 天过期，冷启动要下 ~7GB；网络抖一次就整步失败，所以整步重试。
         run: |
           for i in 1 2 3; do
@@ -49,6 +51,21 @@ jobs:
             sleep 30
           done
           exit 1
+
+      # 缓存只有 job 成功时才由 actions/cache 自动保存；我们前几次都因为后面的步骤失败，
+      # 7GB 工具链一次都没存住，每次都从头下（150 分钟全耗在这）。这里显式存一次。
+      - name: Save toolchain cache
+        # 只在工具链这一步成功时存，免得把半截状态也写进缓存。
+        if: always() && steps.cache.outputs.cache-hit != 'true' && steps.toolchain.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/dev
+            runtime/.cache
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.android
+          key: ${{ steps.cache.outputs.cache-primary-key }}
 
       - name: Fonts for widget tests
         run: |
